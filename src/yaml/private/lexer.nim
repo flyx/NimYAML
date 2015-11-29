@@ -60,7 +60,9 @@ type
         # tags
         ylTagHandle, ylTagSuffix, ylVerbatimTag,
         # document separation
-        ylDashes, ylDots
+        ylDashes, ylDots,
+        # anchoring
+        ylAnchor, ylAlias
     
     YamlLexer* = object of BaseLexer
         indentations: seq[int]
@@ -549,9 +551,9 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 my.content.add(c)
                 state = ylTagHandle
             of '&':
-                yieldError("TODO: anchors")
+                state = ylAnchor
             of '*':
-                yieldError("TODO: links")
+                state = ylAlias
             of ' ':
                 discard
             of '-':
@@ -792,6 +794,22 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
             of EndOfFile, '\r', '\x0A':
                 yieldToken(yamlBlockScalarLine)
                 state = ylLineEnd
+                continue
+            else:
+                my.content.add(c)
+        of ylAnchor:
+            case c
+            of EndOfFile, '\r', '\x0A', ' ', '\t', '{', '}', '[', ']':
+                yieldToken(yamlAnchor)
+                state = ylInitialInLine
+                continue
+            else:
+                my.content.add(c)
+        of ylAlias:
+            case c
+            of EndOfFile, '\r', '\x0A', ' ', '\t', '{', '}', '[', ']':
+                yieldToken(yamlAlias)
+                state = ylInitialInLine
                 continue
             else:
                 my.content.add(c)

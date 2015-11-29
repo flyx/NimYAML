@@ -167,9 +167,19 @@ foo:
     - baz
     - biz
   herp: derp""",
-  [t(yamlLineStart, ""), t(yamlScalar, "foo"), t(yamlColon, nil),
-   t(yamlLineStart, "  "), t(yamlScalar, "bar"), t(yamlColon, nil),
-   t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalar, "baz"),
-   t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalar, "biz"),
-   t(yamlLineStart, "  "), t(yamlScalar, "herp"), t(yamlColon, nil),
-   t(yamlScalar, "derp"), t(yamlStreamEnd, nil)])
+          [t(yamlLineStart, ""), t(yamlScalar, "foo"), t(yamlColon, nil),
+           t(yamlLineStart, "  "), t(yamlScalar, "bar"), t(yamlColon, nil),
+           t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalar, "baz"),
+           t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalar, "biz"),
+           t(yamlLineStart, "  "), t(yamlScalar, "herp"), t(yamlColon, nil),
+           t(yamlScalar, "derp"), t(yamlStreamEnd, nil)])
+   
+    test "Anchor":
+       ensure("foo: &bar", [t(yamlLineStart, ""), t(yamlScalar, "foo"),
+                            t(yamlColon, nil), t(yamlAnchor, "bar"),
+                            t(yamlStreamEnd, nil)])
+    
+    test "Alias":
+        ensure("foo: *bar", [t(yamlLineStart, ""), t(yamlScalar, "foo"),
+                             t(yamlColon, nil), t(yamlAlias, "bar"),
+                             t(yamlStreamEnd, nil)])
