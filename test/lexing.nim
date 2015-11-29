@@ -44,6 +44,23 @@ suite "Lexing":
                 t(yamlTagURI, "tag:http://example.com/"),
                 t(yamlStreamEnd, nil)])
     
+    test "Unknown directive":
+        ensure("%FOO bar baz", [t(yamlUnknownDirective, "%FOO"),
+                                t(yamlUnknownDirectiveParam, "bar"),
+                                t(yamlUnknownDirectiveParam, "baz"),
+                                t(yamlStreamEnd, nil)])
+    
+    test "Comments after directives":
+        ensure("%YAML 1.2 # version\n# at line start\n    # indented\n%FOO",
+                [t(yamlYamlDirective, nil),
+                 t(yamlMajorVersion, "1"),
+                 t(yamlMinorVersion, "2"),
+                 t(yamlComment, " version"),
+                 t(yamlComment, " at line start"),
+                 t(yamlComment, " indented"),
+                 t(yamlUnknownDirective, "%FOO"),
+                 t(yamlStreamEnd, nil)])
+    
     test "Directives end":
         ensure("---", [t(yamlDirectivesEnd, nil),
                        t(yamlStreamEnd, nil)])
@@ -67,6 +84,12 @@ suite "Lexing":
                [t(yamlLineStart, nil),
                 t(yamlScalar, ":test ?content -with #special !chars"),
                 t(yamlStreamEnd, nil)])
+    
+    test "Plain Scalar (starting with %)":
+        ensure("---\n%test", [t(yamlDirectivesEnd, nil),
+                              t(yamlLineStart, ""),
+                              t(yamlScalar, "%test"),
+                              t(yamlStreamEnd, nil)])
     
     test "Single Quoted Scalar":
         ensure("'? test - content! '", [t(yamlLineStart, nil),

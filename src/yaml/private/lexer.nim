@@ -47,8 +47,8 @@ type
         ylMinorVersion, ylUnknownDirectiveParam, ylDirectiveComment,
         # scalar reading states
         ylPlainScalar, ylSingleQuotedScalar, ylDoublyQuotedScalar,
-        ylEscape, ylBlockScalar,
-        ylBlockScalarHeader,
+        ylEscape, ylBlockScalar, ylBlockScalarHeader,
+        ylSpaceAfterPlainScalar, ylSpaceAfterQuotedScalar,
         # indentation
         ylIndentation,
         # comments
@@ -152,12 +152,10 @@ template yieldChar(c: char) {.dirty.} =
 template handleCR() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) + my.charlen -
             my.charoffset - 1
-    continue
 
 template handleLF() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) +
             my.charlen - my.charoffset - 1
-    continue
 
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
@@ -170,6 +168,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
         escapeLength = 0
         expectedEscapeLength = 0
         
+        trailingSpace = ""
+            # used to temporarily store whitespace after a plain scalar
         lastSpecialChar: char = '\0'
             # stores chars that behave differently dependent on the following
             # char. handling will be deferred to next loop iteration.
@@ -209,6 +209,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 my.content.add(c)
             of '#':
                 state = ylDirectiveComment
+                my.content = ""
             of EndOfFile, '\r', '\x0A':
                 state = ylDirectiveLineEnd
                 continue
@@ -264,9 +265,11 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
             of '\r':
                 handleCR()
                 state = ylInitial
+                continue
             of '\x0A':
                 handleLF()
                 state = ylInitial
+                continue
             of EndOfFile:
                 yieldToken(yamlStreamEnd)
                 break
@@ -286,9 +289,10 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 yieldToken(yamlStreamEnd)
                 break
             else:
-                yieldError("Internal error! Please report this bug.")
+                yieldError("Internal error: Unexpected char at line end: " & c)
             state = ylInitialContent
             position = 0
+            continue
         of ylSingleQuotedScalar:
             if lastSpecialChar != '\0':
                 # ' is the only special char
@@ -304,7 +308,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 else:
                     yieldToken(yamlScalar)
                     lastSpecialChar = '\0'
-                    state = if flowDepth > 0: ylFlow else: ylBlock
+                    state = ylSpaceAfterQuotedScalar
                     continue
             else:
                 case c
@@ -320,7 +324,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
             case c
             of '"':
                 yieldToken(yamlScalar)
-                state = if flowDepth > 0: ylFlow else: ylBlock
+                state = ylSpaceAfterQuotedScalar
             of EndOfFile:
                 yieldError("Unterminated doubly quoted string")
                 yieldToken(yamlStreamEnd)
@@ -390,24 +394,32 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 my.content.add(toUTF8(unicodeChar))
                 state = ylDoublyQuotedScalar
         
+        of ylSpaceAfterQuotedScalar:
+            case c
+            of ' ', '\t':
+                trailingSpace.add(c)
+            of '#':
+                if trailingSpace.len > 0:
+                    yieldError("Missing space before comment start")
+                state = ylComment
+                trailingSpace = ""
+            else:
+                trailingSpace = ""
+                state = if flowDepth > 0: ylFlow else: ylBlock
+                continue
+        
         of ylPlainScalar:
-            if lastSpecialChar != '\0':
-                case c
-                of ' ', '\t', EndOfFile, '\r', '\x0A':
-                    yieldToken(yamlScalar)
-                    state = if flowDepth > 0: ylFlow else: ylBlock
-                    continue
-                else:
-                    my.content.add(lastSpecialChar)
-                    lastSpecialChar = '\0'
-            
             case c
             of EndOfFile, '\r', '\x0A':
                 yieldToken(yamlScalar)
                 state = ylLineEnd
                 continue
-            of ':', '#':
+            of ':':
                 lastSpecialChar = c
+                state = ylSpaceAfterPlainScalar
+            of ' ':
+                state = ylSpaceAfterPlainScalar
+                continue
             of ',':
                 if flowDepth > 0: lastSpecialChar = c
                 else: my.content.add(c)
@@ -417,6 +429,49 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 continue
             else:
                 my.content.add(c)
+        
+        of ylSpaceAfterPlainScalar:
+            if lastSpecialChar != '\0':
+                case c
+                of ' ', '\t', EndOfFile, '\r', '\x0A':
+                    yieldToken(yamlScalar)
+                    state = if flowDepth > 0: ylFlow else: ylBlock
+                else:
+                    my.content.add(trailingSpace)
+                    my.content.add(lastSpecialChar)
+                    lastSpecialChar = '\0'
+                    trailingSpace = ""
+                    state = ylPlainScalar
+                continue
+            
+            case c
+            of EndOfFile, '\r', '\x0A':
+                trailingSpace = ""
+                yieldToken(yamlScalar)
+                state = ylLineEnd
+                continue
+            of ' ', '\t':
+                trailingSpace.add(c)
+            of ',':
+                if flowDepth > 0:
+                    lastSpecialChar = c
+                else:
+                    my.content.add(trailingSpace)
+                    my.content.add(c)
+                    trailingSpace = ""
+                    state = ylPlainScalar
+            of ':', '#':
+                lastSpecialChar = c
+            of '[', ']', '{', '}':
+                yieldToken(yamlScalar)
+                trailingSpace = ""
+                state = if flowDepth > 0: ylFlow else: ylBlock
+                continue
+            else:
+                my.content.add(trailingSpace)
+                my.content.add(c)
+                trailingSpace = ""
+                state = ylPlainScalar
                 
         of ylFlow, ylBlock:
             if lastSpecialChar != '\0':
@@ -446,12 +501,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                     state = ylPlainScalar
                 continue
             case c
-            of EndOfFile:
-                if state == ylFlow:
-                    yieldError("Unterminated flow content")
-                state = ylLineEnd
-                continue
-            of '\r', '\x0A':
+            of '\r', '\x0A', EndOfFile:
                 state = ylLineEnd
                 continue
             of ',':
@@ -551,11 +601,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 yieldToken(yamlTagHandle)
                 my.content = suffix
                 yieldToken(yamlTagSuffix)
-                if c in ['\r', '\x0A', EndOfFile]:
-                    state = ylLineEnd
-                    continue
-                else:
-                    state = if flowDepth > 0: ylFlow else: ylBlock
+                state = if flowDepth > 0: ylFlow else: ylBlock
+                continue
             else:
                 yieldError("Invalid character in tag handle: " & c)
                 my.content = ""
@@ -567,11 +614,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 my.content.add(c)
             of ' ', '\t', EndOfFile, '\r', '\x0A':
                 yieldToken(yamlTagSuffix)
-                if c in ['\r', '\x0A', EndOfFile]:
-                    state = ylLineEnd
-                    continue
-                else:
-                    state = if flowDepth > 0: ylFlow else: ylBlock
+                state = if flowDepth > 0: ylFlow else: ylBlock
+                continue
             else:
                 yieldError("Invalid character in tag suffix: " & c)
                 state = if flowDepth > 0: ylFlow else: ylBlock
@@ -619,6 +663,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                 continue
             else:
                 state = ylUnknownDirectiveParam
+                continue
         of ylUnknownDirectiveParam:
             case c
             of '\r', '\x0A', EndOfFile, ' ', '\t':
