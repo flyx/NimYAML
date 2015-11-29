@@ -11,6 +11,11 @@ template ensure(input: string, expected: openarray[BasicLexerEvent]) =
         lex: YamlLexer
     lex.open(newStringStream(input))
     for token in lex.tokens:
+        if i >= expected.len:
+            echo "received more tokens than expected (next token = ",
+                 token.kind, ")"
+            fail()
+            break
         if token.kind != expected[i].kind:
             if token.kind == yamlError:
                 echo "got lexer error: " & lex.content
@@ -26,31 +31,34 @@ template ensure(input: string, expected: openarray[BasicLexerEvent]) =
                 fail()
                 break
         inc(i)
+    if i < expected.len:
+        echo "received less tokens than expected (first missing = ",
+             expected[i].kind, ")"
 
 proc t(kind: YamlLexerEventKind, content: string): BasicLexerEvent =
     (kind: kind, content: content)
 
 suite "Lexing":
-    test "YAML directive":
+    test "YAML Directive":
         ensure("%YAML 1.2", [t(yamlYamlDirective, nil),
                              t(yamlMajorVersion, "1"),
                              t(yamlMinorVersion, "2"),
                              t(yamlStreamEnd, nil)])
     
-    test "TAG directive":
+    test "TAG Directive":
         ensure("%TAG !t! tag:http://example.com/",
                [t(yamlTagDirective, nil),
                 t(yamlTagHandle, "!t!"),
                 t(yamlTagURI, "tag:http://example.com/"),
                 t(yamlStreamEnd, nil)])
     
-    test "Unknown directive":
+    test "Unknown Directive":
         ensure("%FOO bar baz", [t(yamlUnknownDirective, "%FOO"),
                                 t(yamlUnknownDirectiveParam, "bar"),
                                 t(yamlUnknownDirectiveParam, "baz"),
                                 t(yamlStreamEnd, nil)])
     
-    test "Comments after directives":
+    test "Comments after Directives":
         ensure("%YAML 1.2 # version\n# at line start\n    # indented\n%FOO",
                 [t(yamlYamlDirective, nil),
                  t(yamlMajorVersion, "1"),
@@ -61,18 +69,20 @@ suite "Lexing":
                  t(yamlUnknownDirective, "%FOO"),
                  t(yamlStreamEnd, nil)])
     
-    test "Directives end":
+    test "Directives End":
         ensure("---", [t(yamlDirectivesEnd, nil),
                        t(yamlStreamEnd, nil)])
     
-    test "Document end":
-        ensure("...", [t(yamlDocumentEnd, nil),
+    test "Document End":
+        ensure("...", [t(yamlLineStart, nil),
+                       t(yamlDocumentEnd, nil),
                        t(yamlStreamEnd, nil)])
     
-    test "Directive after document end":
+    test "Directive after Document End":
         ensure("content\n...\n%YAML 1.2",
-                [t(yamlLineStart, nil),
+                [t(yamlLineStart, ""),
                  t(yamlScalar, "content"),
+                 t(yamlLineStart, ""),
                  t(yamlDocumentEnd, nil),
                  t(yamlYamlDirective, nil),
                  t(yamlMajorVersion, "1"),
@@ -80,12 +90,12 @@ suite "Lexing":
                  t(yamlStreamEnd, nil)])
     
     test "Plain Scalar (alphanumeric)":
-        ensure("abA03rel4", [t(yamlLineStart, nil),
+        ensure("abA03rel4", [t(yamlLineStart, ""),
                              t(yamlScalar, "abA03rel4"),
                              t(yamlStreamEnd, nil)])
     
     test "Plain Scalar (with spaces)":
-        ensure("test content", [t(yamlLineStart, nil),
+        ensure("test content", [t(yamlLineStart, ""),
                                 t(yamlScalar, "test content"),
                                 t(yamlStreamEnd, nil)])
     
@@ -102,28 +112,64 @@ suite "Lexing":
                               t(yamlStreamEnd, nil)])
     
     test "Single Quoted Scalar":
-        ensure("'? test - content! '", [t(yamlLineStart, nil),
+        ensure("'? test - content! '", [t(yamlLineStart, ""),
                                         t(yamlScalar, "? test - content! "),
                                         t(yamlStreamEnd, nil)])
     
     test "Single Quoted Scalar (escaped single quote inside)":
-        ensure("'test '' content'", [t(yamlLineStart, nil),
+        ensure("'test '' content'", [t(yamlLineStart, ""),
                                      t(yamlScalar, "test ' content"),
                                      t(yamlStreamEnd, nil)])
     
     test "Doubly Quoted Scalar":
-        ensure("\"test content\"", [t(yamlLineStart, nil),
+        ensure("\"test content\"", [t(yamlLineStart, ""),
                                     t(yamlScalar, "test content"),
                                     t(yamlStreamEnd, nil)])
     
     test "Doubly Quoted Scalar (escaping)":
-        ensure(""""\t\\\0\""""", [t(yamlLineStart, nil),
+        ensure(""""\t\\\0\""""", [t(yamlLineStart, ""),
                                   t(yamlScalar, "\t\\\0\""),
                                   t(yamlStreamEnd, nil)])
     
     test "Doubly Quoted Scalar (unicode escaping)":
         ensure(""""\x42\u4243\U00424344"""",
-               [t(yamlLineStart, nil),
+               [t(yamlLineStart, ""),
                t(yamlScalar, "\x42" & toUTF8(cast[Rune](0x4243)) &
                 toUTF8(cast[Rune](0x424344))),
                 t(yamlStreamEnd, nil)])
+    
+    test "Block Array":
+        ensure("""
+- a
+- b""", [t(yamlLineStart, ""), t(yamlDash, nil), t(yamlScalar, "a"),
+         t(yamlLineStart, ""), t(yamlDash, nil), t(yamlScalar, "b"), 
+         t(yamlStreamEnd, nil)])
+    
+    test "Block Map with Implicit Keys":
+        ensure("""
+foo: bar
+herp: derp""", [t(yamlLineStart, ""), t(yamlScalar, "foo"), t(yamlColon, nil),
+                t(yamlScalar, "bar"), t(yamlLineStart, ""),
+                t(yamlScalar, "herp"), t(yamlColon, nil), t(yamlScalar, "derp"),
+                t(yamlStreamEnd, nil)])
+    
+    test "Block Map with Explicit Keys":
+        ensure("""
+? foo
+: bar""", [t(yamlLineStart, ""), t(yamlQuestionmark, nil), t(yamlScalar, "foo"),
+           t(yamlLineStart, ""), t(yamlColon, nil), t(yamlScalar, "bar"),
+           t(yamlStreamEnd, nil)])
+    
+    test "Indentation":
+        ensure("""
+foo:
+  bar:
+    - baz
+    - biz
+  herp: derp""",
+  [t(yamlLineStart, ""), t(yamlScalar, "foo"), t(yamlColon, nil),
+   t(yamlLineStart, "  "), t(yamlScalar, "bar"), t(yamlColon, nil),
+   t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalar, "baz"),
+   t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalar, "biz"),
+   t(yamlLineStart, "  "), t(yamlScalar, "herp"), t(yamlColon, nil),
+   t(yamlScalar, "derp"), t(yamlStreamEnd, nil)])
