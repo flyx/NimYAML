@@ -370,6 +370,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                     yieldError("Unsupported escape sequence: \\" & c)
                 if expectedEscapeLength == 0: state = ylDoublyQuotedScalar
             else:
+                let digitPosition = expectedEscapeLength - escapeLength - 1
                 case c
                 of EndOFFile:
                     yieldError("Unterminated escape sequence")
@@ -377,15 +378,16 @@ iterator tokens*(my: var YamlLexer): YamlLexerEvent =
                     continue
                 of '0' .. '9':
                     unicodeChar = unicodechar or
-                            (cast[int](c) - 0x30) shl ((4 - escapeLength) * 8)
+                            (cast[int](c) - 0x30) shl (digitPosition * 4)
                 of 'A' .. 'F':
                     unicodeChar = unicodechar or
-                            (cast[int](c) - 0x37) shl ((4 - escapeLength) * 8)
+                            (cast[int](c) - 0x37) shl (digitPosition * 4)
                 of 'a' .. 'f':
                     unicodeChar = unicodechar or
-                            (cast[int](c) - 0x57) shl ((4 - escapeLength) * 8)
+                            (cast[int](c) - 0x57) shl (digitPosition * 4)
                 else:
-                    yieldError("unsupported char in unicode escape sequence: " & c)
+                    yieldError("unsupported char in unicode escape sequence: " &
+                               c)
                     escapeLength = 0
                     state = ylDoublyQuotedScalar
                     continue

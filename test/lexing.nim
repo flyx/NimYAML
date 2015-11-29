@@ -1,5 +1,5 @@
 import "../src/yaml/private/lexer"
-import streams
+import streams, unicode
 
 import unittest
 
@@ -69,6 +69,16 @@ suite "Lexing":
         ensure("...", [t(yamlDocumentEnd, nil),
                        t(yamlStreamEnd, nil)])
     
+    test "Directive after document end":
+        ensure("content\n...\n%YAML 1.2",
+                [t(yamlLineStart, nil),
+                 t(yamlScalar, "content"),
+                 t(yamlDocumentEnd, nil),
+                 t(yamlYamlDirective, nil),
+                 t(yamlMajorVersion, "1"),
+                 t(yamlMinorVersion, "2"),
+                 t(yamlStreamEnd, nil)])
+    
     test "Plain Scalar (alphanumeric)":
         ensure("abA03rel4", [t(yamlLineStart, nil),
                              t(yamlScalar, "abA03rel4"),
@@ -100,3 +110,20 @@ suite "Lexing":
         ensure("'test '' content'", [t(yamlLineStart, nil),
                                      t(yamlScalar, "test ' content"),
                                      t(yamlStreamEnd, nil)])
+    
+    test "Doubly Quoted Scalar":
+        ensure("\"test content\"", [t(yamlLineStart, nil),
+                                    t(yamlScalar, "test content"),
+                                    t(yamlStreamEnd, nil)])
+    
+    test "Doubly Quoted Scalar (escaping)":
+        ensure(""""\t\\\0\""""", [t(yamlLineStart, nil),
+                                  t(yamlScalar, "\t\\\0\""),
+                                  t(yamlStreamEnd, nil)])
+    
+    test "Doubly Quoted Scalar (unicode escaping)":
+        ensure(""""\x42\u4243\U00424344"""",
+               [t(yamlLineStart, nil),
+               t(yamlScalar, "\x42" & toUTF8(cast[Rune](0x4243)) &
+                toUTF8(cast[Rune](0x424344))),
+                t(yamlStreamEnd, nil)])
