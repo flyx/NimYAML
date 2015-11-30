@@ -14,7 +14,7 @@ type
         yamlDirectivesEnd, yamlDocumentEnd, yamlStreamEnd,
         # tokens only in directives
         yamlTagDirective, yamlYamlDirective, yamlUnknownDirective,
-        yamlMajorVersion, yamlMinorVersion, yamlTagURI,
+        yamlVersionPart, yamlTagURI,
         yamlUnknownDirectiveParam,
         # tokens in directives and content
         yamlTagHandle, yamlComment,
@@ -39,7 +39,6 @@ type
     
     YamlLexerToken* = tuple
         kind: YamlLexerTokenKind
-        position: int  # X position relative to line start (0-based)
     
     YamlLexerState = enum
         # initial states (not started reading any token)
@@ -70,6 +69,7 @@ type
         charlen: int
         charoffset: int
         content*: string # my.content of the last returned token.
+        line*, column*: int
 
 const
     UTF8NextLine           = toUTF8(Rune(0x85))
@@ -141,28 +141,34 @@ proc open*(my: var YamlLexer, input: Stream) =
     my.indentations = newSeq[int]()
     my.detect_encoding()
     my.content = ""
+    my.line = 0
+    my.column = 0
 
 template yieldToken(mKind: YamlLexerTokenKind) {.dirty.} =
-    yield (kind: mKind, position: position)
+    yield (kind: mKind)
     my.content = ""
 
 template yieldError(message: string) {.dirty.} =
     my.content = message
-    yield (kind: yamlError, position: position)
+    yield (kind: yamlError)
     my.content = ""
 
 template handleCR() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) + my.charlen -
             my.charoffset - 1
+    my.line.inc()
+    my.column = 0
 
 template handleLF() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) +
             my.charlen - my.charoffset - 1
+    my.line.inc()
+    my.column = 0
 
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
 
-iterator tokens*(my: var YamlLexer): YamlLexerToken =
+iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
     var
         # the following three values are used for parsing escaped unicode chars
         
@@ -186,9 +192,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken =
         blockScalarIndentation = -1
             # when parsing a block scalar, this will be set to the indentation
             # of the line that starts the flow scalar.
-        position = 0
-            # X position of the current char. This is needed in later processing
-            # stages for correctly matching items in nested arrays and such.
+    
     while true:
         let c = my.buf[my.bufpos + my.charoffset]
         case state
@@ -300,7 +304,6 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken =
             else:
                 yieldError("Internal error: Unexpected char at line end: " & c)
             state = ylInitialContent
-            position = 0
             continue
         of ylSingleQuotedScalar:
             if lastSpecialChar != '\0':
@@ -699,7 +702,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken =
             of '0' .. '9':
                 my.content.add(c)
             of '.':
-                yieldToken(yamlMajorVersion)
+                yieldToken(yamlVersionPart)
                 state = ylMinorVersion
             of EndOfFile, '\r', '\x0A', ' ', '\t':
                 yieldError("Missing YAML minor version.")
@@ -713,7 +716,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken =
             of '0' .. '9':
                 my.content.add(c)
             of EndOfFile, '\r', '\x0A', ' ', '\t':
-                yieldToken(yamlMinorVersion)
+                yieldToken(yamlVersionPart)
                 state = ylDirectiveLineEnd
                 continue
             else:
@@ -815,4 +818,4 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken =
                 my.content.add(c)
         
         my.bufpos += my.charlen
-        inc(position)
+        my.column.inc

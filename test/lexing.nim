@@ -41,8 +41,8 @@ proc t(kind: YamlLexerTokenKind, content: string): BasicLexerToken =
 suite "Lexing":
     test "YAML Directive":
         ensure("%YAML 1.2", [t(yamlYamlDirective, nil),
-                             t(yamlMajorVersion, "1"),
-                             t(yamlMinorVersion, "2"),
+                             t(yamlVersionPart, "1"),
+                             t(yamlVersionPart, "2"),
                              t(yamlStreamEnd, nil)])
     
     test "TAG Directive":
@@ -61,8 +61,8 @@ suite "Lexing":
     test "Comments after Directives":
         ensure("%YAML 1.2 # version\n# at line start\n    # indented\n%FOO",
                 [t(yamlYamlDirective, nil),
-                 t(yamlMajorVersion, "1"),
-                 t(yamlMinorVersion, "2"),
+                 t(yamlVersionPart, "1"),
+                 t(yamlVersionPart, "2"),
                  t(yamlComment, " version"),
                  t(yamlComment, " at line start"),
                  t(yamlComment, " indented"),
@@ -85,8 +85,8 @@ suite "Lexing":
                  t(yamlLineStart, ""),
                  t(yamlDocumentEnd, nil),
                  t(yamlYamlDirective, nil),
-                 t(yamlMajorVersion, "1"),
-                 t(yamlMinorVersion, "2"),
+                 t(yamlVersionPart, "1"),
+                 t(yamlVersionPart, "2"),
                  t(yamlStreamEnd, nil)])
     
     test "Plain Scalar (alphanumeric)":
