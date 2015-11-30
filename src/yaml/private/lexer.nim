@@ -9,7 +9,7 @@ type
       UTF32LE,     ## UTF-32 Little Endian
       UTF32BE      ## UTF-32 Big Endian
     
-    YamlLexerEventKind* = enum
+    YamlLexerTokenKind* = enum
         # separating tokens
         yamlDirectivesEnd, yamlDocumentEnd, yamlStreamEnd,
         # tokens only in directives
@@ -37,8 +37,8 @@ type
         yamlError
         
     
-    YamlLexerEvent* = tuple
-        kind: YamlLexerEventKind
+    YamlLexerToken* = tuple
+        kind: YamlLexerTokenKind
         position: int  # X position relative to line start (0-based)
     
     YamlLexerState = enum
@@ -142,7 +142,7 @@ proc open*(my: var YamlLexer, input: Stream) =
     my.detect_encoding()
     my.content = ""
 
-template yieldToken(mKind: YamlLexerEventKind) {.dirty.} =
+template yieldToken(mKind: YamlLexerTokenKind) {.dirty.} =
     yield (kind: mKind, position: position)
     my.content = ""
 
@@ -162,7 +162,7 @@ template handleLF() {.dirty.} =
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
 
-iterator tokens*(my: var YamlLexer): YamlLexerEvent =
+iterator tokens*(my: var YamlLexer): YamlLexerToken =
     var
         # the following three values are used for parsing escaped unicode chars
         

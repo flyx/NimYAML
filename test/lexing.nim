@@ -3,9 +3,9 @@ import streams, unicode
 
 import unittest
 
-type BasicLexerEvent = tuple[kind: YamlLexerEventKind, content: string]
+type BasicLexerToken = tuple[kind: YamlLexerTokenKind, content: string]
 
-template ensure(input: string, expected: openarray[BasicLexerEvent]) =
+template ensure(input: string, expected: openarray[BasicLexerToken]) =
     var
         i = 0
         lex: YamlLexer
@@ -35,7 +35,7 @@ template ensure(input: string, expected: openarray[BasicLexerEvent]) =
         echo "received less tokens than expected (first missing = ",
              expected[i].kind, ")"
 
-proc t(kind: YamlLexerEventKind, content: string): BasicLexerEvent =
+proc t(kind: YamlLexerTokenKind, content: string): BasicLexerToken =
     (kind: kind, content: content)
 
 suite "Lexing":
