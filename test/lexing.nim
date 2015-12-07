@@ -39,26 +39,26 @@ proc t(kind: YamlLexerTokenKind, content: string): BasicLexerToken =
     (kind: kind, content: content)
 
 suite "Lexing":
-    test "YAML Directive":
+    test "Lexing: YAML Directive":
         ensure("%YAML 1.2", [t(yamlYamlDirective, nil),
                              t(yamlVersionPart, "1"),
                              t(yamlVersionPart, "2"),
                              t(yamlStreamEnd, nil)])
     
-    test "TAG Directive":
+    test "Lexing: TAG Directive":
         ensure("%TAG !t! tag:http://example.com/",
                [t(yamlTagDirective, nil),
                 t(yamlTagHandle, "!t!"),
                 t(yamlTagURI, "tag:http://example.com/"),
                 t(yamlStreamEnd, nil)])
     
-    test "Unknown Directive":
+    test "Lexing: Unknown Directive":
         ensure("%FOO bar baz", [t(yamlUnknownDirective, "%FOO"),
                                 t(yamlUnknownDirectiveParam, "bar"),
                                 t(yamlUnknownDirectiveParam, "baz"),
                                 t(yamlStreamEnd, nil)])
     
-    test "Comments after Directives":
+    test "Lexing: Comments after Directives":
         ensure("%YAML 1.2 # version\n# at line start\n    # indented\n%FOO",
                 [t(yamlYamlDirective, nil),
                  t(yamlVersionPart, "1"),
@@ -69,16 +69,16 @@ suite "Lexing":
                  t(yamlUnknownDirective, "%FOO"),
                  t(yamlStreamEnd, nil)])
     
-    test "Directives End":
+    test "Lexing: Directives End":
         ensure("---", [t(yamlDirectivesEnd, nil),
                        t(yamlStreamEnd, nil)])
     
-    test "Document End":
+    test "Lexing: Document End":
         ensure("...", [t(yamlLineStart, nil),
                        t(yamlDocumentEnd, nil),
                        t(yamlStreamEnd, nil)])
     
-    test "Directive after Document End":
+    test "Lexing: Directive after Document End":
         ensure("content\n...\n%YAML 1.2",
                 [t(yamlLineStart, ""),
                  t(yamlScalar, "content"),
@@ -89,63 +89,63 @@ suite "Lexing":
                  t(yamlVersionPart, "2"),
                  t(yamlStreamEnd, nil)])
     
-    test "Plain Scalar (alphanumeric)":
+    test "Lexing: Plain Scalar (alphanumeric)":
         ensure("abA03rel4", [t(yamlLineStart, ""),
                              t(yamlScalar, "abA03rel4"),
                              t(yamlStreamEnd, nil)])
     
-    test "Plain Scalar (with spaces)":
+    test "Lexing: Plain Scalar (with spaces)":
         ensure("test content", [t(yamlLineStart, ""),
                                 t(yamlScalar, "test content"),
                                 t(yamlStreamEnd, nil)])
     
-    test "Plain Scalar (with special chars)":
+    test "Lexing: Plain Scalar (with special chars)":
         ensure(":test ?content -with #special !chars",
                [t(yamlLineStart, nil),
                 t(yamlScalar, ":test ?content -with #special !chars"),
                 t(yamlStreamEnd, nil)])
     
-    test "Plain Scalar (starting with %)":
+    test "Lexing: Plain Scalar (starting with %)":
         ensure("---\n%test", [t(yamlDirectivesEnd, nil),
                               t(yamlLineStart, ""),
                               t(yamlScalar, "%test"),
                               t(yamlStreamEnd, nil)])
     
-    test "Single Quoted Scalar":
+    test "Lexing: Single Quoted Scalar":
         ensure("'? test - content! '", [t(yamlLineStart, ""),
                                         t(yamlScalar, "? test - content! "),
                                         t(yamlStreamEnd, nil)])
     
-    test "Single Quoted Scalar (escaped single quote inside)":
+    test "Lexing: Single Quoted Scalar (escaped single quote inside)":
         ensure("'test '' content'", [t(yamlLineStart, ""),
                                      t(yamlScalar, "test ' content"),
                                      t(yamlStreamEnd, nil)])
     
-    test "Doubly Quoted Scalar":
+    test "Lexing: Doubly Quoted Scalar":
         ensure("\"test content\"", [t(yamlLineStart, ""),
                                     t(yamlScalar, "test content"),
                                     t(yamlStreamEnd, nil)])
     
-    test "Doubly Quoted Scalar (escaping)":
+    test "Lexing: Doubly Quoted Scalar (escaping)":
         ensure(""""\t\\\0\""""", [t(yamlLineStart, ""),
                                   t(yamlScalar, "\t\\\0\""),
                                   t(yamlStreamEnd, nil)])
     
-    test "Doubly Quoted Scalar (unicode escaping)":
+    test "Lexing: Doubly Quoted Scalar (unicode escaping)":
         ensure(""""\x42\u4243\U00424344"""",
                [t(yamlLineStart, ""),
                t(yamlScalar, "\x42" & toUTF8(cast[Rune](0x4243)) &
                 toUTF8(cast[Rune](0x424344))),
                 t(yamlStreamEnd, nil)])
     
-    test "Block Array":
+    test "Lexing: Block Array":
         ensure("""
 - a
 - b""", [t(yamlLineStart, ""), t(yamlDash, nil), t(yamlScalar, "a"),
          t(yamlLineStart, ""), t(yamlDash, nil), t(yamlScalar, "b"), 
          t(yamlStreamEnd, nil)])
     
-    test "Block Map with Implicit Keys":
+    test "Lexing: Block Map with Implicit Keys":
         ensure("""
 foo: bar
 herp: derp""", [t(yamlLineStart, ""), t(yamlScalar, "foo"), t(yamlColon, nil),
@@ -153,14 +153,14 @@ herp: derp""", [t(yamlLineStart, ""), t(yamlScalar, "foo"), t(yamlColon, nil),
                 t(yamlScalar, "herp"), t(yamlColon, nil), t(yamlScalar, "derp"),
                 t(yamlStreamEnd, nil)])
     
-    test "Block Map with Explicit Keys":
+    test "Lexing: Block Map with Explicit Keys":
         ensure("""
 ? foo
 : bar""", [t(yamlLineStart, ""), t(yamlQuestionmark, nil), t(yamlScalar, "foo"),
            t(yamlLineStart, ""), t(yamlColon, nil), t(yamlScalar, "bar"),
            t(yamlStreamEnd, nil)])
     
-    test "Indentation":
+    test "Lexing: Indentation":
         ensure("""
 foo:
   bar:
@@ -174,22 +174,22 @@ foo:
            t(yamlLineStart, "  "), t(yamlScalar, "herp"), t(yamlColon, nil),
            t(yamlScalar, "derp"), t(yamlStreamEnd, nil)])
    
-    test "Anchor":
+    test "Lexing: Anchor":
        ensure("foo: &bar", [t(yamlLineStart, ""), t(yamlScalar, "foo"),
                             t(yamlColon, nil), t(yamlAnchor, "bar"),
                             t(yamlStreamEnd, nil)])
     
-    test "Alias":
+    test "Lexing: Alias":
         ensure("foo: *bar", [t(yamlLineStart, ""), t(yamlScalar, "foo"),
                              t(yamlColon, nil), t(yamlAlias, "bar"),
                              t(yamlStreamEnd, nil)])
     
-    test "Tag handle":
+    test "Lexing: Tag handle":
         ensure("!t!str tagged", [t(yamlLineStart, ""), t(yamlTagHandle, "!t!"),
                                  t(yamlTagSuffix, "str"),
                                 t(yamlScalar, "tagged"), t(yamlStreamEnd, nil)])
     
-    test "Verbatim tag handle":
+    test "Lexing: Verbatim tag handle":
          ensure("!<tag:http://example.com/str> tagged",
                  [t(yamlLineStart, ""),
                   t(yamlVerbatimTag, "tag:http://example.com/str"),
