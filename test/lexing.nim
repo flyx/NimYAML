@@ -183,3 +183,14 @@ foo:
         ensure("foo: *bar", [t(yamlLineStart, ""), t(yamlScalar, "foo"),
                              t(yamlColon, nil), t(yamlAlias, "bar"),
                              t(yamlStreamEnd, nil)])
+    
+    test "Tag handle":
+        ensure("!t!str tagged", [t(yamlLineStart, ""), t(yamlTagHandle, "!t!"),
+                                 t(yamlTagSuffix, "str"),
+                                t(yamlScalar, "tagged"), t(yamlStreamEnd, nil)])
+    
+    test "Verbatim tag handle":
+         ensure("!<tag:http://example.com/str> tagged",
+                 [t(yamlLineStart, ""),
+                  t(yamlVerbatimTag, "tag:http://example.com/str"),
+                  t(yamlScalar, "tagged"), t(yamlStreamEnd, nil)])

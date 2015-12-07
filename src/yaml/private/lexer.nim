@@ -551,8 +551,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             of '\'':
                 state = ylSingleQuotedScalar
             of '!':
-                my.content.add(c)
-                state = ylTagHandle
+                lastSpecialChar = '!'
             of '&':
                 state = ylAnchor
             of '*':
