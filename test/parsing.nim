@@ -101,3 +101,24 @@ suite "Parsing":
         ensure("- - l1_i1\n  - l1_i2\n- l2_i1", startDoc(), startSequence(),
                startSequence(), scalar("l1_i1"), scalar("l1_i2"), endSequence(),
                scalar("l2_i1"), endSequence(), endDoc())
+    test "Parsing: Flow Sequence":
+        ensure("[a, b]", startDoc(), startSequence(), scalar("a"), scalar("b"),
+               endSequence(), endDoc())
+    test "Parsing: Flow Map":
+        ensure("{a: b, c: d}", startDoc(), startMap(), scalar("a"), scalar("b"),
+               scalar("c"), scalar("d"), endMap(), endDoc())
+    test "Parsing: Flow Sequence in Flow Sequence":
+        ensure("[a, [b, c]]", startDoc(), startSequence(), scalar("a"),
+               startSequence(), scalar("b"), scalar("c"), endSequence(),
+               endSequence(), endDoc())
+    test "Parsing: Flow Sequence in Flow Map":
+        ensure("{a: [b, c]}", startDoc(), startMap(), scalar("a"),
+               startSequence(), scalar("b"), scalar("c"), endSequence(),
+               endMap(), endDoc())
+    test "Parsing: Flow Sequence in Map":
+        ensure("a: [b, c]", startDoc(), startMap(), scalar("a"),
+               startSequence(), scalar("b"), scalar("c"), endSequence(),
+               endMap(), endDoc())
+    test "Parsing: Flow Map in Sequence":
+        ensure("- {a: b}", startDoc(), startSequence(), startMap(), scalar("a"),
+               scalar("b"), endMap(), endSequence(), endDoc())

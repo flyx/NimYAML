@@ -155,6 +155,8 @@ template yieldToken(mKind: YamlLexerTokenKind) {.dirty.} =
     my.content = ""
 
 template yieldError(message: string) {.dirty.} =
+    when defined(yamlDebug):
+        echo "Lexer error: " & message
     my.content = message
     yield (kind: yamlError)
     my.content = ""
@@ -445,8 +447,11 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 state = ylSpaceAfterPlainScalar
                 continue
             of ',':
-                if flowDepth > 0: lastSpecialChar = c
-                else: my.content.add(c)
+                if flowDepth > 0:
+                    lastSpecialChar = c
+                    state = ylSpaceAfterPlainScalar
+                else:
+                    my.content.add(c)
             of '[', ']', '{', '}':
                 yieldToken(yamlScalar)
                 state = ylInitialInLine
@@ -512,6 +517,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                         yieldToken(yamlQuestionmark)
                     of '-':
                         yieldToken(yamlDash)
+                    of ',':
+                        yieldToken(yamlComma)
                     else:
                         yieldError("Unexpected special char: \"" &
                                    lastSpecialChar & "\"")
