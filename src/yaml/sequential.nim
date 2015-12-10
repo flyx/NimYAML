@@ -39,7 +39,7 @@ type
     DocumentLevel = object
         kind: LevelKind
         indicatorColumn: int
-        readKey: bool
+        readKey, implicit: bool
         anchor: string
         tag: string
 
@@ -225,6 +225,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 var level = addr(levels[levels.high])
                 if level.kind == lUnknown:
                     level.kind = lMap
+                    level.implicit = (token.kind == yamlColon)
                     level.indicatorColumn = lex.column
                     levels.add(DocumentLevel(kind: lUnknown,
                                              indicatorColumn: -1,
@@ -238,18 +239,19 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                                               scalarAnchor: level.anchor,
                                               scalarTag: level.tag,
                                               scalarContent: "")
-                        level.readKey = false
+                        level.readKey = true
                 elif level.indicatorColumn < lex.column:
                     yieldError("Invalid indentation for '?'")
                 elif level.kind == lMap and level.readKey ==
-                        (token.kind == yamlColon):
-                    level.readKey = true
+                        (token.kind == yamlQuestionmark) and not level.implicit:
+                    level.readKey = token.kind == yamlColon
                     levels.add(DocumentLevel(kind: lUnknown,
                                              indicatorColumn: -1,
                                              readKey: (token.kind == yamlQuestionmark),
                                              anchor: nil, tag: nil))
                 else:
-                    yieldError("Unexpected token: '?'")
+                    echo "implicit: ", level.implicit, ", readKey: ", level.readKey
+                    yieldError("Unexpected token: " & $token.kind)
             of yamlTagHandle:
                 var level = addr(levels[levels.high])
                 let handle = lex.content
@@ -268,15 +270,25 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 levels[levels.high].tag = lex.content
             of lexer.yamlScalar:
                 closeLevelsByIndicator()
-                let level = levels.pop()
-                if level.kind != lUnknown:
-                    yieldError("Unexpected scalar in " & $level.kind)
-                else:
+                let level = addr(levels[levels.high])
+                case level.kind
+                of lSequence:
+                    yieldError("Unexpected scalar in sequence")
+                of lUnknown:
                     cachedScalar = YamlParserEvent(kind: yamlScalar,
                             scalarAnchor: level.anchor,
                             scalarTag: level.tag,
                             scalarContent: lex.content)
                     cachedScalarIndentation = lex.column
+                    discard levels.pop()
+                of lMap:
+                    if level.implicit:
+                        yield YamlParserEvent(kind: yamlScalar,
+                                scalarAnchor: level.anchor,
+                                scalarTag: level.tag,
+                                scalarContent: lex.content)
+                    else:
+                        yieldError("Unexpected implicit key in map")
                 state = ylBlockAfterScalar
             of yamlStreamEnd:
                 closeAllLevels()
@@ -300,17 +312,26 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 var level: ptr DocumentLevel = nil
                 if levels.len > 0:
                     level = addr(levels[levels.high])
-                if level == nil or level.kind != lUnknown:
+                if level == nil or level.kind == lSequence:
                     levels.add(DocumentLevel(kind: lUnknown))
                     level = addr(levels[levels.high])
-                level.kind = lMap
-                level.indicatorColumn = cachedScalarIndentation
-                level.readKey = true
-                yield YamlParserEvent(kind: yamlStartMap)
-                yield cachedScalar
-                levels.add(DocumentLevel(kind: lUnknown,
-                                         indicatorColumn: -1))
-                cachedScalar = nil
+                case level.kind
+                of lUnknown:
+                    level.kind = lMap
+                    level.implicit = true
+                    level.indicatorColumn = cachedScalarIndentation
+                    level.readKey = true
+                    yield YamlParserEvent(kind: yamlStartMap)
+                    yield cachedScalar
+                    levels.add(DocumentLevel(kind: lUnknown,
+                                             indicatorColumn: -1))
+                    cachedScalar = nil
+                of lMap:
+                    level.readKey = true
+                    levels.add(DocumentLevel(kind: lUnknown,
+                                             indicatorColumn: -1))
+                of lSequence:
+                    discard # never happens
                 state = ylBlockAfterColon
             of yamlLineStart:
                 yield cachedScalar

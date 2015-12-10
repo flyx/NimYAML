@@ -87,8 +87,13 @@ suite "Parsing":
         ensure("- item", startDoc(), startSequence(), scalar("item"),
                endSequence(), endDoc())
     test "Parsing: Simple Map":
-        ensure("key: value", startDoc(), startMap(), scalar("key"),
-               scalar("value"), endMap(), endDoc())
+        ensure("key: value\nkey2: value2", startDoc(), startMap(),
+               scalar("key"), scalar("value"), scalar("key2"), scalar("value2"),
+               endMap(), endDoc())
+    test "Parsing: Explicit Map":
+        ensure("? key\n: value\n? key2\n: value2", startDoc(), startMap(),
+               scalar("key"), scalar("value"), scalar("key2"), scalar("value2"),
+               endMap(), endDoc())
     test "Parsing: Map in Sequence":
         ensure(" - key: value", startDoc(), startSequence(), startMap(),
                scalar("key"), scalar("value"), endMap(), endSequence(),
