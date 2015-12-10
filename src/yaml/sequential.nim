@@ -87,6 +87,7 @@ template closeLevelsByIndicator() {.dirty.} =
             closeLevel()
         elif level.indicatorColumn == -1:
             if levels[levels.high - 1].indicatorColumn >= lex.column:
+                echo "seq ind col: ", levels[levels.high - 1].indicatorColumn, ", lex.column: ", lex.column
                 closeLevel()
             else:
                 break
@@ -310,6 +311,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                     cachedScalar = YamlParserEvent(kind: yamlScalar,
                             scalarAnchor: nil, scalarTag: nil,
                             scalarContent: lex.content)
+                    cachedScalarIndentation = lex.column
                 state = ylBlockAfterScalar
             of yamlStreamEnd:
                 closeAllLevels()
@@ -331,7 +333,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                     levels.add(DocumentLevel(kind: lUnknown))
                     level = addr(levels[levels.high])
                 level.kind = lMap
-                level.indicatorColumn = lex.column
+                level.indicatorColumn = cachedScalarIndentation
                 level.readKey = true
                 yield YamlParserEvent(kind: yamlStartMap)
                 yield cachedScalar
@@ -340,6 +342,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 cachedScalar = nil
                 state = ylBlockAfterColon
             of yamlLineStart:
+                yield cachedScalar
                 state = ylBlockLineStart
             of yamlStreamEnd:
                 yield cachedScalar
@@ -378,5 +381,4 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                            $token.kind)
         else:
             discard
-        
         token = nextToken(lex)

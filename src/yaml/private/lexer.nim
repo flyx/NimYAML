@@ -145,6 +145,12 @@ proc open*(my: var YamlLexer, input: Stream) =
     my.column = 0
 
 template yieldToken(mKind: YamlLexerTokenKind) {.dirty.} =
+    when defined(yamlDebug):
+        if mKind == yamlScalar:
+            echo "Lexer token: yamlScalar(\"", my.content, "\")"
+        else:
+            echo "Lexer token: ", mKind
+    
     yield (kind: mKind)
     my.content = ""
 
@@ -157,13 +163,13 @@ template handleCR() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) + my.charlen -
             my.charoffset - 1
     my.line.inc()
-    my.column = 0
+    curPos = 0
 
 template handleLF() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) +
             my.charlen - my.charoffset - 1
     my.line.inc()
-    my.column = 0
+    curPos = 0
 
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
@@ -192,6 +198,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
         blockScalarIndentation = -1
             # when parsing a block scalar, this will be set to the indentation
             # of the line that starts the flow scalar.
+        curPos = 0
     
     while true:
         let c = my.buf[my.bufpos + my.charoffset]
@@ -225,10 +232,12 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
         of ylInitialContent:
             case c
             of '-':
+                my.column = 0
                 state = ylDashes
                 continue
             of '.':
                 yieldToken(yamlLineStart)
+                my.column = 0
                 state = ylDots
                 continue
             else:
@@ -253,6 +262,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content = ""
                     yieldToken(yamlLineStart)
                     my.content = tmp
+                    my.column = curPos
                     state = ylPlainScalar
                 continue
             else:
@@ -489,6 +499,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 
         of ylInitialInLine:
             if lastSpecialChar != '\0':
+                my.column = curPos - 1
                 case c
                 of ' ', '\t', '\r', '\x0A', EndOfFile:
                     case lastSpecialChar
@@ -518,6 +529,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 else:
                     my.content.add(lastSpecialChar)
                     lastSpecialChar = '\0'
+                    my.column = curPos - 1
                     state = ylPlainScalar
                 continue
             case c
@@ -529,6 +541,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     yieldToken(yamlComma)
                 else:
                     my.content = "" & c
+                    my.column = curPos
                     state = ylPlainScalar
             of '[':
                 inc(flowDepth)
@@ -547,8 +560,10 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             of '#':
                 lastSpecialChar = '#'
             of '"':
+                my.column = curPos
                 state = ylDoublyQuotedScalar
             of '\'':
+                my.column = curPos
                 state = ylSingleQuotedScalar
             of '!':
                 lastSpecialChar = '!'
@@ -563,6 +578,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     lastSpecialChar = '-'
                 else:
                     my.content = "" & c
+                    my.column = curPos
                     state = ylPlainScalar
             of '?', ':':
                 lastSpecialChar = c
@@ -576,6 +592,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 discard
             else:
                 my.content = "" & c
+                my.column = curPos
                 state = ylPlainScalar
         of ylComment, ylDirectiveComment:
             case c
@@ -817,4 +834,4 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 my.content.add(c)
         
         my.bufpos += my.charlen
-        my.column.inc
+        curPos.inc
