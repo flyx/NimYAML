@@ -3,7 +3,7 @@ import streams, unicode
 
 import unittest
 
-type BasicLexerToken = tuple[kind: YamlLexerTokenKind, content: string]
+type BasicLexerToken = tuple[kind: YamlLexerToken, content: string]
 
 template ensure(input: string, expected: openarray[BasicLexerToken]) =
     var
@@ -13,20 +13,20 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
     for token in lex.tokens:
         if i >= expected.len:
             echo "received more tokens than expected (next token = ",
-                 token.kind, ")"
+                 token, ")"
             fail()
             break
-        if token.kind != expected[i].kind:
-            if token.kind == yamlError:
+        if token != expected[i].kind:
+            if token == yamlError:
                 echo "got lexer error: " & lex.content
             else:
-                echo "wrong token kind (expected ", expected[i].kind, ", got ",
-                     token.kind, ")"
+                echo "wrong token kind (expected ", expected[i], ", got ",
+                     token, ")"
             fail()
             break
         if not isNil(expected[i].content):
             if lex.content != expected[i].content:
-                echo "wrong token content (", token.kind, ": expected \"",
+                echo "wrong token content (", token, ": expected \"",
                      expected[i].content, "\", got \"", lex.content, "\")"
                 fail()
                 break
@@ -35,7 +35,7 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
         echo "received less tokens than expected (first missing = ",
              expected[i].kind, ")"
 
-proc t(kind: YamlLexerTokenKind, content: string): BasicLexerToken =
+proc t(kind: YamlLexerToken, content: string): BasicLexerToken =
     (kind: kind, content: content)
 
 suite "Lexing":

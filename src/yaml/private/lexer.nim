@@ -9,7 +9,7 @@ type
       UTF32LE,     ## UTF-32 Little Endian
       UTF32BE      ## UTF-32 Big Endian
     
-    YamlLexerTokenKind* = enum
+    YamlLexerToken* = enum
         # separating tokens
         yamlDirectivesEnd, yamlDocumentEnd, yamlStreamEnd,
         # tokens only in directives
@@ -35,11 +35,7 @@ type
         yamlAnchor, yamlAlias,
         # error reporting
         yamlError
-        
-    
-    YamlLexerToken* = tuple
-        kind: YamlLexerTokenKind
-    
+            
     YamlLexerState = enum
         # initial states (not started reading any token)
         ylInitial, ylInitialSpaces, ylInitialUnknown, ylInitialContent,
@@ -144,21 +140,21 @@ proc open*(my: var YamlLexer, input: Stream) =
     my.line = 0
     my.column = 0
 
-template yieldToken(mKind: YamlLexerTokenKind) {.dirty.} =
+template yieldToken(kind: YamlLexerToken) {.dirty.} =
     when defined(yamlDebug):
-        if mKind == yamlScalar:
+        if kind == yamlScalar:
             echo "Lexer token: yamlScalar(\"", my.content, "\")"
         else:
-            echo "Lexer token: ", mKind
+            echo "Lexer token: ", kind
     
-    yield (kind: mKind)
+    yield kind
     my.content = ""
 
 template yieldError(message: string) {.dirty.} =
     when defined(yamlDebug):
         echo "Lexer error: " & message
     my.content = message
-    yield (kind: yamlError)
+    yield yamlError
     my.content = ""
 
 template handleCR() {.dirty.} =

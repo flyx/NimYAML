@@ -43,7 +43,8 @@ proc printDifference(expected, actual: YamlParserEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
         if actual.kind == yamlError:
-            echo "Error message: " & actual.description
+            echo "Error message: (", actual.line, ", ", actual.column, ") ",
+                 actual.description
         elif actual.kind == yamlWarning:
             echo "Warning message: " & actual.description
     else:
