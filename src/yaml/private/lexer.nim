@@ -28,7 +28,7 @@ type
         yamlLiteralScalar, yamlFoldedScalar,
         yamlBlockIndentationIndicator, yamlBlockChompingIndicator,
         # scalar content
-        yamlScalar, yamlBlockScalarLine,
+        yamlScalar, yamlScalarPart,
         # tags
         yamlVerbatimTag, yamlTagSuffix,
         # anchoring
@@ -433,7 +433,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
         of ylPlainScalar:
             case c
             of EndOfFile, '\r', '\x0A':
-                yieldToken(yamlScalar)
+                yieldToken(yamlScalarPart)
                 state = ylLineEnd
                 continue
             of ':':
@@ -459,7 +459,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             if lastSpecialChar != '\0':
                 case c
                 of ' ', '\t', EndOfFile, '\r', '\x0A':
-                    yieldToken(yamlScalar)
+                    yieldToken(yamlScalarPart)
                     state = ylInitialInLine
                 else:
                     my.content.add(trailingSpace)
@@ -472,7 +472,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             case c
             of EndOfFile, '\r', '\x0A':
                 trailingSpace = ""
-                yieldToken(yamlScalar)
+                yieldToken(yamlScalarPart)
                 state = ylLineEnd
                 continue
             of ' ', '\t':
@@ -814,7 +814,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
         of ylBlockScalar:
             case c
             of EndOfFile, '\r', '\x0A':
-                yieldToken(yamlBlockScalarLine)
+                yieldToken(yamlScalarPart)
                 state = ylLineEnd
                 continue
             else:

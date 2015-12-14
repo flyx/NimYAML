@@ -128,3 +128,8 @@ suite "Parsing":
     test "Parsing: Flow Map in Sequence":
         ensure("- {a: b}", startDoc(), startSequence(), startMap(), scalar("a"),
                scalar("b"), endMap(), endSequence(), endDoc())
+    test "Parsing: Multiline scalar (top level)":
+        ensure("a\nb  \n  c\nd", startDoc(), scalar("a b c d"), endDoc())
+    test "Parsing: Multiline scalar (in map)":
+        ensure("a: b\n c\nd:\n e\n  f", startDoc(), startMap(), scalar("a"),
+               scalar("b c"), scalar("d"), scalar("e f"), endMap(), endDoc())
