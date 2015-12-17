@@ -25,8 +25,7 @@ type
         yamlOpeningBracket, yamlClosingBrace, yamlClosingBracket, yamlPipe,
         yamlGreater,
         # block scalar header
-        yamlLiteralScalar, yamlFoldedScalar,
-        yamlBlockIndentationIndicator, yamlBlockChompingIndicator,
+        yamlBlockIndentationIndicator, yamlPlus,
         # scalar content
         yamlScalar, yamlScalarPart,
         # tags
@@ -802,9 +801,10 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             of '0' .. '9':
                 my.content = "" & c
                 yieldToken(yamlBlockIndentationIndicator)
-            of '+', '-':
-                my.content = "" & c
-                yieldToken(yamlBlockChompingIndicator)
+            of '+':
+                yieldToken(yamlPlus)
+            of '-':
+                yieldToken(yamlDash)
             of '\r', '\x0A', EndOfFile:
                 blockScalarIndentation = lastIndentationLength
                 state = ylLineEnd

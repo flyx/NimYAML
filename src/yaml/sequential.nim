@@ -29,18 +29,24 @@ type
     YamlParserState = enum
         ylInitial, ylSkipDirective, ylBlockLineStart, ylBlockAfterTag,
         ylBlockAfterAnchor, ylBlockAfterScalar, ylBlockAfterColon,
-        ylBlockMultilineScalar, ylBlockLineEnd, ylFlow, ylFlowAfterObject,
-        ylExpectingDocumentEnd
+        ylBlockMultilineScalar, ylBlockLineEnd, ylBlockScalarHeader,
+        ylBlockScalar, ylFlow, ylFlowAfterObject, ylExpectingDocumentEnd
     
     DocumentLevelMode = enum
         mBlockSequenceItem, mFlowSequenceItem, mExplicitBlockMapKey,
         mExplicitBlockMapValue, mImplicitBlockMapKey, mImplicitBlockMapValue,
-        mFlowMapKey, mFlowMapValue, mPlainScalar, mScalar, mUnknown
+        mFlowMapKey, mFlowMapValue, mScalar, mUnknown
     
     DocumentLevel = object
         mode: DocumentLevelMode
         indicatorColumn: int
         indentationColumn: int
+    
+    LineStrippingMode = enum
+        lsStrip, lsClip, lsKeep
+    
+    BlockScalarStyle = enum
+        bsLiteral, bsFolded
 
 proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool =
     if left.kind != right.kind:
@@ -156,6 +162,12 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
         level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                               indentationColumn: -1)
         
+        # block scalar state
+        lineStrip: LineStrippingMode
+        blockScalar: BlockScalarStyle
+        blockScalarIndentation: int
+        blockScalarTrailing: string = nil
+        
         # cached values
         tag: string = nil
         anchor: string = nil
@@ -239,6 +251,13 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
             of yamlColon:
                 handleBlockIndicator(mExplicitBlockMapKey,
                                      mExplicitBlockMapValue, yamlError)
+            of yamlPipe, yamlGreater:
+                blockScalar = if token == yamlPipe: bsLiteral else: bsFolded
+                blockScalarIndentation = -1
+                lineStrip = lsClip
+                state = ylBlockScalarHeader
+                scalarCache = ""
+                level.mode = mScalar
             of yamlTagHandle:
                 let handle = lex.content
                 if tagShorthands.hasKey(handle):
@@ -431,6 +450,13 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
             of yamlOpeningBracket, yamlOpeningBrace:
                 state = ylFlow
                 continue
+            of yamlPipe, yamlGreater:
+                blockScalar = if token == yamlPipe: bsLiteral else: bsFolded
+                blockScalarIndentation = -1
+                lineStrip = lsClip
+                state = ylBlockScalarHeader
+                scalarCache = ""
+                level.mode = mScalar
             else:
                 yieldError("Unexpected token (expected scalar or line end): " &
                            $token)
@@ -445,6 +471,84 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 break
             else:
                 yieldError("Unexpected token (expected line end):" & $token)
+        of ylBlockScalarHeader:
+            case token
+            of yamlPlus:
+                if lineStrip != lsClip:
+                    yieldError("Multiple chomping indicators!")
+                else:
+                    lineStrip = lsKeep
+            of yamlDash:
+                if lineStrip != lsClip:
+                    yieldError("Multiple chomping indicators!")
+                else:
+                    lineStrip = lsStrip
+            of yamlBlockIndentationIndicator:
+                if blockScalarIndentation != -1:
+                    yieldError("Multiple indentation indicators!")
+                else:
+                    blockScalarIndentation = parseInt(lex.content)
+            of yamlLineStart:
+                blockScalarTrailing = ""
+                state = ylBlockScalar
+            else:
+                yieldError("Unexpected token: " & $token)
+        of ylBlockScalar:
+            case token
+            of yamlLineStart:
+                if level.indentationColumn == -1:
+                    discard
+                else:
+                    case blockScalar
+                    of bsLiteral:
+                        blockScalarTrailing &= "\x0A"
+                    of bsFolded:
+                        case blockScalarTrailing.len
+                        of 0:
+                            blockScalarTrailing = " "
+                        of 1:
+                            blockScalarTrailing = "\x0A"
+                        else:
+                            discard
+                    
+                    if lex.content.len > level.indentationColumn:
+                        if blockScalar == bsFolded:
+                            if blockScalarTrailing == " ":
+                                blockScalarTrailing = "\x0A"
+                        scalarCache &= blockScalarTrailing &
+                                lex.content[level.indentationColumn..^1]
+                        blockScalarTrailing = ""
+                            
+            of yamlScalarPart:
+                if ancestry.high > 0:
+                    if ancestry[ancestry.high].indicatorColumn >= lex.column or
+                       ancestry[ancestry.high].indicatorColumn == -1 and
+                       ancestry[ancestry.high].indentationColumn >= lex.column:
+                            # todo: trailing chomping?
+                            closeLevel(level)
+                            state = ylBlockLineStart
+                            continue
+                if level.indentationColumn == -1:
+                    level.indentationColumn = lex.column
+                else:
+                    scalarCache &= blockScalarTrailing
+                    blockScalarTrailing = ""
+                scalarCache &= lex.content
+            else:
+                case lineStrip
+                of lsStrip:
+                    discard
+                of lsClip:
+                    scalarCache &= "\x0A"
+                of lsKeep:
+                    scalarCache &= blockScalarTrailing
+                closeLevel(level)
+                if ancestry.len == 0:
+                    state = ylExpectingDocumentEnd
+                else:
+                    level = ancestry.pop()
+                    state = ylBlockLineStart
+                continue            
         of ylFlow:
             case token
             of yamlLineStart:

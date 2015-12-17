@@ -57,8 +57,20 @@ proc printDifference(expected, actual: YamlParserEvent) =
                 echo "[scalar] expected anchor " & expected.scalarAnchor &
                      ", got " & actual.scalarAnchor
             elif expected.scalarContent != actual.scalarContent:
-                echo "[scalar] expected content \"" & expected.scalarContent &
-                     "\", got \"" & actual.scalarContent & "\""
+                let msg = "[scalar] expected content \"" &
+                        expected.scalarContent & "\", got \"" &
+                        actual.scalarContent & "\" "
+                for i in 0..expected.scalarContent.high:
+                    if i >= actual.scalarContent.high:
+                        echo msg, "(expected more chars, first char missing: ",
+                             cast[int](expected.scalarContent[i]), ")"
+                        break
+                    elif expected.scalarContent[i] != actual.scalarContent[i]:
+                        echo msg, "(first different char at pos ", i,
+                                ": expected ",
+                                cast[int](expected.scalarContent[i]), ", got ",
+                                cast[int](actual.scalarContent[i]), ")"
+                        break
             else:
                 echo "[scalar] Unknown difference"
         else:
@@ -133,3 +145,17 @@ suite "Parsing":
     test "Parsing: Multiline scalar (in map)":
         ensure("a: b\n c\nd:\n e\n  f", startDoc(), startMap(), scalar("a"),
                scalar("b c"), scalar("d"), scalar("e f"), endMap(), endDoc())
+    test "Parsing: Block scalar (literal)":
+        ensure("a: |\x0A ab\x0A \x0A cd\x0A ef\x0A \x0A", startDoc(),
+               startMap(), scalar("a"), scalar("ab\x0A\x0Acd\x0Aef\x0A"),
+               endMap(), endDoc())
+    test "Parsing: Block scalar (folded)":
+        ensure("a: >\x0A ab\x0A cd\x0A \x0Aef\x0A\x0A\x0Agh\x0A", startDoc(),
+               startMap(), scalar("a"), scalar("ab cd\x0Aef\x0Agh\x0A"),
+               endMap(), endDoc())
+    test "Parsing: Block scalar (keep)":
+        ensure("a: |+\x0A ab\x0A \x0A  \x0A", startDoc(), startMap(),
+               scalar("a"), scalar("ab\x0A\x0A \x0A"), endMap(), endDoc())
+    test "Parsing: Block scalar (strip)":
+        ensure("a: |-\x0A ab\x0A \x0A \x0A", startDoc(), startMap(),
+               scalar("a"), scalar("ab"), endMap(), endDoc())
