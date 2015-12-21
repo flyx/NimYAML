@@ -28,9 +28,10 @@ type
     
     YamlParserState = enum
         ylInitial, ylSkipDirective, ylBlockLineStart, ylBlockAfterTag,
-        ylBlockAfterAnchor, ylBlockAfterScalar, ylBlockAfterColon,
-        ylBlockMultilineScalar, ylBlockLineEnd, ylBlockScalarHeader,
-        ylBlockScalar, ylFlow, ylFlowAfterObject, ylExpectingDocumentEnd
+        ylBlockAfterAnchor, ylBlockAfterAnchorAndTag, ylBlockAfterScalar,
+        ylBlockAfterColon, ylBlockMultilineScalar, ylBlockLineEnd,
+        ylBlockScalarHeader, ylBlockScalar, ylFlow, ylFlowAfterObject,
+        ylExpectingDocumentEnd
     
     DocumentLevelMode = enum
         mBlockSequenceItem, mFlowSequenceItem, mExplicitBlockMapKey,
@@ -47,6 +48,50 @@ type
     
     BlockScalarStyle = enum
         bsLiteral, bsFolded
+    
+    TagId = distinct int
+    
+    YamlSequentialParser* = object
+        tags: OrderedTable[string, TagId]
+
+const
+    tagNonSpecificEmark*: TagId = 0.TagId # "!" non-specific tag
+    tagNonSpecificQmark*: TagId = 1.TagId # "?" non-specific tag
+
+# interface
+
+proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool
+
+proc `==`*(left, right: TagId): bool {.borrow.}
+
+proc initParser*(): YamlSequentialParser
+
+# iterators cannot be pre-declared.
+#
+# iterator events*(parser: YamlSequentialParser,
+#                  input: Stream): YamlParserEvent
+
+proc uri*(parser: YamlSequentialParser, id: TagId): string
+
+proc registerUri*(parser: var YamlSequentialParser, uri: string): TagId 
+
+# implementation
+
+proc initParser*(): YamlSequentialParser =
+    result.tags = initOrderedTable[string, TagId]()
+    result.tags["!"] = tagNonSpecificEmark
+    result.tags["?"] = tagNonSpecificQmark
+
+proc uri*(parser: YamlSequentialParser, id: TagId): string =
+    for pair in parser.tags.pairs:
+        if pair[1] == id:
+            return pair[0]
+    return nil
+
+proc registerUri*(parser: var YamlSequentialParser, uri: string): TagId =
+    result = cast[TagId](parser.tags.len)
+    if parser.tags.hasKeyOrPut(uri, result):
+        result = parser.tags[uri]
 
 proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool =
     if left.kind != right.kind:
@@ -76,15 +121,17 @@ template yieldError(d: string) {.dirty.} =
                           line: lex.line, column: lex.column)
     break parserLoop
 
-template yieldScalar(content: string = "") {.dirty.} =
+template yieldScalar(content: string = "", quoted: bool = false) {.dirty.} =
+    let retTag = if isNil(tag): if quoted: "!" else: "?" else: tag
     yield YamlParserEvent(kind: yamlScalar,
-            scalarAnchor: anchor, scalarTag: tag,
+            scalarAnchor: anchor, scalarTag: retTag,
             scalarContent: content)
     anchor = nil
     tag = nil
 
 template yieldStart(k: YamlParserEventKind) {.dirty.} =
-    yield YamlParserEvent(kind: k, objAnchor: anchor, objTag: tag)
+    let retTag = if isNil(tag): "?" else: tag
+    yield YamlParserEvent(kind: k, objAnchor: anchor, objTag: retTag)
     anchor = nil
     tag = nil
 
@@ -98,8 +145,11 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     of mBlockSequenceItem, mFlowSequenceItem:
         yield YamlParserEvent(kind: yamlEndSequence)
     of mScalar:
+        let retTag = if isNil(tag): if scalarCacheIsQuoted: "!" else: "?" else:
+            tag
+        
         yield YamlParserEvent(kind: yamlScalar, scalarAnchor: anchor,
-                              scalarTag: tag, scalarContent: scalarCache)
+                              scalarTag: retTag, scalarContent: scalarCache)
         anchor = nil
         tag = nil
     else:
@@ -142,12 +192,33 @@ template handleBlockIndicator(expected, next: DocumentLevelMode,
     else:
         level.mode = next
         level.indicatorColumn = lex.column
-        yield YamlParserEvent(kind: entering)
+        yieldStart(entering)
         ancestry.add(level)
         level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                               indentationColumn: -1)
 
-iterator events*(input: Stream): YamlParserEvent {.closure.} =
+template startPlainScalar() {.dirty.} =
+    level.mode = mScalar
+    scalarCache = lex.content
+    state = ylBlockAfterScalar
+
+template handleTagHandle() {.dirty.} =
+    let handle = lex.content
+    if tagShorthands.hasKey(handle):
+        token = nextToken(lex)
+        if finished(nextToken):
+            yieldError("Missing tag suffix")
+            continue
+        if token != yamlTagSuffix:
+            yieldError("Missing tag suffix")
+            continue
+        tag = tagShorthands[handle] & lex.content
+        level.indentationColumn = lex.column
+    else:
+        yieldError("Unknown tag shorthand: " & handle)
+
+iterator events*(parser: YamlSequentialParser,
+                 input: Stream): YamlParserEvent {.closure.} =
     var
         # parsing state
         lex: YamlLexer
@@ -173,6 +244,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
         anchor: string = nil
         scalarCache: string = nil
         scalarIndentation: int
+        scalarCacheIsQuoted: bool = false
         
     lex.open(input)
     
@@ -259,37 +331,30 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 scalarCache = ""
                 level.mode = mScalar
             of yamlTagHandle:
-                let handle = lex.content
-                if tagShorthands.hasKey(handle):
-                    token = nextToken(lex)
-                    if finished(nextToken):
-                        yieldError("Missing tag suffix")
-                        continue
-                    if token != yamlTagSuffix:
-                        yieldError("Missing tag suffix")
-                        continue
-                    tag = tagShorthands[handle] & lex.content
-                    state = ylBlockAfterTag
-                else:
-                    yieldError("Unknown tag shorthand: " & handle)
+                handleTagHandle()
+                state = ylBlockAfterTag
             of yamlVerbatimTag:
                 tag = lex.content
+                state = ylBlockAfterTag
+                level.indentationColumn = lex.column
             of yamlAnchor:
                 anchor = lex.content
+                level.indentationColumn = lex.column
                 state = ylBlockAfterAnchor
             of yamlScalarPart:
                 leaveMoreIndentedLevels()
                 case level.mode
                 of mUnknown:
-                    level.mode = mScalar
-                    scalarCache = lex.content
-                    scalarIndentation = lex.column
+                    startPlainScalar()
+                    level.indentationColumn = lex.column
                 of mImplicitBlockMapKey:
                     scalarCache = lex.content
+                    scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
                 of mImplicitBlockMapValue:
                     ancestry.add(level)
                     scalarCache = lex.content
+                    scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
                     level = DocumentLevel(mode: mScalar, indicatorColumn: -1,
                             indentationColumn:
@@ -302,6 +367,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 case level.mode
                 of mUnknown, mImplicitBlockMapKey:
                     scalarCache = lex.content
+                    scalarCacheIsQuoted = true
                     scalarIndentation = lex.column
                     state = ylBlockAfterScalar
                 else:
@@ -356,25 +422,21 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 assert level.mode in [mUnknown, mImplicitBlockMapKey, mScalar]
                 if level.mode in [mUnknown, mScalar]:
                     level.indentationColumn = scalarIndentation
-                    yieldStart(yamlStartMap)
+                    # tags and anchors are for key scalar, not for map.
+                    yield YamlParserEvent(kind: yamlStartMap,
+                                          objAnchor: nil, objTag: "?")
                 level.mode = mImplicitBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-                yield YamlParserEvent(kind: yamlScalar,
-                            scalarAnchor: anchor,
-                            scalarTag: tag,
-                            scalarContent: scalarCache)
+                yieldScalar(scalarCache, scalarCacheIsQuoted)
                 scalarCache = nil
                 state = ylBlockAfterColon
             of yamlLineStart:
                 if level.mode == mImplicitBlockMapKey:
                     yieldError("Missing colon after implicit map key")
                 if level.mode != mScalar:
-                    yield YamlParserEvent(kind: yamlScalar,
-                                scalarAnchor: anchor,
-                                scalarTag: tag,
-                                scalarContent: scalarCache)
+                    yieldScalar(scalarCache, scalarCacheIsQuoted)
                     scalarCache = nil
                     if ancestry.len > 0:
                         level = ancestry.pop()
@@ -383,10 +445,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
                 else:
                     state = ylBlockMultilineScalar
             of yamlStreamEnd:
-                yield YamlParserEvent(kind: yamlScalar,
-                            scalarAnchor: anchor,
-                            scalarTag: tag,
-                            scalarContent: scalarCache)
+                yieldScalar(scalarCache, scalarCacheIsQuoted)
                 scalarCache = nil
                 if ancestry.len > 0:
                     level = ancestry.pop()
@@ -399,10 +458,12 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
             case token
             of yamlAnchor:
                 anchor = lex.content
-                state = ylBlockAfterAnchor
+                state = ylBlockAfterAnchorAndTag
             of lexer.yamlScalar:
                 state = ylBlockLineStart
                 continue
+            of yamlScalarPart:
+                startPlainScalar()
             of yamlLineStart:
                 state = ylBlockLineStart
             of yamlOpeningBracket, yamlOpeningBrace:
@@ -413,11 +474,33 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
         of ylBlockAfterAnchor:
             case token
             of lexer.yamlScalar:
-                anchor = lex.content
                 state = ylBlockLineStart
                 continue
+            of lexer.yamlScalarPart:
+                startPlainScalar()
             of yamlLineStart:
+                discard
+            of yamlOpeningBracket, yamlOpeningBrace:
+                state = ylFlow
+                continue
+            of yamlTagHandle:
+                handleTagHandle()
+                state = ylBlockAfterTag
+            of yamlVerbatimTag:
+                tag = lex.content
+                state = ylBlockAfterTag
+                level.indentationColumn = lex.column
+            else:
+                yieldError("Unexpected token: " & $token)
+        of ylBlockAfterAnchorAndTag:
+            case token
+            of lexer.yamlScalar:
                 state = ylBlockLineStart
+                continue
+            of yamlScalarPart:
+                startPlainScalar()
+            of yamlLineStart:
+                discard
             of yamlOpeningBracket, yamlOpeningBrace:
                 state = ylFlow
                 continue
@@ -426,21 +509,13 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
         of ylBlockAfterColon:
             case token
             of lexer.yamlScalar:
-                yieldScalar(lex.content)
+                yieldScalar(lex.content, true)
                 level = ancestry.pop()
                 assert level.mode == mImplicitBlockMapValue
                 level.mode = mImplicitBlockMapKey
                 state = ylBlockLineEnd
             of yamlScalarPart:
-                level.mode = mScalar
-                scalarCache = lex.content
-                if ancestry[ancestry.high].indicatorColumn != -1:
-                    level.indentationColumn =
-                            ancestry[ancestry.high].indicatorColumn + 1
-                else:
-                    level.indentationColumn =
-                            ancestry[ancestry.high].indentationColumn + 1
-                state = ylBlockLineEnd
+                startPlainScalar()
             of yamlLineStart:
                 state = ylBlockLineStart
             of yamlStreamEnd:
@@ -554,7 +629,7 @@ iterator events*(input: Stream): YamlParserEvent {.closure.} =
             of yamlLineStart:
                 discard
             of lexer.yamlScalar, yamlScalarPart:
-                yieldScalar(lex.content)
+                yieldScalar(lex.content, token == lexer.yamlScalar)
                 level = ancestry.pop()
                 state = ylFlowAfterObject
             of yamlColon:

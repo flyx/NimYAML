@@ -448,7 +448,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 else:
                     my.content.add(c)
             of '[', ']', '{', '}':
-                yieldToken(yamlScalar)
+                yieldToken(yamlScalarPart)
                 state = ylInitialInLine
                 continue
             else:
