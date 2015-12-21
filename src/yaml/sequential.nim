@@ -8,14 +8,16 @@ type
         yamlStartSequence, yamlEndSequence, yamlScalar, yamlAlias,
         yamlError, yamlWarning
     
+    TagId* = distinct int
+    
     YamlParserEvent* = ref object
         case kind*: YamlParserEventKind
         of yamlStartMap, yamlStartSequence:
             objAnchor* : string # may be nil, may not be empty
-            objTag*    : string # may not be nil or empty, is a complete URI.
+            objTag*    : TagId
         of yamlScalar:
             scalarAnchor* : string # may be nil
-            scalarTag*    : string # may not be nil, is a complete URI.
+            scalarTag*    : TagId
             scalarContent*: string # may not be nil (but empty)
         of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
             discard
@@ -49,8 +51,6 @@ type
     BlockScalarStyle = enum
         bsLiteral, bsFolded
     
-    TagId = distinct int
-    
     YamlSequentialParser* = object
         tags: OrderedTable[string, TagId]
 
@@ -63,6 +63,7 @@ const
 proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool
 
 proc `==`*(left, right: TagId): bool {.borrow.}
+proc `$`*(id: TagId): string {.borrow.}
 
 proc initParser*(): YamlSequentialParser
 
@@ -122,7 +123,16 @@ template yieldError(d: string) {.dirty.} =
     break parserLoop
 
 template yieldScalar(content: string = "", quoted: bool = false) {.dirty.} =
-    let retTag = if isNil(tag): if quoted: "!" else: "?" else: tag
+    var retTag: TagId
+    if isNil(tag):
+        retTag = if quoted: tagNonSpecificEmark else: tagNonSpecificQmark
+    else:
+        try:
+            retTag = parser.tags[tag]
+        except KeyError:
+            retTag = cast[TagId](parser.tags.len)
+            parser.tags[tag] = retTag
+            
     yield YamlParserEvent(kind: yamlScalar,
             scalarAnchor: anchor, scalarTag: retTag,
             scalarContent: content)
@@ -130,7 +140,16 @@ template yieldScalar(content: string = "", quoted: bool = false) {.dirty.} =
     tag = nil
 
 template yieldStart(k: YamlParserEventKind) {.dirty.} =
-    let retTag = if isNil(tag): "?" else: tag
+    var retTag: TagId
+    if isNil(tag):
+        retTag = tagNonSpecificQmark
+    else:
+        try:
+            retTag = parser.tags[tag]
+        except KeyError:
+            retTag = cast[TagId](parser.tags.len)
+            parser.tags[tag] = retTag
+            
     yield YamlParserEvent(kind: k, objAnchor: anchor, objTag: retTag)
     anchor = nil
     tag = nil
@@ -145,8 +164,15 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     of mBlockSequenceItem, mFlowSequenceItem:
         yield YamlParserEvent(kind: yamlEndSequence)
     of mScalar:
-        let retTag = if isNil(tag): if scalarCacheIsQuoted: "!" else: "?" else:
-            tag
+        var retTag: TagId
+        if isNil(tag):
+            retTag = tagNonSpecificQmark
+        else:
+            try:
+                retTag = parser.tags[tag]
+            except KeyError:
+                retTag = cast[TagId](parser.tags.len)
+                parser.tags[tag] = retTag
         
         yield YamlParserEvent(kind: yamlScalar, scalarAnchor: anchor,
                               scalarTag: retTag, scalarContent: scalarCache)
@@ -217,7 +243,7 @@ template handleTagHandle() {.dirty.} =
     else:
         yieldError("Unknown tag shorthand: " & handle)
 
-iterator events*(parser: YamlSequentialParser,
+iterator events*(parser: var YamlSequentialParser,
                  input: Stream): YamlParserEvent {.closure.} =
     var
         # parsing state
@@ -424,7 +450,8 @@ iterator events*(parser: YamlSequentialParser,
                     level.indentationColumn = scalarIndentation
                     # tags and anchors are for key scalar, not for map.
                     yield YamlParserEvent(kind: yamlStartMap,
-                                          objAnchor: nil, objTag: "?")
+                                          objAnchor: nil,
+                                          objTag: tagNonSpecificQmark)
                 level.mode = mImplicitBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,

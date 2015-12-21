@@ -11,7 +11,7 @@ proc endDoc(): YamlParserEvent =
     new(result)
     result.kind = yamlEndDocument
 
-proc scalar(content: string, tag: string = "?",
+proc scalar(content: string, tag: TagId = tagNonSpecificQmark,
             anchor: string = nil): YamlParserEvent =
     new(result) 
     result.kind = yamlScalar
@@ -19,7 +19,8 @@ proc scalar(content: string, tag: string = "?",
     result.scalarTag = tag
     result.scalarContent = content
 
-proc startSequence(anchor: string = nil, tag: string = "?"): YamlParserEvent =
+proc startSequence(anchor: string = nil, tag: TagId = tagNonSpecificQmark):
+        YamlParserEvent =
     new(result)
     result.kind = yamlStartSequence
     result.objAnchor = anchor
@@ -29,7 +30,8 @@ proc endSequence(): YamlParserEvent =
     new(result)
     result.kind = yamlEndSequence
 
-proc startMap(anchor: string = nil, tag: string = "?"): YamlParserEvent =
+proc startMap(anchor: string = nil, tag: TagId = tagNonSpecificQmark):
+        YamlParserEvent =
     new(result)
     result.kind = yamlStartMap
     result.objAnchor = anchor
@@ -51,17 +53,8 @@ proc printDifference(expected, actual: YamlParserEvent) =
         case expected.kind
         of yamlScalar:
             if expected.scalarTag != actual.scalarTag:
-                if isNil(expected.scalarTag):
-                    echo "[\"" & actual.scalarContent &
-                         "\".tag] expected <nil>, got " & actual.scalarTag
-                elif isNil(actual.scalarTag):
-                    echo "[\"" & actual.scalarContent &
-                         "\".tag] expected " & expected.scalarTag &
-                         ", got <nil>"
-                else:
-                    echo "[\"" & actual.scalarContent &
-                         "\".tag] expected tag " & expected.scalarTag &
-                         ", got " & actual.scalarTag
+                echo "[\"", actual.scalarContent, "\".tag] expected tag ",
+                     expected.scalarTag, ", got ", actual.scalarTag
             elif expected.scalarAnchor != actual.scalarAnchor:
                 echo "[scalar] expected anchor " & expected.scalarAnchor &
                      ", got " & actual.scalarAnchor
@@ -84,13 +77,8 @@ proc printDifference(expected, actual: YamlParserEvent) =
                 echo "[scalar] Unknown difference"
         of yamlStartMap, yamlStartSequence:
             if expected.objTag != actual.objTag:
-                if isNil(expected.objTag):
-                    echo "[object.tag] expected <nil>, got " & actual.objTag
-                elif isNil(actual.objTag):
-                    echo "[object.tag] expected " & expected.objTag &
-                         ", got <nil>"
-                else:
-                    echo ""
+                echo "[object.tag] expected ", expected.objTag, ", got",
+                     actual.objTag
         else:
             echo "Unknown difference in event kind " & $expected.kind
 
@@ -178,3 +166,5 @@ suite "Parsing":
     test "Parsing: Block scalar (strip)":
         ensure("a: |-\x0A ab\x0A \x0A \x0A", startDoc(), startMap(),
                scalar("a"), scalar("ab"), endMap(), endDoc())
+    test "Parsing: non-specific tags of quoted strings":
+        ensure("\"a\"", startDoc(), scalar("a", tagNonSpecificEmark), endDoc())
