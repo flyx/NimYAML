@@ -33,6 +33,7 @@ type
         ylBlockAfterAnchor, ylBlockAfterAnchorAndTag, ylBlockAfterScalar,
         ylBlockAfterColon, ylBlockMultilineScalar, ylBlockLineEnd,
         ylBlockScalarHeader, ylBlockScalar, ylFlow, ylFlowAfterObject,
+        ylFlowAfterTag, ylFlowAfterAnchor, ylFlowAfterAnchorAndTag,
         ylExpectingDocumentEnd
     
     DocumentLevelMode = enum
@@ -154,6 +155,12 @@ template yieldStart(k: YamlParserEventKind) {.dirty.} =
     anchor = nil
     tag = nil
 
+template yieldDocumentEnd() {.dirty.} =
+    yield YamlParserEvent(kind: yamlEndDocument)
+    tagShorthands = initTable[string, string]()
+    tagShorthands["!"] = "!"
+    tagShorthands["!!"] = "tag:yaml.org,2002:"
+
 template closeLevel(lvl: DocumentLevel) {.dirty.} =
     case lvl.mode
     of mExplicitBlockMapKey, mFlowMapKey:
@@ -239,7 +246,6 @@ template handleTagHandle() {.dirty.} =
             yieldError("Missing tag suffix")
             continue
         tag = tagShorthands[handle] & lex.content
-        level.indentationColumn = lex.column
     else:
         yieldError("Unknown tag shorthand: " & handle)
 
@@ -273,6 +279,8 @@ iterator events*(parser: var YamlSequentialParser,
         scalarCacheIsQuoted: bool = false
         
     lex.open(input)
+    tagShorthands["!"] = "!"
+    tagShorthands["!!"] = "tag:yaml.org,2002:"
     
     var nextToken = tokens
     var token = nextToken(lex)
@@ -326,7 +334,7 @@ iterator events*(parser: var YamlSequentialParser,
                 state = ylBlockLineStart
             of yamlDocumentEnd, yamlStreamEnd:
                 yield YamlParserEvent(kind: yamlStartDocument)
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yieldDocumentEnd()
             else:
                 yield YamlParserEvent(kind: yamlStartDocument)
                 state = ylBlockLineStart
@@ -358,6 +366,7 @@ iterator events*(parser: var YamlSequentialParser,
                 level.mode = mScalar
             of yamlTagHandle:
                 handleTagHandle()
+                level.indentationColumn = lex.column
                 state = ylBlockAfterTag
             of yamlVerbatimTag:
                 tag = lex.content
@@ -404,7 +413,7 @@ iterator events*(parser: var YamlSequentialParser,
                 break
             of yamlDocumentEnd:
                 closeAllLevels()
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yieldDocumentEnd()
                 state = ylInitial
             of yamlOpeningBrace:
                 state = ylFlow
@@ -559,6 +568,12 @@ iterator events*(parser: var YamlSequentialParser,
                 state = ylBlockScalarHeader
                 scalarCache = ""
                 level.mode = mScalar
+            of yamlTagHandle:
+                handleTagHandle()
+                state = ylBlockAfterTag
+            of yamlAnchor:
+                anchor = lex.content
+                state = ylBlockAfterAnchor
             else:
                 yieldError("Unexpected token (expected scalar or line end): " &
                            $token)
@@ -733,8 +748,43 @@ iterator events*(parser: var YamlSequentialParser,
                             state = ylBlockLineEnd
                     else:
                         state = ylExpectingDocumentEnd
+            of yamlTagHandle:
+                handleTagHandle()
+                state = ylFlowAfterTag
+            of yamlAnchor:
+                anchor = lex.content
+                state = ylFlowAfterAnchor
             else:
                 yieldError("Unexpected token: " & $token)
+        of ylFlowAfterTag:
+            case token
+            of yamlTagHandle:
+                yieldError("Multiple tags on same node!")
+            of yamlAnchor:
+                anchor = lex.content
+                state = ylFlowAfterAnchorAndTag
+            else:
+                state = ylFlow
+                continue
+        of ylFlowAfterAnchor:
+            case token
+            of yamlAnchor:
+                yieldError("Multiple anchors on same node!")
+            of yamlTagHandle:
+                handleTagHandle()
+                state = ylFlowAfterAnchorAndTag
+            else:
+                state = ylFlow
+                continue
+        of ylFlowAfterAnchorAndTag:
+            case token
+            of yamlAnchor:
+                yieldError("Multiple anchors on same node!")
+            of yamlTagHandle:
+                yieldError("Multiple tags on same node!")
+            else:
+                state = ylFlow
+                continue
         of ylFlowAfterObject:
             case token
             of yamlLineStart:
@@ -798,10 +848,10 @@ iterator events*(parser: var YamlSequentialParser,
             of yamlComment, yamlLineStart:
                 discard
             of yamlStreamEnd, yamlDocumentEnd:
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yieldDocumentEnd()
                 state = ylInitial
             of yamlDirectivesEnd:
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yieldDocumentEnd()
                 state = ylInitial
                 continue
             else:

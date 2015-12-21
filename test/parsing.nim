@@ -19,7 +19,7 @@ proc scalar(content: string, tag: TagId = tagNonSpecificQmark,
     result.scalarTag = tag
     result.scalarContent = content
 
-proc startSequence(anchor: string = nil, tag: TagId = tagNonSpecificQmark):
+proc startSequence(tag: TagId = tagNonSpecificQmark, anchor: string = nil):
         YamlParserEvent =
     new(result)
     result.kind = yamlStartSequence
@@ -30,7 +30,7 @@ proc endSequence(): YamlParserEvent =
     new(result)
     result.kind = yamlEndSequence
 
-proc startMap(anchor: string = nil, tag: TagId = tagNonSpecificQmark):
+proc startMap(tag: TagId = tagNonSpecificQmark, anchor: string = nil):
         YamlParserEvent =
     new(result)
     result.kind = yamlStartMap
@@ -83,9 +83,7 @@ proc printDifference(expected, actual: YamlParserEvent) =
             echo "Unknown difference in event kind " & $expected.kind
 
 template ensure(input: string, expected: varargs[YamlParserEvent]) {.dirty.} =
-    var
-        i = 0
-        parser = initParser()
+    var i = 0
     
     for token in parser.events(newStringStream(input)):
         if i >= expected.len:
@@ -101,6 +99,9 @@ template ensure(input: string, expected: varargs[YamlParserEvent]) {.dirty.} =
         i.inc()
 
 suite "Parsing":
+    setup:
+        var parser = initParser()
+    
     test "Parsing: Simple Scalar":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())
     test "Parsing: Simple Sequence":
@@ -168,3 +169,42 @@ suite "Parsing":
                scalar("a"), scalar("ab"), endMap(), endDoc())
     test "Parsing: non-specific tags of quoted strings":
         ensure("\"a\"", startDoc(), scalar("a", tagNonSpecificEmark), endDoc())
+    test "Parsing: explicit non-specific tag":
+        ensure("! a", startDoc(), scalar("a", tagNonSpecificEmark), endDoc())
+    test "Parsing: secondary tag handle resolution":
+        let id = parser.registerUri("tag:yaml.org,2002:str")
+        ensure("!!str a", startDoc(), scalar("a", id), endDoc())
+    test "Parsing: resolving custom tag handles":
+        let id = parser.registerUri("tag:example.com,2015:foo")
+        ensure("%TAG !t! tag:example.com,2015:\n---\n!t!foo a", startDoc(),
+               scalar("a", id), endDoc())
+    test "Parsing: tags in sequence":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+            idInt = parser.registerUri("tag:yaml.org,2002:int")
+        ensure(" - !!str a\n - b\n - !!int c\n - d", startDoc(),
+               startSequence(), scalar("a", idStr), scalar("b"),
+               scalar("c", idInt), scalar("d"), endSequence(), endDoc())
+    test "Parsing: tags in implicit map":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+            idInt = parser.registerUri("tag:yaml.org,2002:int")
+        ensure("!!str a: b\nc: !!int d\ne: !!str f\ng: h", startDoc(), startMap(),
+               scalar("a", idStr), scalar("b"), scalar("c"), scalar("d", idInt),
+               scalar("e"), scalar("f", idStr), scalar("g"), scalar("h"),
+               endMap(), endDoc())
+    test "Parsing: tags in explicit map":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+            idInt = parser.registerUri("tag:yaml.org,2002:int")
+        ensure("? !!str a\n: !!int b\n? c\n: !!str d", startDoc(), startMap(),
+               scalar("a", idStr), scalar("b", idInt), scalar("c"),
+               scalar("d", idStr), endMap(), endDoc())
+    test "Parsing: tags for flow objects":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+            idMap = parser.registerUri("tag:yaml.org,2002:map")
+            idSeq = parser.registerUri("tag:yaml.org,2002:seq")
+        ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(idMap),
+               scalar("k"), startSequence(idSeq), scalar("a"),
+               scalar("b", idStr), endSequence(), endMap(), endDoc())

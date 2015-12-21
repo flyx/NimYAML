@@ -514,6 +514,11 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                         yieldToken(yamlDash)
                     of ',':
                         yieldToken(yamlComma)
+                    of '!':
+                        my.content = "!"
+                        yieldToken(yamlTagHandle)
+                        my.content = ""
+                        yieldToken(yamlTagSuffix)
                     else:
                         yieldError("Unexpected special char: \"" &
                                    lastSpecialChar & "\"")
