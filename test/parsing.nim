@@ -285,3 +285,16 @@ suite "Parsing":
                alias(1.AnchorId), alias(0.AnchorId), startSequence(),
                scalar("c"), alias(1.AnchorId), scalar("d"), endSequence(),
                endMap(), endDoc())
+    test "Parsing: tags on empty scalars":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+            idInt = parser.registerUri("tag:yaml.org,2002:int")
+        ensure("!!str : a\nb: !!int\n!!str : !!str", startDoc(), startMap(),
+               scalar("", idStr), scalar("a"), scalar("b"), scalar("", idInt),
+               scalar("", idStr), scalar("", idStr), endMap(), endDoc())
+    test "Parsing: anchors on empty scalars":
+        ensure("&a : a\nb: &b\n&c : &a", startDoc(), startMap(),
+               scalar("", tagQuestionMark, 0.AnchorId), scalar("a"),
+               scalar("b"), scalar("", tagQuestionMark, 1.AnchorId),
+               scalar("", tagQuestionMark, 2.AnchorId),
+               scalar("", tagQuestionMark, 0.AnchorId), endMap(), endDoc())

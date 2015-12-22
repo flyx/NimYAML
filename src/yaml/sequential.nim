@@ -207,6 +207,15 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     else:
         yieldScalar()      
 
+proc mustLeaveLevel(curCol: int, ancestry: seq[DocumentLevel]): bool =
+    if ancestry.len == 0:
+        result = false
+    else:
+        let parent = ancestry[ancestry.high]
+        result = parent.indicatorColumn >= curCol or
+                (parent.indicatorColumn == -1 and
+                 parent.indentationColumn >= curCol)
+
 template leaveMoreIndentedLevels() {.dirty.} =
     while ancestry.len > 0:
         let parent = ancestry[ancestry.high]
@@ -258,9 +267,19 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
     else:
         level.mode = next
         level.indicatorColumn = lex.column
-        yieldStart(entering)
         if emptyScalarOnOpening:
+            # do not consume anchor and tag; they are on the scalar
+            var
+                cachedAnchor = anchor
+                cachedTag    = tag
+            anchor = ""
+            tag = ""
+            yieldStart(entering)
+            anchor = cachedAnchor
+            tag = cachedTag
             yieldScalar("")
+        else:
+            yieldStart(entering)
         ancestry.add(level)
         level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                               indentationColumn: -1)
@@ -281,6 +300,8 @@ template handleTagHandle() {.dirty.} =
             yieldError("Missing tag suffix")
             continue
         tag = tagShorthands[handle] & lex.content
+        if level.indentationColumn == -1 and level.indicatorColumn == -1:
+            level.indentationColumn = lex.column
     else:
         yieldError("Unknown tag shorthand: " & handle)
 
@@ -414,6 +435,7 @@ iterator events*(parser: var YamlSequentialParser,
                 scalarCache = ""
                 level.mode = mScalar
             of yamlTagHandle:
+                leaveMoreIndentedLevels()
                 handleTagHandle()
                 level.indentationColumn = lex.column
                 state = ylBlockAfterTag
@@ -422,6 +444,7 @@ iterator events*(parser: var YamlSequentialParser,
                 state = ylBlockAfterTag
                 level.indentationColumn = lex.column
             of yamlAnchor:
+                leaveMoreIndentedLevels()
                 anchor = lex.content
                 level.indentationColumn = lex.column
                 state = ylBlockAfterAnchor
@@ -591,11 +614,15 @@ iterator events*(parser: var YamlSequentialParser,
             else:
                 yieldUnexpectedToken()
         of ylBlockAfterTag:
+            if mustLeaveLevel(lex.column, ancestry):
+                leaveMoreIndentedLevels()
+                state = ylBlockLineStart
+                continue
             case token
             of yamlAnchor:
                 anchor = lex.content
                 state = ylBlockAfterAnchorAndTag
-            of lexer.yamlScalar:
+            of lexer.yamlScalar, yamlColon, yamlStreamEnd:
                 state = ylBlockLineStart
                 continue
             of yamlScalarPart:
@@ -608,8 +635,12 @@ iterator events*(parser: var YamlSequentialParser,
             else:
                 yieldUnexpectedToken()
         of ylBlockAfterAnchor:
+            if mustLeaveLevel(lex.column, ancestry):
+                leaveMoreIndentedLevels()
+                state = ylBlockLineStart
+                continue
             case token
-            of lexer.yamlScalar:
+            of lexer.yamlScalar, yamlColon, yamlStreamEnd:
                 state = ylBlockLineStart
                 continue
             of lexer.yamlScalarPart:
@@ -629,8 +660,12 @@ iterator events*(parser: var YamlSequentialParser,
             else:
                 yieldUnexpectedToken()
         of ylBlockAfterAnchorAndTag:
+            if mustLeaveLevel(lex.column, ancestry):
+                leaveMoreIndentedLevels()
+                state = ylBlockLineStart
+                continue
             case token
-            of lexer.yamlScalar:
+            of lexer.yamlScalar, yamlColon, yamlStreamEnd:
                 state = ylBlockLineStart
                 continue
             of yamlScalarPart:
@@ -672,6 +707,7 @@ iterator events*(parser: var YamlSequentialParser,
                 handleTagHandle()
                 state = ylBlockAfterTag
             of yamlAnchor:
+                level.indentationColumn = lex.column
                 anchor = lex.content
                 state = ylBlockAfterAnchor
             of lexer.yamlAlias:
