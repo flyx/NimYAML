@@ -573,10 +573,13 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 my.column = curPos
                 state = ylSingleQuotedScalar
             of '!':
+                my.column = curPos
                 lastSpecialChar = '!'
             of '&':
+                my.column = curPos
                 state = ylAnchor
             of '*':
+                my.column = curPos
                 state = ylAlias
             of ' ':
                 discard
@@ -588,6 +591,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.column = curPos
                     state = ylPlainScalar
             of '?', ':':
+                my.column = curPos
                 lastSpecialChar = c
             of '|':
                 yieldToken(yamlPipe)
@@ -833,11 +837,28 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             else:
                 my.content.add(c)
         of ylAlias:
+            if lastSpecialChar != '\0':
+                case c
+                of EndOfFile, '\r', '\x0A', ' ', '\t', '{', '}', '[', ']':
+                    yieldToken(yamlAlias)
+                    state = ylInitialInLine
+                    continue
+                else:
+                    my.content.add(lastSpecialChar)
+                    lastSpecialChar = '\0'
             case c
             of EndOfFile, '\r', '\x0A', ' ', '\t', '{', '}', '[', ']':
                 yieldToken(yamlAlias)
                 state = ylInitialInLine
                 continue
+            of ':':
+                lastSpecialChar = ':'
+            of ',':
+                if flowDepth > 0:
+                    yieldToken(yamlAlias)
+                    state = ylInitialInLine
+                    continue
+                my.content.add(c)
             else:
                 my.content.add(c)
         

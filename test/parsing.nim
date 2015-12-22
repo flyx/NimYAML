@@ -11,15 +11,16 @@ proc endDoc(): YamlParserEvent =
     new(result)
     result.kind = yamlEndDocument
 
-proc scalar(content: string, tag: TagId = tagNonSpecificQmark,
-            anchor: string = nil): YamlParserEvent =
+proc scalar(content: string, tag: TagId = tagQuestionMark,
+            anchor: AnchorId = anchorNone): YamlParserEvent =
     new(result) 
     result.kind = yamlScalar
     result.scalarAnchor = anchor
     result.scalarTag = tag
     result.scalarContent = content
 
-proc startSequence(tag: TagId = tagNonSpecificQmark, anchor: string = nil):
+proc startSequence(tag: TagId = tagQuestionMark,
+                   anchor: AnchorId = anchorNone):
         YamlParserEvent =
     new(result)
     result.kind = yamlStartSequence
@@ -30,7 +31,7 @@ proc endSequence(): YamlParserEvent =
     new(result)
     result.kind = yamlEndSequence
 
-proc startMap(tag: TagId = tagNonSpecificQmark, anchor: string = nil):
+proc startMap(tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
         YamlParserEvent =
     new(result)
     result.kind = yamlStartMap
@@ -40,6 +41,11 @@ proc startMap(tag: TagId = tagNonSpecificQmark, anchor: string = nil):
 proc endMap(): YamlParserEvent =
     new(result)
     result.kind = yamlEndMap
+
+proc alias(target: AnchorId): YamlParserEvent =
+    new(result)
+    result.kind = yamlAlias
+    result.aliasTarget = target
 
 proc printDifference(expected, actual: YamlParserEvent) =
     if expected.kind != actual.kind:
@@ -56,8 +62,8 @@ proc printDifference(expected, actual: YamlParserEvent) =
                 echo "[\"", actual.scalarContent, "\".tag] expected tag ",
                      expected.scalarTag, ", got ", actual.scalarTag
             elif expected.scalarAnchor != actual.scalarAnchor:
-                echo "[scalar] expected anchor " & expected.scalarAnchor &
-                     ", got " & actual.scalarAnchor
+                echo "[scalar] expected anchor ", expected.scalarAnchor,
+                     ", got ", actual.scalarAnchor
             elif expected.scalarContent != actual.scalarContent:
                 let msg = "[scalar] expected content \"" &
                         expected.scalarContent & "\", got \"" &
@@ -77,8 +83,16 @@ proc printDifference(expected, actual: YamlParserEvent) =
                 echo "[scalar] Unknown difference"
         of yamlStartMap, yamlStartSequence:
             if expected.objTag != actual.objTag:
-                echo "[object.tag] expected ", expected.objTag, ", got",
+                echo "[object.tag] expected ", expected.objTag, ", got ",
                      actual.objTag
+            else:
+                echo "[object.tag] Unknown difference"
+        of yamlAlias:
+            if expected.aliasTarget != actual.aliasTarget:
+                echo "[alias] expected ", expected.aliasTarget, ", got ",
+                     actual.aliasTarget
+            else:
+                echo "[alias] Unknown difference"
         else:
             echo "Unknown difference in event kind " & $expected.kind
 
@@ -138,9 +152,10 @@ suite "Parsing":
                startSequence(), scalar("b"), scalar("c"), endSequence(),
                endSequence(), endDoc())
     test "Parsing: Flow Sequence in Flow Map":
-        ensure("{a: [b, c]}", startDoc(), startMap(), scalar("a"),
+        ensure("{a: [b, c], [d, e]: f}", startDoc(), startMap(), scalar("a"),
                startSequence(), scalar("b"), scalar("c"), endSequence(),
-               endMap(), endDoc())
+               startSequence(), scalar("d"), scalar("e"), endSequence(),
+               scalar("f"), endMap(), endDoc())
     test "Parsing: Flow Sequence in Map":
         ensure("a: [b, c]", startDoc(), startMap(), scalar("a"),
                startSequence(), scalar("b"), scalar("c"), endSequence(),
@@ -168,9 +183,9 @@ suite "Parsing":
         ensure("a: |-\x0A ab\x0A \x0A \x0A", startDoc(), startMap(),
                scalar("a"), scalar("ab"), endMap(), endDoc())
     test "Parsing: non-specific tags of quoted strings":
-        ensure("\"a\"", startDoc(), scalar("a", tagNonSpecificEmark), endDoc())
+        ensure("\"a\"", startDoc(), scalar("a", tagExclamationMark), endDoc())
     test "Parsing: explicit non-specific tag":
-        ensure("! a", startDoc(), scalar("a", tagNonSpecificEmark), endDoc())
+        ensure("! a", startDoc(), scalar("a", tagExclamationMark), endDoc())
     test "Parsing: secondary tag handle resolution":
         let id = parser.registerUri("tag:yaml.org,2002:str")
         ensure("!!str a", startDoc(), scalar("a", id), endDoc())
@@ -208,3 +223,44 @@ suite "Parsing":
         ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(idMap),
                scalar("k"), startSequence(idSeq), scalar("a"),
                scalar("b", idStr), endSequence(), endMap(), endDoc())
+    test "Parsing: Simple Anchor":
+        ensure("&a str", startDoc(), scalar("str", tagQuestionMark,
+                                            0.AnchorId), endDoc())
+    test "Parsing: Anchors in sequence":
+        ensure(" - &a a\n - b\n - &c c\n - &a d", startDoc(), startSequence(),
+               scalar("a", tagQuestionMark, 0.AnchorId), scalar("b"),
+               scalar("c", tagQuestionMark, 1.AnchorId),
+               scalar("d", tagQuestionMark, 0.AnchorId), endSequence(),
+               endDoc())
+    test "Parsing: Anchors in map":
+        ensure("&a a: b\nc: &d d", startDoc(), startMap(),
+               scalar("a", tagQuestionMark, 0.AnchorId),
+               scalar("b"), scalar("c"),
+               scalar("d", tagQuestionMark, 1.AnchorId),
+               endMap(), endDoc())
+    test "Parsing: Anchors and tags":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+            idInt = parser.registerUri("tag:yaml.org,2002:int")
+        ensure(" - &a !!str a\n - !!int b\n - &c !!int c\n - &d d", startDoc(),
+               startSequence(), scalar("a", idStr, 0.AnchorId),
+               scalar("b", idInt), scalar("c", idInt, 1.AnchorId),
+               scalar("d", tagQuestionMark, 2.AnchorId), endSequence(),
+               endDoc())
+    test "Parsing: Aliases in sequence":
+        ensure(" - &a a\n - &b b\n - *a\n - *b", startDoc(), startSequence(),
+               scalar("a", tagQuestionMark, 0.AnchorId),
+               scalar("b", tagQuestionMark, 1.AnchorId), alias(0.AnchorId),
+               alias(1.AnchorId), endSequence(), endDoc())
+    test "Parsing: Aliases in map":
+        ensure("&a a: &b b\n*a: *b", startDoc(), startMap(),
+               scalar("a", tagQuestionMark, 0.AnchorId),
+               scalar("b", tagQuestionMark, 1.AnchorId), alias(0.AnchorId),
+               alias(1.AnchorId), endMap(), endDoc())
+    test "Parsing: Aliases in flow":
+        ensure("{ &a [a, &b b]: *b, *a: [c, *b, d]}", startDoc(), startMap(),
+               startSequence(tagQuestionMark, 0.AnchorId), scalar("a"),
+               scalar("b", tagQuestionMark, 1.AnchorId), endSequence(),
+               alias(1.AnchorId), alias(0.AnchorId), startSequence(),
+               scalar("c"), alias(1.AnchorId), scalar("d"), endSequence(),
+               endMap(), endDoc())
