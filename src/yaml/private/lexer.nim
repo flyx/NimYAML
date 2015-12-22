@@ -157,7 +157,7 @@ template yieldError(message: string) {.dirty.} =
     my.content = ""
 
 template handleCR() {.dirty.} =
-    my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) + my.charlen -
+    my.bufpos = lexbase.handleCR(my, my.bufpos + my.charoffset) + my.charlen -
             my.charoffset - 1
     my.line.inc()
     curPos = 0
