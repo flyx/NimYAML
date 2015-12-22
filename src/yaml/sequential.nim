@@ -192,7 +192,8 @@ template yieldDocumentEnd() {.dirty.} =
 template closeLevel(lvl: DocumentLevel) {.dirty.} =
     case lvl.mode
     of mExplicitBlockMapKey, mFlowMapKey:
-        yieldError("Missing Map value!")
+        yieldScalar("")
+        yield YamlParserEvent(kind: yamlEndMap)
     of mImplicitBlockMapKey, mBlockMapValue, mFlowMapValue:
         yield YamlParserEvent(kind: yamlEndMap)
     of mBlockSequenceItem, mFlowSequenceItem:
@@ -225,9 +226,10 @@ template closeAllLevels() {.dirty.} =
         if ancestry.len == 0: break
         level = ancestry.pop()
 
-template handleBlockIndicator(expected: openarray[DocumentLevelMode],
+template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
                               next: DocumentLevelMode,
-                              entering: YamlParserEventKind) {.dirty.} =
+                              entering: YamlParserEventKind,
+                              emptyScalarOnOpening: bool = false) {.dirty.} =
     leaveMoreIndentedLevels()
     if level.indicatorColumn == lex.column or
           level.indicatorColumn == -1 and level.indentationColumn == lex.column:
@@ -237,7 +239,18 @@ template handleBlockIndicator(expected: openarray[DocumentLevelMode],
             level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                   indentationColumn: -1)
         else:
-            yieldError("Invalid token after " & $level.mode)
+            # `in` does not work if possible is [], so we have to check for that
+            when possible.len > 0:
+                if level.mode in possible:
+                    yieldScalar("")
+                    level.mode = next
+                    ancestry.add(level)
+                    level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
+                                          indentationColumn: -1)
+                else:
+                    yieldError("Invalid token after " & $level.mode)
+            else:
+                yieldError("Invalid token after " & $level.mode)
     elif level.mode != mUnknown:
         yieldError("Invalid indentation")
     elif entering == yamlError:
@@ -246,6 +259,8 @@ template handleBlockIndicator(expected: openarray[DocumentLevelMode],
         level.mode = next
         level.indicatorColumn = lex.column
         yieldStart(entering)
+        if emptyScalarOnOpening:
+            yieldScalar("")
         ancestry.add(level)
         level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                               indentationColumn: -1)
@@ -381,14 +396,16 @@ iterator events*(parser: var YamlSequentialParser,
             of yamlLineStart:
                 discard
             of yamlDash:
-                handleBlockIndicator([mBlockSequenceItem], mBlockSequenceItem,
-                                     yamlStartSequence)
+                handleBlockIndicator([mBlockSequenceItem], [],
+                                     mBlockSequenceItem, yamlStartSequence)
             of yamlQuestionmark:
                 handleBlockIndicator([mImplicitBlockMapKey, mBlockMapValue],
+                                     [mExplicitBlockMapKey],
                                      mExplicitBlockMapKey, yamlStartMap)
             of yamlColon:
                 handleBlockIndicator([mExplicitBlockMapKey],
-                                     mBlockMapValue, yamlError)
+                                     [mBlockMapValue, mImplicitBlockMapKey],
+                                     mBlockMapValue, yamlStartMap, true)
             of yamlPipe, yamlGreater:
                 blockScalar = if token == yamlPipe: bsLiteral else: bsFolded
                 blockScalarIndentation = -1
@@ -419,15 +436,16 @@ iterator events*(parser: var YamlSequentialParser,
                     scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
                 of mBlockMapValue:
-                    ancestry.add(level)
                     scalarCache = lex.content
                     scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
-                    level = DocumentLevel(mode: mScalar, indicatorColumn: -1,
-                            indentationColumn:
-                            ancestry[ancestry.high].indentationColumn + 1)
+                    level.mode = mImplicitBlockMapKey
+                of mExplicitBlockMapKey:
+                    yieldScalar()
+                    level.mode = mBlockMapValue
+                    continue
                 else:
-                    yieldError("Unexpected scalar")
+                    yieldError("Unexpected scalar in " & $level.mode)
                 state = ylBlockAfterScalar
             of lexer.yamlScalar:
                 leaveMoreIndentedLevels()

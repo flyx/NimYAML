@@ -68,17 +68,17 @@ proc printDifference(expected, actual: YamlParserEvent) =
                 let msg = "[scalar] expected content \"" &
                         expected.scalarContent & "\", got \"" &
                         actual.scalarContent & "\" "
-                for i in 0..expected.scalarContent.high:
-                    if i >= actual.scalarContent.high:
-                        echo msg, "(expected more chars, first char missing: ",
-                             cast[int](expected.scalarContent[i]), ")"
-                        break
-                    elif expected.scalarContent[i] != actual.scalarContent[i]:
-                        echo msg, "(first different char at pos ", i,
-                                ": expected ",
-                                cast[int](expected.scalarContent[i]), ", got ",
-                                cast[int](actual.scalarContent[i]), ")"
-                        break
+                if expected.scalarContent.len != actual.scalarContent.len:
+                    echo msg, "(length does not match)"
+                else:
+                    for i in 0..expected.scalarContent.high:
+                        if expected.scalarContent[i] != actual.scalarContent[i]:
+                            echo msg, "(first different char at pos ", i,
+                                    ": expected ",
+                                    cast[int](expected.scalarContent[i]),
+                                    ", got ",
+                                    cast[int](actual.scalarContent[i]), ")"
+                            break
             else:
                 echo "[scalar] Unknown difference"
         of yamlStartMap, yamlStartSequence:
@@ -135,6 +135,17 @@ suite "Parsing":
     test "Parsing: Mixed Map (implicit to explicit)":
         ensure("a: b\n? c\n: d", startDoc(), startMap(), scalar("a"),
                scalar("b"), scalar("c"), scalar("d"), endMap(), endDoc())
+    test "Parsing: Missing values in map":
+        ensure("? a\n? b\nc:", startDoc(), startMap(), scalar("a"), scalar(""),
+               scalar("b"), scalar(""), scalar("c"), scalar(""), endMap(),
+               endDoc())
+    test "Parsing: Missing keys in map":
+        ensure(": a\n: b", startDoc(), startMap(), scalar(""), scalar("a"),
+               scalar(""), scalar("b"), endMap(), endDoc())
+    test "Parsing: Multiline scalars in explicit map":
+        ensure("? a\n  b\n: c\n  d\n? e\n  f", startDoc(), startMap(),
+               scalar("a b"), scalar("c d"), scalar("e f"), scalar(""),
+               endMap(), endDoc())
     test "Parsing: Map in Sequence":
         ensure(" - key: value", startDoc(), startSequence(), startMap(),
                scalar("key"), scalar("value"), endMap(), endSequence(),
