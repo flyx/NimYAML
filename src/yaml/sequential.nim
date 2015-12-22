@@ -39,8 +39,8 @@ type
     
     DocumentLevelMode = enum
         mBlockSequenceItem, mFlowSequenceItem, mExplicitBlockMapKey,
-        mExplicitBlockMapValue, mImplicitBlockMapKey, mImplicitBlockMapValue,
-        mFlowMapKey, mFlowMapValue, mScalar, mUnknown
+        mImplicitBlockMapKey, mBlockMapValue, mFlowMapKey, mFlowMapValue,
+        mScalar, mUnknown
     
     DocumentLevel = object
         mode: DocumentLevelMode
@@ -193,8 +193,7 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     case lvl.mode
     of mExplicitBlockMapKey, mFlowMapKey:
         yieldError("Missing Map value!")
-    of mExplicitBlockMapValue, mImplicitBlockMapKey, mImplicitBlockMapValue,
-       mFlowMapValue:
+    of mImplicitBlockMapKey, mBlockMapValue, mFlowMapValue:
         yield YamlParserEvent(kind: yamlEndMap)
     of mBlockSequenceItem, mFlowSequenceItem:
         yield YamlParserEvent(kind: yamlEndSequence)
@@ -215,7 +214,7 @@ template leaveMoreIndentedLevels() {.dirty.} =
                   parent.indentationColumn >= lex.column):
             closeLevel(level)
             level = ancestry.pop()
-            if level.mode == mImplicitBlockMapValue:
+            if level.mode == mBlockMapValue:
                 level.mode = mImplicitBlockMapKey
         else:
             break
@@ -226,11 +225,13 @@ template closeAllLevels() {.dirty.} =
         if ancestry.len == 0: break
         level = ancestry.pop()
 
-template handleBlockIndicator(expected, next: DocumentLevelMode,
+template handleBlockIndicator(expected: openarray[DocumentLevelMode],
+                              next: DocumentLevelMode,
                               entering: YamlParserEventKind) {.dirty.} =
     leaveMoreIndentedLevels()
-    if level.indicatorColumn == lex.column:
-        if level.mode == expected:
+    if level.indicatorColumn == lex.column or
+          level.indicatorColumn == -1 and level.indentationColumn == lex.column:
+        if level.mode in expected:
             level.mode = next
             ancestry.add(level)
             level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -380,14 +381,14 @@ iterator events*(parser: var YamlSequentialParser,
             of yamlLineStart:
                 discard
             of yamlDash:
-                handleBlockIndicator(mBlockSequenceItem, mBlockSequenceItem,
+                handleBlockIndicator([mBlockSequenceItem], mBlockSequenceItem,
                                      yamlStartSequence)
             of yamlQuestionmark:
-                handleBlockIndicator(mExplicitBlockMapValue,
+                handleBlockIndicator([mImplicitBlockMapKey, mBlockMapValue],
                                      mExplicitBlockMapKey, yamlStartMap)
             of yamlColon:
-                handleBlockIndicator(mExplicitBlockMapKey,
-                                     mExplicitBlockMapValue, yamlError)
+                handleBlockIndicator([mExplicitBlockMapKey],
+                                     mBlockMapValue, yamlError)
             of yamlPipe, yamlGreater:
                 blockScalar = if token == yamlPipe: bsLiteral else: bsFolded
                 blockScalarIndentation = -1
@@ -417,7 +418,7 @@ iterator events*(parser: var YamlSequentialParser,
                     scalarCache = lex.content
                     scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
-                of mImplicitBlockMapValue:
+                of mBlockMapValue:
                     ancestry.add(level)
                     scalarCache = lex.content
                     scalarCacheIsQuoted = false
@@ -511,7 +512,7 @@ iterator events*(parser: var YamlSequentialParser,
                     yield YamlParserEvent(kind: yamlStartMap,
                                           objAnchor: anchorNone,
                                           objTag: tagQuestionMark)
-                level.mode = mImplicitBlockMapValue
+                level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
@@ -548,7 +549,7 @@ iterator events*(parser: var YamlSequentialParser,
                     yield YamlParserEvent(kind: yamlStartMap,
                                           objAnchor: anchorNone,
                                           objTag: tagQuestionMark)
-                level.mode = mImplicitBlockMapValue
+                level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
@@ -628,7 +629,7 @@ iterator events*(parser: var YamlSequentialParser,
             of lexer.yamlScalar:
                 yieldScalar(lex.content, true)
                 level = ancestry.pop()
-                assert level.mode == mImplicitBlockMapValue
+                assert level.mode == mBlockMapValue
                 level.mode = mImplicitBlockMapKey
                 state = ylBlockLineEnd
             of yamlScalarPart:

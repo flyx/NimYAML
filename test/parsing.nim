@@ -129,6 +129,12 @@ suite "Parsing":
         ensure("? key\n: value\n? key2\n: value2", startDoc(), startMap(),
                scalar("key"), scalar("value"), scalar("key2"), scalar("value2"),
                endMap(), endDoc())
+    test "Parsing: Mixed Map (explicit to implicit)":
+        ensure("? a\n: b\nc: d", startDoc(), startMap(), scalar("a"),
+               scalar("b"), scalar("c"), scalar("d"), endMap(), endDoc())
+    test "Parsing: Mixed Map (implicit to explicit)":
+        ensure("a: b\n? c\n: d", startDoc(), startMap(), scalar("a"),
+               scalar("b"), scalar("c"), scalar("d"), endMap(), endDoc())
     test "Parsing: Map in Sequence":
         ensure(" - key: value", startDoc(), startSequence(), startMap(),
                scalar("key"), scalar("value"), endMap(), endSequence(),
