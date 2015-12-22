@@ -35,7 +35,7 @@ type
         ylBlockAfterAlias, ylBlockAfterColon, ylBlockMultilineScalar,
         ylBlockLineEnd, ylBlockScalarHeader, ylBlockScalar, ylFlow,
         ylFlowAfterObject, ylFlowAfterTag, ylFlowAfterAnchor,
-        ylFlowAfterAnchorAndTag, ylExpectingDocumentEnd
+        ylFlowAfterAnchorAndTag, ylExpectingDocumentEnd, ylAfterDirectivesEnd
     
     DocumentLevelMode = enum
         mBlockSequenceItem, mFlowSequenceItem, mExplicitBlockMapKey,
@@ -351,7 +351,7 @@ iterator events*(parser: var YamlSequentialParser,
                 yield YamlParserEvent(kind: yamlStartDocument)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-                state = ylBlockLineStart
+                state = ylAfterDirectivesEnd
             of yamlDocumentEnd, yamlStreamEnd:
                 yield YamlParserEvent(kind: yamlStartDocument)
                 yieldDocumentEnd()
@@ -364,6 +364,17 @@ iterator events*(parser: var YamlSequentialParser,
                             yamlTagURI, yamlVersionPart, yamlComment]:
                 state = ylInitial
                 continue
+        of ylAfterDirectivesEnd:
+            case token
+            of yamlTagHandle:
+                handleTagHandle()
+                state = ylBlockLineEnd
+            of yamlComment:
+                state = ylBlockLineEnd
+            of yamlLineStart:
+                state = ylBlockLineStart
+            else:
+                yieldUnexpectedToken()
         of ylBlockLineStart:
             case token
             of yamlLineStart:
@@ -478,11 +489,11 @@ iterator events*(parser: var YamlSequentialParser,
             of yamlDocumentEnd, yamlStreamEnd:
                 closeAllLevels()
                 scalarCache = nil
-                state = ylExpectingDocumentEnd
+                state = ylInitial
                 continue
             of yamlDirectivesEnd:
                 closeAllLevels()
-                state = ylInitial
+                state = ylAfterDirectivesEnd
                 continue
             of lexer.yamlAlias:
                 leaveMoreIndentedLevels()
@@ -937,7 +948,7 @@ iterator events*(parser: var YamlSequentialParser,
                 state = ylInitial
             of yamlDirectivesEnd:
                 yieldDocumentEnd()
-                state = ylInitial
+                state = ylAfterDirectivesEnd
                 continue
             else:
                 yieldUnexpectedToken("document end")

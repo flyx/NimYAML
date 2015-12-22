@@ -223,6 +223,10 @@ suite "Parsing":
         ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(idMap),
                scalar("k"), startSequence(idSeq), scalar("a"),
                scalar("b", idStr), endSequence(), endMap(), endDoc())
+    test "Parsing: Tag after directives end":
+        let
+            idStr = parser.registerUri("tag:yaml.org,2002:str")
+        ensure("--- !!str\nfoo", startDoc(), scalar("foo", idStr), endDoc())
     test "Parsing: Simple Anchor":
         ensure("&a str", startDoc(), scalar("str", tagQuestionMark,
                                             0.AnchorId), endDoc())
