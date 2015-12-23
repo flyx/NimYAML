@@ -1,41 +1,13 @@
-import streams, tables, strutils
-
-import "private/lexer"
+# file must be included from yaml.nim and cannot compile on its own
 
 type
-    YamlParserEventKind* = enum
-        yamlStartDocument, yamlEndDocument, yamlStartMap, yamlEndMap,
-        yamlStartSequence, yamlEndSequence, yamlScalar, yamlAlias,
-        yamlError, yamlWarning
-    
-    TagId* = distinct int
-    AnchorId* = distinct int
-    
-    YamlParserEvent* = ref object
-        case kind*: YamlParserEventKind
-        of yamlStartMap, yamlStartSequence:
-            objAnchor* : AnchorId
-            objTag*    : TagId
-        of yamlScalar:
-            scalarAnchor* : AnchorId
-            scalarTag*    : TagId
-            scalarContent*: string # may not be nil (but empty)
-        of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
-            discard
-        of yamlAlias:
-            aliasTarget* : AnchorId
-        of yamlError, yamlWarning:
-            description* : string
-            line*        : int
-            column*      : int
-    
     YamlParserState = enum
-        ylInitial, ylSkipDirective, ylBlockLineStart, ylBlockAfterTag,
-        ylBlockAfterAnchor, ylBlockAfterAnchorAndTag, ylBlockAfterScalar,
-        ylBlockAfterAlias, ylBlockAfterColon, ylBlockMultilineScalar,
-        ylBlockLineEnd, ylBlockScalarHeader, ylBlockScalar, ylFlow,
-        ylFlowAfterObject, ylFlowAfterTag, ylFlowAfterAnchor,
-        ylFlowAfterAnchorAndTag, ylExpectingDocumentEnd, ylAfterDirectivesEnd
+        ypInitial, ypSkipDirective, ypBlockLineStart, ypBlockAfterTag,
+        ypBlockAfterAnchor, ypBlockAfterAnchorAndTag, ypBlockAfterScalar,
+        ypBlockAfterAlias, ypBlockAfterColon, ypBlockMultilineScalar,
+        ypBlockLineEnd, ypBlockScalarHeader, ypBlockScalar, ypFlow,
+        ypFlowAfterObject, ypFlowAfterTag, ypFlowAfterAnchor,
+        ypFlowAfterAnchorAndTag, ypExpectingDocumentEnd, ypAfterDirectivesEnd
     
     DocumentLevelMode = enum
         mBlockSequenceItem, mFlowSequenceItem, mExplicitBlockMapKey,
@@ -52,10 +24,6 @@ type
     
     BlockScalarStyle = enum
         bsLiteral, bsFolded
-    
-    YamlSequentialParser* = object
-        tags: OrderedTable[string, TagId]
-        anchors: OrderedTable[string, AnchorId]
 
 const
     tagExclamationMark*: TagId = 0.TagId # "!" non-specific tag
@@ -72,7 +40,7 @@ proc `$`*(id: TagId): string {.borrow.}
 proc `==`*(left, right: AnchorId): bool {.borrow.}
 proc `$`*(id: AnchorId): string {.borrow.}
 
-proc initParser*(): YamlSequentialParser
+proc newParser*(): YamlSequentialParser
 
 # iterators cannot be pre-declared.
 #
@@ -87,7 +55,8 @@ proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
 
 # implementation
 
-proc initParser*(): YamlSequentialParser =
+proc newParser*(): YamlSequentialParser =
+    new(result)
     result.tags = initOrderedTable[string, TagId]()
     result.tags["!"] = tagExclamationMark
     result.tags["?"] = tagQuestionMark
@@ -145,7 +114,7 @@ template yieldUnexpectedToken(expected: string = "") {.dirty.} =
     msg.add(": " & $token)
     yieldError(msg)
 
-proc resolveAnchor(parser: var YamlSequentialParser, anchor: var string):
+proc resolveAnchor(parser: YamlSequentialParser, anchor: var string):
         AnchorId {.inline.} =
     result = anchorNone
     if anchor.len > 0:
@@ -154,13 +123,13 @@ proc resolveAnchor(parser: var YamlSequentialParser, anchor: var string):
             result = parser.anchors[anchor]
     anchor = ""
 
-proc resolveAlias(parser: var YamlSequentialParser, name: string): AnchorId =
+proc resolveAlias(parser: YamlSequentialParser, name: string): AnchorId =
     try:
         result = parser.anchors[name]
     except KeyError:
         result = anchorNone
 
-proc resolveTag(parser: var YamlSequentialParser, tag: var string,
+proc resolveTag(parser: YamlSequentialParser, tag: var string,
                 quotedString: bool = false): TagId {.inline.} =
     if tag.len == 0:
         result = if quotedString: tagExclamationMark else: tagQuestionMark
@@ -287,7 +256,7 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
 template startPlainScalar() {.dirty.} =
     level.mode = mScalar
     scalarCache = lex.content
-    state = ylBlockAfterScalar
+    state = ypBlockAfterScalar
 
 template handleTagHandle() {.dirty.} =
     let handle = lex.content
@@ -296,7 +265,7 @@ template handleTagHandle() {.dirty.} =
         if finished(nextToken):
             yieldError("Missing tag suffix")
             continue
-        if token != yamlTagSuffix:
+        if token != tTagSuffix:
             yieldError("Missing tag suffix")
             continue
         tag = tagShorthands[handle] & lex.content
@@ -305,12 +274,13 @@ template handleTagHandle() {.dirty.} =
     else:
         yieldError("Unknown tag shorthand: " & handle)
 
-iterator events*(parser: var YamlSequentialParser,
-                 input: Stream): YamlParserEvent {.closure.} =
+proc parse*(parser: YamlSequentialParser,
+            s: Stream): iterator(): YamlParserEvent =
+  result = iterator(): YamlParserEvent =
     var
         # parsing state
         lex: YamlLexer
-        state = ylInitial
+        state = ypInitial
         
         # document state
         foundYamlDirective = false
@@ -335,7 +305,7 @@ iterator events*(parser: var YamlSequentialParser,
         scalarCacheIsQuoted: bool = false
         aliasCache = anchorNone
         
-    lex.open(input)
+    lex.open(s)
     tagShorthands["!"] = "!"
     tagShorthands["!!"] = "tag:yaml.org,2002:"
     
@@ -344,9 +314,9 @@ iterator events*(parser: var YamlSequentialParser,
     block parserLoop:
       while not finished(nextToken):
         case state
-        of ylInitial:
+        of ypInitial:
             case token
-            of yamlYamlDirective:
+            of tYamlDirective:
                 if foundYamlDirective:
                     yieldError("Duplicate %YAML directive")
                 var
@@ -356,7 +326,7 @@ iterator events*(parser: var YamlSequentialParser,
                     token = nextToken(lex)
                     if finished(nextToken):
                         yieldError("Missing or badly formatted YAML version")
-                    if token != yamlVersionPart:
+                    if token != tVersionPart:
                         yieldError("Missing or badly formatted YAML version")
                     if parseInt(lex.content) != version:
                         warn = true
@@ -366,89 +336,89 @@ iterator events*(parser: var YamlSequentialParser,
                     yieldWarning("Unsupported version: " & actualVersion &
                                  ", trying to parse anyway")
                 foundYamlDirective = true
-            of yamlTagDirective:
+            of tTagDirective:
                 token = nextToken(lex)
                 if finished(nextToken):
                     yieldError("Incomplete %TAG directive")
-                if token != yamlTagHandle:
+                if token != tTagHandle:
                     yieldError("Invalid token (expected tag handle)")
                 let tagHandle = lex.content
                 token = nextToken(lex)
                 if finished(nextToken):
                     yieldError("Incomplete %TAG directive")
-                if token != yamlTagURI:
+                if token != tTagURI:
                     yieldError("Invalid token (expected tag URI)")
                 tagShorthands[tagHandle] = lex.content
-            of yamlUnknownDirective:
+            of tUnknownDirective:
                 yieldWarning("Unknown directive: " & lex.content)
-                state = ylSkipDirective
-            of yamlComment:
+                state = ypSkipDirective
+            of tComment:
                 discard
-            of yamlDirectivesEnd:
+            of tDirectivesEnd:
                 yield YamlParserEvent(kind: yamlStartDocument)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-                state = ylAfterDirectivesEnd
-            of yamlDocumentEnd, yamlStreamEnd:
+                state = ypAfterDirectivesEnd
+            of tDocumentEnd, tStreamEnd:
                 yield YamlParserEvent(kind: yamlStartDocument)
                 yieldDocumentEnd()
             else:
                 yield YamlParserEvent(kind: yamlStartDocument)
-                state = ylBlockLineStart
+                state = ypBlockLineStart
                 continue
-        of ylSkipDirective:
-            if token notin [yamlUnknownDirectiveParam, yamlTagHandle,
-                            yamlTagURI, yamlVersionPart, yamlComment]:
-                state = ylInitial
+        of ypSkipDirective:
+            if token notin [tUnknownDirectiveParam, tTagHandle,
+                            tTagURI, tVersionPart, tComment]:
+                state = ypInitial
                 continue
-        of ylAfterDirectivesEnd:
+        of ypAfterDirectivesEnd:
             case token
-            of yamlTagHandle:
+            of tTagHandle:
                 handleTagHandle()
-                state = ylBlockLineEnd
-            of yamlComment:
-                state = ylBlockLineEnd
-            of yamlLineStart:
-                state = ylBlockLineStart
+                state = ypBlockLineEnd
+            of tComment:
+                state = ypBlockLineEnd
+            of tLineStart:
+                state = ypBlockLineStart
             else:
                 yieldUnexpectedToken()
-        of ylBlockLineStart:
+        of ypBlockLineStart:
             case token
-            of yamlLineStart:
+            of tLineStart:
                 discard
-            of yamlDash:
+            of tDash:
                 handleBlockIndicator([mBlockSequenceItem], [],
                                      mBlockSequenceItem, yamlStartSequence)
-            of yamlQuestionmark:
+            of tQuestionmark:
                 handleBlockIndicator([mImplicitBlockMapKey, mBlockMapValue],
                                      [mExplicitBlockMapKey],
                                      mExplicitBlockMapKey, yamlStartMap)
-            of yamlColon:
+            of tColon:
                 handleBlockIndicator([mExplicitBlockMapKey],
                                      [mBlockMapValue, mImplicitBlockMapKey],
                                      mBlockMapValue, yamlStartMap, true)
-            of yamlPipe, yamlGreater:
-                blockScalar = if token == yamlPipe: bsLiteral else: bsFolded
+            of tPipe, tGreater:
+                blockScalar = if token == tPipe: bsLiteral else: bsFolded
                 blockScalarIndentation = -1
                 lineStrip = lsClip
-                state = ylBlockScalarHeader
+                state = ypBlockScalarHeader
                 scalarCache = ""
                 level.mode = mScalar
-            of yamlTagHandle:
+            of tTagHandle:
                 leaveMoreIndentedLevels()
                 handleTagHandle()
                 level.indentationColumn = lex.column
-                state = ylBlockAfterTag
-            of yamlVerbatimTag:
+                state = ypBlockAfterTag
+            of tVerbatimTag:
                 tag = lex.content
-                state = ylBlockAfterTag
+                state = ypBlockAfterTag
                 level.indentationColumn = lex.column
-            of yamlAnchor:
+            of tAnchor:
                 leaveMoreIndentedLevels()
                 anchor = lex.content
                 level.indentationColumn = lex.column
-                state = ylBlockAfterAnchor
-            of yamlScalarPart:
+                state = ypBlockAfterAnchor
+            of tScalarPart:
                 leaveMoreIndentedLevels()
                 case level.mode
                 of mUnknown:
@@ -469,18 +439,18 @@ iterator events*(parser: var YamlSequentialParser,
                     continue
                 else:
                     yieldError("Unexpected scalar in " & $level.mode)
-                state = ylBlockAfterScalar
-            of lexer.yamlScalar:
+                state = ypBlockAfterScalar
+            of tScalar:
                 leaveMoreIndentedLevels()
                 case level.mode
                 of mUnknown, mImplicitBlockMapKey:
                     scalarCache = lex.content
                     scalarCacheIsQuoted = true
                     scalarIndentation = lex.column
-                    state = ylBlockAfterScalar
+                    state = ypBlockAfterScalar
                 else:
                     yieldError("Unexpected scalar")
-            of lexer.yamlAlias:
+            of tAlias:
                 aliasCache = resolveAlias(parser, lex.content)
                 if aliasCache == anchorNone:
                     yieldError("[alias] Unknown anchor: " & lex.content)
@@ -492,60 +462,60 @@ iterator events*(parser: var YamlSequentialParser,
                 leaveMoreIndentedLevels()
                 case level.mode
                 of mUnknown, mImplicitBlockMapKey, mBlockSequenceItem:
-                    state = ylBlockAfterAlias
+                    state = ypBlockAfterAlias
                 else:
                     yieldError("Unexpected alias")
-            of yamlStreamEnd:
+            of tStreamEnd:
                 closeAllLevels()
                 yield YamlParserEvent(kind: yamlEndDocument)
                 break
-            of yamlDocumentEnd:
+            of tDocumentEnd:
                 closeAllLevels()
                 yieldDocumentEnd()
-                state = ylInitial
-            of yamlOpeningBrace:
-                state = ylFlow
+                state = ypInitial
+            of tOpeningBrace:
+                state = ypFlow
                 continue
-            of yamlOpeningBracket:
-                state = ylFlow
+            of tOpeningBracket:
+                state = ypFlow
                 continue
             else:
                 yieldUnexpectedToken()
-        of ylBlockMultilineScalar:            
+        of ypBlockMultilineScalar:            
             case token
-            of yamlScalarPart:
+            of tScalarPart:
                 leaveMoreIndentedLevels()
                 if level.mode != mScalar:
-                    state = ylBlockLineStart
+                    state = ypBlockLineStart
                     continue
                 scalarCache &= " " & lex.content
-                state = ylBlockLineEnd
-            of yamlLineStart:
+                state = ypBlockLineEnd
+            of tLineStart:
                 discard
-            of yamlColon, yamlDash, yamlQuestionMark:
+            of tColon, tDash, tQuestionmark:
                 leaveMoreIndentedLevels()
                 if level.mode != mScalar:
-                    state = ylBlockLineStart
+                    state = ypBlockLineStart
                     continue
                 yieldUnexpectedToken()
-            of yamlDocumentEnd, yamlStreamEnd:
+            of tDocumentEnd, tStreamEnd:
                 closeAllLevels()
                 scalarCache = nil
-                state = ylInitial
+                state = ypInitial
                 continue
-            of yamlDirectivesEnd:
+            of tDirectivesEnd:
                 closeAllLevels()
-                state = ylAfterDirectivesEnd
+                state = ypAfterDirectivesEnd
                 continue
-            of lexer.yamlAlias:
+            of tAlias:
                 leaveMoreIndentedLevels()
-                state = ylBlockLineStart
+                state = ypBlockLineStart
                 continue
             else:
                 yieldUnexpectedToken()
-        of ylBlockAfterScalar:
+        of ypBlockAfterScalar:
             case token
-            of yamlColon:
+            of tColon:
                 assert level.mode in [mUnknown, mImplicitBlockMapKey, mScalar]
                 if level.mode in [mUnknown, mScalar]:
                     level.indentationColumn = scalarIndentation
@@ -559,8 +529,8 @@ iterator events*(parser: var YamlSequentialParser,
                                       indentationColumn: -1)
                 yieldScalar(scalarCache, scalarCacheIsQuoted)
                 scalarCache = nil
-                state = ylBlockAfterColon
-            of yamlLineStart:
+                state = ypBlockAfterColon
+            of tLineStart:
                 if level.mode == mImplicitBlockMapKey:
                     yieldError("Missing colon after implicit map key")
                 if level.mode != mScalar:
@@ -569,10 +539,10 @@ iterator events*(parser: var YamlSequentialParser,
                     if ancestry.len > 0:
                         level = ancestry.pop()
                     else:
-                        state = ylExpectingDocumentEnd
+                        state = ypExpectingDocumentEnd
                 else:
-                    state = ylBlockMultilineScalar
-            of yamlStreamEnd:
+                    state = ypBlockMultilineScalar
+            of tStreamEnd:
                 yieldScalar(scalarCache, scalarCacheIsQuoted)
                 scalarCache = nil
                 if ancestry.len > 0:
@@ -582,9 +552,9 @@ iterator events*(parser: var YamlSequentialParser,
                 break
             else:
                 yieldUnexpectedToken()
-        of ylBlockAfterAlias:
+        of ypBlockAfterAlias:
             case token
-            of yamlColon:
+            of tColon:
                 assert level.mode in [mUnknown, mImplicitBlockMapKey]
                 if level.mode == mUnknown:
                     yield YamlParserEvent(kind: yamlStartMap,
@@ -595,122 +565,122 @@ iterator events*(parser: var YamlSequentialParser,
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
                 yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
-                state = ylBlockAfterColon
-            of yamlLineStart:
+                state = ypBlockAfterColon
+            of tLineStart:
                 if level.mode == mImplicitBlockMapKey:
                     yieldError("Missing colon after implicit map key")
                 if level.mode == mUnknown:
                     assert ancestry.len > 0
                     level = ancestry.pop()
                 yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
-                state = ylBlockLineStart
-            of yamlStreamEnd:
+                state = ypBlockLineStart
+            of tStreamEnd:
                 yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 if level.mode == mUnknown:
                     assert ancestry.len > 0
                     level = ancestry.pop()
-                state = ylBlockLineEnd
+                state = ypBlockLineEnd
                 continue
             else:
                 yieldUnexpectedToken()
-        of ylBlockAfterTag:
+        of ypBlockAfterTag:
             if mustLeaveLevel(lex.column, ancestry):
                 leaveMoreIndentedLevels()
-                state = ylBlockLineStart
+                state = ypBlockLineStart
                 continue
             case token
-            of yamlAnchor:
+            of tAnchor:
                 anchor = lex.content
-                state = ylBlockAfterAnchorAndTag
-            of lexer.yamlScalar, yamlColon, yamlStreamEnd:
-                state = ylBlockLineStart
+                state = ypBlockAfterAnchorAndTag
+            of tScalar, tColon, tStreamEnd:
+                state = ypBlockLineStart
                 continue
-            of yamlScalarPart:
+            of tScalarPart:
                 startPlainScalar()
-            of yamlLineStart:
-                state = ylBlockLineStart
-            of yamlOpeningBracket, yamlOpeningBrace:
-                state = ylFlow
+            of tLineStart:
+                state = ypBlockLineStart
+            of tOpeningBracket, tOpeningBrace:
+                state = ypFlow
                 continue
             else:
                 yieldUnexpectedToken()
-        of ylBlockAfterAnchor:
+        of ypBlockAfterAnchor:
             if mustLeaveLevel(lex.column, ancestry):
                 leaveMoreIndentedLevels()
-                state = ylBlockLineStart
+                state = ypBlockLineStart
                 continue
             case token
-            of lexer.yamlScalar, yamlColon, yamlStreamEnd:
-                state = ylBlockLineStart
+            of tScalar, tColon, tStreamEnd:
+                state = ypBlockLineStart
                 continue
-            of lexer.yamlScalarPart:
+            of tScalarPart:
                 startPlainScalar()
-            of yamlLineStart:
+            of tLineStart:
                 discard
-            of yamlOpeningBracket, yamlOpeningBrace:
-                state = ylFlow
+            of tOpeningBracket, tOpeningBrace:
+                state = ypFlow
                 continue
-            of yamlTagHandle:
+            of tTagHandle:
                 handleTagHandle()
-                state = ylBlockAfterAnchorAndTag
-            of yamlVerbatimTag:
+                state = ypBlockAfterAnchorAndTag
+            of tVerbatimTag:
                 tag = lex.content
-                state = ylBlockAfterAnchorAndTag
+                state = ypBlockAfterAnchorAndTag
                 level.indentationColumn = lex.column
             else:
                 yieldUnexpectedToken()
-        of ylBlockAfterAnchorAndTag:
+        of ypBlockAfterAnchorAndTag:
             if mustLeaveLevel(lex.column, ancestry):
                 leaveMoreIndentedLevels()
-                state = ylBlockLineStart
+                state = ypBlockLineStart
                 continue
             case token
-            of lexer.yamlScalar, yamlColon, yamlStreamEnd:
-                state = ylBlockLineStart
+            of tScalar, tColon, tStreamEnd:
+                state = ypBlockLineStart
                 continue
-            of yamlScalarPart:
+            of tScalarPart:
                 startPlainScalar()
-            of yamlLineStart:
+            of tLineStart:
                 discard
-            of yamlOpeningBracket, yamlOpeningBrace:
-                state = ylFlow
+            of tOpeningBracket, tOpeningBrace:
+                state = ypFlow
                 continue
             else:
                 yieldUnexpectedToken()
-        of ylBlockAfterColon:
+        of ypBlockAfterColon:
             case token
-            of lexer.yamlScalar:
+            of tScalar:
                 yieldScalar(lex.content, true)
                 level = ancestry.pop()
                 assert level.mode == mBlockMapValue
                 level.mode = mImplicitBlockMapKey
-                state = ylBlockLineEnd
-            of yamlScalarPart:
+                state = ypBlockLineEnd
+            of tScalarPart:
                 startPlainScalar()
-            of yamlLineStart:
-                state = ylBlockLineStart
-            of yamlStreamEnd:
+            of tLineStart:
+                state = ypBlockLineStart
+            of tStreamEnd:
                 closeAllLevels()
                 yield YamlParserEvent(kind: yamlEndDocument)
                 break
-            of yamlOpeningBracket, yamlOpeningBrace:
-                state = ylFlow
+            of tOpeningBracket, tOpeningBrace:
+                state = ypFlow
                 continue
-            of yamlPipe, yamlGreater:
-                blockScalar = if token == yamlPipe: bsLiteral else: bsFolded
+            of tPipe, tGreater:
+                blockScalar = if token == tPipe: bsLiteral else: bsFolded
                 blockScalarIndentation = -1
                 lineStrip = lsClip
-                state = ylBlockScalarHeader
+                state = ypBlockScalarHeader
                 scalarCache = ""
                 level.mode = mScalar
-            of yamlTagHandle:
+            of tTagHandle:
                 handleTagHandle()
-                state = ylBlockAfterTag
-            of yamlAnchor:
+                state = ypBlockAfterTag
+            of tAnchor:
                 level.indentationColumn = lex.column
                 anchor = lex.content
-                state = ylBlockAfterAnchor
-            of lexer.yamlAlias:
+                state = ypBlockAfterAnchor
+            of tAlias:
                 var noAnchor = false
                 try:
                     aliasCache = parser.anchors[lex.content]
@@ -721,45 +691,45 @@ iterator events*(parser: var YamlSequentialParser,
                     yieldError("[alias] Unknown anchor: " & lex.content)
                 yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 level = ancestry.pop()
-                state = ylBlockLineEnd
+                state = ypBlockLineEnd
             else:
                 yieldUnexpectedToken("scalar or line end")
-        of ylBlockLineEnd:
+        of ypBlockLineEnd:
             case token
-            of yamlLineStart:
-                state = if level.mode == mScalar: ylBlockMultilineScalar else:
-                        ylBlockLineStart
-            of yamlStreamEnd:
+            of tLineStart:
+                state = if level.mode == mScalar: ypBlockMultilineScalar else:
+                        ypBlockLineStart
+            of tStreamEnd:
                 closeAllLevels()
                 yield YamlParserEvent(kind: yamlEndDocument)
                 break
             else:
                 yieldUnexpectedToken("line end")
-        of ylBlockScalarHeader:
+        of ypBlockScalarHeader:
             case token
-            of yamlPlus:
+            of tPlus:
                 if lineStrip != lsClip:
                     yieldError("Multiple chomping indicators!")
                 else:
                     lineStrip = lsKeep
-            of yamlDash:
+            of tDash:
                 if lineStrip != lsClip:
                     yieldError("Multiple chomping indicators!")
                 else:
                     lineStrip = lsStrip
-            of yamlBlockIndentationIndicator:
+            of tBlockIndentationIndicator:
                 if blockScalarIndentation != -1:
                     yieldError("Multiple indentation indicators!")
                 else:
                     blockScalarIndentation = parseInt(lex.content)
-            of yamlLineStart:
+            of tLineStart:
                 blockScalarTrailing = ""
-                state = ylBlockScalar
+                state = ypBlockScalar
             else:
                 yieldUnexpectedToken()
-        of ylBlockScalar:
+        of ypBlockScalar:
             case token
-            of yamlLineStart:
+            of tLineStart:
                 if level.indentationColumn == -1:
                     discard
                 else:
@@ -783,14 +753,14 @@ iterator events*(parser: var YamlSequentialParser,
                                 lex.content[level.indentationColumn..^1]
                         blockScalarTrailing = ""
                             
-            of yamlScalarPart:
+            of tScalarPart:
                 if ancestry.high > 0:
                     if ancestry[ancestry.high].indicatorColumn >= lex.column or
                        ancestry[ancestry.high].indicatorColumn == -1 and
                        ancestry[ancestry.high].indentationColumn >= lex.column:
                             # todo: trailing chomping?
                             closeLevel(level)
-                            state = ylBlockLineStart
+                            state = ypBlockLineStart
                             continue
                 if level.indentationColumn == -1:
                     level.indentationColumn = lex.column
@@ -808,20 +778,20 @@ iterator events*(parser: var YamlSequentialParser,
                     scalarCache &= blockScalarTrailing
                 closeLevel(level)
                 if ancestry.len == 0:
-                    state = ylExpectingDocumentEnd
+                    state = ypExpectingDocumentEnd
                 else:
                     level = ancestry.pop()
-                    state = ylBlockLineStart
+                    state = ypBlockLineStart
                 continue            
-        of ylFlow:
+        of ypFlow:
             case token
-            of yamlLineStart:
+            of tLineStart:
                 discard
-            of lexer.yamlScalar, yamlScalarPart:
-                yieldScalar(lex.content, token == lexer.yamlScalar)
+            of tScalar, tScalarPart:
+                yieldScalar(lex.content, token == tScalar)
                 level = ancestry.pop()
-                state = ylFlowAfterObject
-            of yamlColon:
+                state = ypFlowAfterObject
+            of tColon:
                 yieldScalar()
                 level = ancestry.pop()
                 if level.mode == mFlowMapKey:
@@ -831,7 +801,7 @@ iterator events*(parser: var YamlSequentialParser,
                                           indentationColumn: -1)
                 else:
                     yieldUnexpectedToken("scalar, comma or map end")
-            of yamlComma:
+            of tComma:
                 yieldScalar()
                 level = ancestry.pop()
                 case level.mode
@@ -844,7 +814,7 @@ iterator events*(parser: var YamlSequentialParser,
                     yieldScalar()
                 else:
                     yieldError("Internal error! Please report this bug.")
-            of yamlOpeningBrace:
+            of tOpeningBrace:
                 if level.mode != mUnknown:
                     yieldUnexpectedToken()
                 level.mode = mFlowMapKey
@@ -852,7 +822,7 @@ iterator events*(parser: var YamlSequentialParser,
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-            of yamlOpeningBracket:
+            of tOpeningBracket:
                 if level.mode != mUnknown:
                     yieldUnexpectedToken()
                 level.mode = mFlowSequenceItem
@@ -860,7 +830,7 @@ iterator events*(parser: var YamlSequentialParser,
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-            of yamlClosingBrace:
+            of tClosingBrace:
                 if level.mode == mUnknown:
                     yieldScalar()
                     level = ancestry.pop()
@@ -871,12 +841,12 @@ iterator events*(parser: var YamlSequentialParser,
                     level = ancestry.pop()
                     case level.mode
                     of mFlowMapKey, mFlowMapValue, mFlowSequenceItem:
-                        state = ylFlowAfterObject
+                        state = ypFlowAfterObject
                     else:
-                        state = ylBlockLineEnd
+                        state = ypBlockLineEnd
                 else:
-                    state = ylExpectingDocumentEnd
-            of yamlClosingBracket:
+                    state = ypExpectingDocumentEnd
+            of tClosingBracket:
                 if level.mode == mUnknown:
                     yieldScalar()
                     level = ancestry.pop()
@@ -888,58 +858,58 @@ iterator events*(parser: var YamlSequentialParser,
                         level = ancestry.pop()
                         case level.mode
                         of mFlowMapKey, mFlowMapValue, mFlowSequenceItem:
-                            state = ylFlowAfterObject
+                            state = ypFlowAfterObject
                         else:
-                            state = ylBlockLineEnd
+                            state = ypBlockLineEnd
                     else:
-                        state = ylExpectingDocumentEnd
-            of yamlTagHandle:
+                        state = ypExpectingDocumentEnd
+            of tTagHandle:
                 handleTagHandle()
-                state = ylFlowAfterTag
-            of yamlAnchor:
+                state = ypFlowAfterTag
+            of tAnchor:
                 anchor = lex.content
-                state = ylFlowAfterAnchor
-            of lexer.yamlAlias:
+                state = ypFlowAfterAnchor
+            of tAlias:
                 yield YamlParserEvent(kind: yamlAlias,
                         aliasTarget: resolveAlias(parser, lex.content))
-                state = ylFlowAfterObject
+                state = ypFlowAfterObject
                 level = ancestry.pop()
             else:
                 yieldUnexpectedToken()
-        of ylFlowAfterTag:
+        of ypFlowAfterTag:
             case token
-            of yamlTagHandle:
+            of tTagHandle:
                 yieldError("Multiple tags on same node!")
-            of yamlAnchor:
+            of tAnchor:
                 anchor = lex.content
-                state = ylFlowAfterAnchorAndTag
+                state = ypFlowAfterAnchorAndTag
             else:
-                state = ylFlow
+                state = ypFlow
                 continue
-        of ylFlowAfterAnchor:
+        of ypFlowAfterAnchor:
             case token
-            of yamlAnchor:
+            of tAnchor:
                 yieldError("Multiple anchors on same node!")
-            of yamlTagHandle:
+            of tTagHandle:
                 handleTagHandle()
-                state = ylFlowAfterAnchorAndTag
+                state = ypFlowAfterAnchorAndTag
             else:
-                state = ylFlow
+                state = ypFlow
                 continue
-        of ylFlowAfterAnchorAndTag:
+        of ypFlowAfterAnchorAndTag:
             case token
-            of yamlAnchor:
+            of tAnchor:
                 yieldError("Multiple anchors on same node!")
-            of yamlTagHandle:
+            of tTagHandle:
                 yieldError("Multiple tags on same node!")
             else:
-                state = ylFlow
+                state = ypFlow
                 continue
-        of ylFlowAfterObject:
+        of ypFlowAfterObject:
             case token
-            of yamlLineStart:
+            of tLineStart:
                 discard
-            of yamlColon:
+            of tColon:
                 if level.mode != mFlowMapKey:
                     yieldUnexpectedToken()
                 else:
@@ -947,24 +917,24 @@ iterator events*(parser: var YamlSequentialParser,
                     ancestry.add(level)
                     level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                           indentationColumn: -1)
-                    state = ylFlow
-            of yamlComma:
+                    state = ypFlow
+            of tComma:
                 case level.mode
                 of mFlowSequenceItem:
                     ancestry.add(level)
                     level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                           indentationColumn: -1)
-                    state = ylFlow
+                    state = ypFlow
                 of mFlowMapValue:
                     level.mode = mFlowMapKey
                     ancestry.add(level)
                     level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                           indentationColumn: -1)
-                    state = ylFlow
+                    state = ypFlow
                 else:
                     echo "level.mode = ", level.mode
                     yieldUnexpectedToken()
-            of yamlClosingBrace:
+            of tClosingBrace:
                 if level.mode != mFlowMapValue:
                     yieldUnexpectedToken()
                 else:
@@ -973,12 +943,12 @@ iterator events*(parser: var YamlSequentialParser,
                         level = ancestry.pop()
                         case level.mode
                         of mFlowMapKey, mFlowMapValue, mFlowSequenceItem:
-                            state = ylFlowAfterObject
+                            state = ypFlowAfterObject
                         else:
-                            state = ylBlockLineEnd
+                            state = ypBlockLineEnd
                     else:
-                        state = ylExpectingDocumentEnd
-            of yamlClosingBracket:
+                        state = ypExpectingDocumentEnd
+            of tClosingBracket:
                 if level.mode != mFlowSequenceItem:
                     yieldUnexpectedToken()
                 else:
@@ -987,23 +957,23 @@ iterator events*(parser: var YamlSequentialParser,
                         level = ancestry.pop()
                         case level.mode
                         of mFlowMapKey, mFlowMapValue, mFlowSequenceItem:
-                            state = ylFlowAfterObject
+                            state = ypFlowAfterObject
                         else:
-                            state = ylBlockLineEnd
+                            state = ypBlockLineEnd
                     else:
-                        state = ylExpectingDocumentEnd
+                        state = ypExpectingDocumentEnd
             else:
                 yieldUnexpectedToken()
-        of ylExpectingDocumentEnd:
+        of ypExpectingDocumentEnd:
             case token
-            of yamlComment, yamlLineStart:
+            of tComment, tLineStart:
                 discard
-            of yamlStreamEnd, yamlDocumentEnd:
+            of tStreamEnd, tDocumentEnd:
                 yieldDocumentEnd()
-                state = ylInitial
-            of yamlDirectivesEnd:
+                state = ypInitial
+            of tDirectivesEnd:
                 yieldDocumentEnd()
-                state = ylAfterDirectivesEnd
+                state = ypAfterDirectivesEnd
                 continue
             else:
                 yieldUnexpectedToken("document end")

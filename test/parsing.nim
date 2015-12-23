@@ -1,7 +1,7 @@
-import "../src/yaml/sequential"
+import "../src/yaml"
+import streams
 
 import unittest
-import streams
 
 proc startDoc(): YamlParserEvent =
     new(result)
@@ -97,9 +97,11 @@ proc printDifference(expected, actual: YamlParserEvent) =
             echo "Unknown difference in event kind " & $expected.kind
 
 template ensure(input: string, expected: varargs[YamlParserEvent]) {.dirty.} =
-    var i = 0
+    var
+        i = 0
+        events = parser.parse(newStringStream(input))
     
-    for token in parser.events(newStringStream(input)):
+    for token in events():
         if i >= expected.len:
             echo "received more tokens than expected (next token = ",
                  token.kind, ")"
@@ -114,7 +116,7 @@ template ensure(input: string, expected: varargs[YamlParserEvent]) {.dirty.} =
 
 suite "Parsing":
     setup:
-        var parser = initParser()
+        var parser = newParser()
     
     test "Parsing: Simple Scalar":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())

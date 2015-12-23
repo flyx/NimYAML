@@ -1,10 +1,15 @@
-import "../src/yaml/private/lexer"
-import streams, unicode
+import streams, unicode, lexbase
 
 import unittest
 
+type
+    YamlTypeHint* = enum
+        yTypeInteger, yTypeFloat, yTypeBoolean, yTypeNull, yTypeString,
+        yTypeUnknown
+include "../src/private/lexer"
+
 type BasicLexerToken = tuple[kind: YamlLexerToken, content: string,
-                             typeHint: YamlLexerTypeHint]
+                             typeHint: YamlTypeHint]
 
 template ensure(input: string, expected: openarray[BasicLexerToken]) =
     var
@@ -18,7 +23,7 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
             fail()
             break
         if token != expected[i].kind:
-            if token == yamlError:
+            if token == tError:
                 echo "got lexer error: " & lex.content
             else:
                 echo "wrong token kind (expected ", expected[i], ", got ",
@@ -31,7 +36,7 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
                      expected[i].content, "\", got \"", lex.content, "\")"
                 fail()
                 break
-        if token == yamlScalarPart:
+        if token == tScalarPart:
             if lex.typeHint != expected[i].typeHint:
                 echo "wrong type hint (expected ", expected[i].typeHint,
                      ", got ", lex.typeHint, ")"
@@ -43,131 +48,131 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
              expected[i].kind, ")"
 
 proc t(kind: YamlLexerToken, content: string,
-        typeHint: YamlLexerTypeHint = yTypeString): BasicLexerToken =
+        typeHint: YamlTypeHint = yTypeString): BasicLexerToken =
     (kind: kind, content: content, typeHint: typeHint)
 
 suite "Lexing":
     test "Lexing: YAML Directive":
-        ensure("%YAML 1.2", [t(yamlYamlDirective, nil),
-                             t(yamlVersionPart, "1"),
-                             t(yamlVersionPart, "2"),
-                             t(yamlStreamEnd, nil)])
+        ensure("%YAML 1.2", [t(tYamlDirective, nil),
+                             t(tVersionPart, "1"),
+                             t(tVersionPart, "2"),
+                             t(tStreamEnd, nil)])
     
     test "Lexing: TAG Directive":
         ensure("%TAG !t! tag:http://example.com/",
-               [t(yamlTagDirective, nil),
-                t(yamlTagHandle, "!t!"),
-                t(yamlTagURI, "tag:http://example.com/"),
-                t(yamlStreamEnd, nil)])
+               [t(tTagDirective, nil),
+                t(tTagHandle, "!t!"),
+                t(tTagURI, "tag:http://example.com/"),
+                t(tStreamEnd, nil)])
     
     test "Lexing: Unknown Directive":
-        ensure("%FOO bar baz", [t(yamlUnknownDirective, "%FOO"),
-                                t(yamlUnknownDirectiveParam, "bar"),
-                                t(yamlUnknownDirectiveParam, "baz"),
-                                t(yamlStreamEnd, nil)])
+        ensure("%FOO bar baz", [t(tUnknownDirective, "%FOO"),
+                                t(tUnknownDirectiveParam, "bar"),
+                                t(tUnknownDirectiveParam, "baz"),
+                                t(tStreamEnd, nil)])
     
     test "Lexing: Comments after Directives":
         ensure("%YAML 1.2 # version\n# at line start\n    # indented\n%FOO",
-                [t(yamlYamlDirective, nil),
-                 t(yamlVersionPart, "1"),
-                 t(yamlVersionPart, "2"),
-                 t(yamlComment, " version"),
-                 t(yamlComment, " at line start"),
-                 t(yamlComment, " indented"),
-                 t(yamlUnknownDirective, "%FOO"),
-                 t(yamlStreamEnd, nil)])
+                [t(tYamlDirective, nil),
+                 t(tVersionPart, "1"),
+                 t(tVersionPart, "2"),
+                 t(tComment, " version"),
+                 t(tComment, " at line start"),
+                 t(tComment, " indented"),
+                 t(tUnknownDirective, "%FOO"),
+                 t(tStreamEnd, nil)])
     
     test "Lexing: Directives End":
-        ensure("---", [t(yamlDirectivesEnd, nil),
-                       t(yamlStreamEnd, nil)])
+        ensure("---", [t(tDirectivesEnd, nil),
+                       t(tStreamEnd, nil)])
     
     test "Lexing: Document End":
-        ensure("...", [t(yamlLineStart, nil),
-                       t(yamlDocumentEnd, nil),
-                       t(yamlStreamEnd, nil)])
+        ensure("...", [t(tLineStart, nil),
+                       t(tDocumentEnd, nil),
+                       t(tStreamEnd, nil)])
     
     test "Lexing: Directive after Document End":
         ensure("content\n...\n%YAML 1.2",
-                [t(yamlLineStart, ""),
-                 t(yamlScalarPart, "content"),
-                 t(yamlLineStart, ""),
-                 t(yamlDocumentEnd, nil),
-                 t(yamlYamlDirective, nil),
-                 t(yamlVersionPart, "1"),
-                 t(yamlVersionPart, "2"),
-                 t(yamlStreamEnd, nil)])
+                [t(tLineStart, ""),
+                 t(tScalarPart, "content"),
+                 t(tLineStart, ""),
+                 t(tDocumentEnd, nil),
+                 t(tYamlDirective, nil),
+                 t(tVersionPart, "1"),
+                 t(tVersionPart, "2"),
+                 t(tStreamEnd, nil)])
     
     test "Lexing: Plain Scalar (alphanumeric)":
-        ensure("abA03rel4", [t(yamlLineStart, ""),
-                             t(yamlScalarPart, "abA03rel4"),
-                             t(yamlStreamEnd, nil)])
+        ensure("abA03rel4", [t(tLineStart, ""),
+                             t(tScalarPart, "abA03rel4"),
+                             t(tStreamEnd, nil)])
     
     test "Lexing: Plain Scalar (with spaces)":
-        ensure("test content", [t(yamlLineStart, ""),
-                                t(yamlScalarPart, "test content"),
-                                t(yamlStreamEnd, nil)])
+        ensure("test content", [t(tLineStart, ""),
+                                t(tScalarPart, "test content"),
+                                t(tStreamEnd, nil)])
     
     test "Lexing: Plain Scalar (with special chars)":
         ensure(":test ?content -with #special !chars",
-               [t(yamlLineStart, nil),
-                t(yamlScalarPart, ":test ?content -with #special !chars"),
-                t(yamlStreamEnd, nil)])
+               [t(tLineStart, nil),
+                t(tScalarPart, ":test ?content -with #special !chars"),
+                t(tStreamEnd, nil)])
     
     test "Lexing: Plain Scalar (starting with %)":
-        ensure("---\n%test", [t(yamlDirectivesEnd, nil),
-                              t(yamlLineStart, ""),
-                              t(yamlScalarPart, "%test"),
-                              t(yamlStreamEnd, nil)])
+        ensure("---\n%test", [t(tDirectivesEnd, nil),
+                              t(tLineStart, ""),
+                              t(tScalarPart, "%test"),
+                              t(tStreamEnd, nil)])
     
     test "Lexing: Single Quoted Scalar":
-        ensure("'? test - content! '", [t(yamlLineStart, ""),
-                                        t(yamlScalar, "? test - content! "),
-                                        t(yamlStreamEnd, nil)])
+        ensure("'? test - content! '", [t(tLineStart, ""),
+                                        t(tScalar, "? test - content! "),
+                                        t(tStreamEnd, nil)])
     
     test "Lexing: Single Quoted Scalar (escaped single quote inside)":
-        ensure("'test '' content'", [t(yamlLineStart, ""),
-                                     t(yamlScalar, "test ' content"),
-                                     t(yamlStreamEnd, nil)])
+        ensure("'test '' content'", [t(tLineStart, ""),
+                                     t(tScalar, "test ' content"),
+                                     t(tStreamEnd, nil)])
     
     test "Lexing: Doubly Quoted Scalar":
-        ensure("\"test content\"", [t(yamlLineStart, ""),
-                                    t(yamlScalar, "test content"),
-                                    t(yamlStreamEnd, nil)])
+        ensure("\"test content\"", [t(tLineStart, ""),
+                                    t(tScalar, "test content"),
+                                    t(tStreamEnd, nil)])
     
     test "Lexing: Doubly Quoted Scalar (escaping)":
-        ensure(""""\t\\\0\""""", [t(yamlLineStart, ""),
-                                  t(yamlScalar, "\t\\\0\""),
-                                  t(yamlStreamEnd, nil)])
+        ensure(""""\t\\\0\""""", [t(tLineStart, ""),
+                                  t(tScalar, "\t\\\0\""),
+                                  t(tStreamEnd, nil)])
     
     test "Lexing: Doubly Quoted Scalar (unicode escaping)":
         ensure(""""\x42\u4243\U00424344"""",
-               [t(yamlLineStart, ""),
-               t(yamlScalar, "\x42" & toUTF8(cast[Rune](0x4243)) &
+               [t(tLineStart, ""),
+               t(tScalar, "\x42" & toUTF8(cast[Rune](0x4243)) &
                 toUTF8(cast[Rune](0x424344))),
-                t(yamlStreamEnd, nil)])
+                t(tStreamEnd, nil)])
     
     test "Lexing: Block Array":
         ensure("""
 - a
-- b""", [t(yamlLineStart, ""), t(yamlDash, nil), t(yamlScalarPart, "a"),
-         t(yamlLineStart, ""), t(yamlDash, nil), t(yamlScalarPart, "b"), 
-         t(yamlStreamEnd, nil)])
+- b""", [t(tLineStart, ""), t(tDash, nil), t(tScalarPart, "a"),
+         t(tLineStart, ""), t(tDash, nil), t(tScalarPart, "b"), 
+         t(tStreamEnd, nil)])
     
     test "Lexing: Block Map with Implicit Keys":
         ensure("""
 foo: bar
-herp: derp""", [t(yamlLineStart, ""), t(yamlScalarPart, "foo"),
-                t(yamlColon, nil), t(yamlScalarPart, "bar"),
-                t(yamlLineStart, ""), t(yamlScalarPart, "herp"),
-                t(yamlColon, nil), t(yamlScalarPart, "derp"),
-                t(yamlStreamEnd, nil)])
+herp: derp""", [t(tLineStart, ""), t(tScalarPart, "foo"),
+                t(tColon, nil), t(tScalarPart, "bar"),
+                t(tLineStart, ""), t(tScalarPart, "herp"),
+                t(tColon, nil), t(tScalarPart, "derp"),
+                t(tStreamEnd, nil)])
     
     test "Lexing: Block Map with Explicit Keys":
         ensure("""
 ? foo
-: bar""", [t(yamlLineStart, ""), t(yamlQuestionmark, nil),
-           t(yamlScalarPart, "foo"), t(yamlLineStart, ""), t(yamlColon, nil),
-           t(yamlScalarPart, "bar"), t(yamlStreamEnd, nil)])
+: bar""", [t(tLineStart, ""), t(tQuestionmark, nil),
+           t(tScalarPart, "foo"), t(tLineStart, ""), t(tColon, nil),
+           t(tScalarPart, "bar"), t(tStreamEnd, nil)])
     
     test "Lexing: Indentation":
         ensure("""
@@ -176,41 +181,41 @@ foo:
     - baz
     - biz
   herp: derp""",
-          [t(yamlLineStart, ""), t(yamlScalarPart, "foo"), t(yamlColon, nil),
-           t(yamlLineStart, "  "), t(yamlScalarPart, "bar"), t(yamlColon, nil),
-           t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalarPart, "baz"),
-           t(yamlLineStart, "    "), t(yamlDash, nil), t(yamlScalarPart, "biz"),
-           t(yamlLineStart, "  "), t(yamlScalarPart, "herp"), t(yamlColon, nil),
-           t(yamlScalarPart, "derp"), t(yamlStreamEnd, nil)])
+          [t(tLineStart, ""), t(tScalarPart, "foo"), t(tColon, nil),
+           t(tLineStart, "  "), t(tScalarPart, "bar"), t(tColon, nil),
+           t(tLineStart, "    "), t(tDash, nil), t(tScalarPart, "baz"),
+           t(tLineStart, "    "), t(tDash, nil), t(tScalarPart, "biz"),
+           t(tLineStart, "  "), t(tScalarPart, "herp"), t(tColon, nil),
+           t(tScalarPart, "derp"), t(tStreamEnd, nil)])
    
     test "Lexing: Anchor":
-       ensure("foo: &bar", [t(yamlLineStart, ""), t(yamlScalarPart, "foo"),
-                            t(yamlColon, nil), t(yamlAnchor, "bar"),
-                            t(yamlStreamEnd, nil)])
+       ensure("foo: &bar", [t(tLineStart, ""), t(tScalarPart, "foo"),
+                            t(tColon, nil), t(tAnchor, "bar"),
+                            t(tStreamEnd, nil)])
     
     test "Lexing: Alias":
-        ensure("foo: *bar", [t(yamlLineStart, ""), t(yamlScalarPart, "foo"),
-                             t(yamlColon, nil), t(yamlAlias, "bar"),
-                             t(yamlStreamEnd, nil)])
+        ensure("foo: *bar", [t(tLineStart, ""), t(tScalarPart, "foo"),
+                             t(tColon, nil), t(tAlias, "bar"),
+                             t(tStreamEnd, nil)])
     
     test "Lexing: Tag handle":
-        ensure("!t!str tagged", [t(yamlLineStart, ""), t(yamlTagHandle, "!t!"),
-                                 t(yamlTagSuffix, "str"),
-                                 t(yamlScalarPart, "tagged"),
-                                 t(yamlStreamEnd, nil)])
+        ensure("!t!str tagged", [t(tLineStart, ""), t(tTagHandle, "!t!"),
+                                 t(tTagSuffix, "str"),
+                                 t(tScalarPart, "tagged"),
+                                 t(tStreamEnd, nil)])
     
     test "Lexing: Verbatim tag handle":
          ensure("!<tag:http://example.com/str> tagged",
-                 [t(yamlLineStart, ""),
-                  t(yamlVerbatimTag, "tag:http://example.com/str"),
-                  t(yamlScalarPart, "tagged"), t(yamlStreamEnd, nil)])
+                 [t(tLineStart, ""),
+                  t(tVerbatimTag, "tag:http://example.com/str"),
+                  t(tScalarPart, "tagged"), t(tStreamEnd, nil)])
     test "Lexing: Type hints":
         ensure("false\nnull\nstring\n-13\n42.25\n-4e+3\n5.42e78",
-               [t(yamlLineStart, ""), t(yamlScalarPart, "false", yTypeBoolean),
-                t(yamlLineStart, ""), t(yamlScalarPart, "null", yTypeNull),
-                t(yamlLineStart, ""), t(yamlScalarPart, "string", yTypeString),
-                t(yamlLineStart, ""), t(yamlScalarPart, "-13", yTypeInteger),
-                t(yamlLineStart, ""), t(yamlScalarPart, "42.25", yTypeFloat),
-                t(yamlLineStart, ""), t(yamlScalarPart, "-4e+3", yTypeFloat),
-                t(yamlLineStart, ""), t(yamlScalarPart, "5.42e78", yTypeFloat),
-                t(yamlStreamEnd, nil)])
+               [t(tLineStart, ""), t(tScalarPart, "false", yTypeBoolean),
+                t(tLineStart, ""), t(tScalarPart, "null", yTypeNull),
+                t(tLineStart, ""), t(tScalarPart, "string", yTypeString),
+                t(tLineStart, ""), t(tScalarPart, "-13", yTypeInteger),
+                t(tLineStart, ""), t(tScalarPart, "42.25", yTypeFloat),
+                t(tLineStart, ""), t(tScalarPart, "-4e+3", yTypeFloat),
+                t(tLineStart, ""), t(tScalarPart, "5.42e78", yTypeFloat),
+                t(tStreamEnd, nil)])
