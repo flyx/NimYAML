@@ -3,7 +3,8 @@ import streams, unicode
 
 import unittest
 
-type BasicLexerToken = tuple[kind: YamlLexerToken, content: string]
+type BasicLexerToken = tuple[kind: YamlLexerToken, content: string,
+                             typeHint: YamlLexerTypeHint]
 
 template ensure(input: string, expected: openarray[BasicLexerToken]) =
     var
@@ -30,13 +31,20 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
                      expected[i].content, "\", got \"", lex.content, "\")"
                 fail()
                 break
+        if token == yamlScalarPart:
+            if lex.typeHint != expected[i].typeHint:
+                echo "wrong type hint (expected ", expected[i].typeHint,
+                     ", got ", lex.typeHint, ")"
+                fail()
+                break
         inc(i)
     if i < expected.len:
         echo "received less tokens than expected (first missing = ",
              expected[i].kind, ")"
 
-proc t(kind: YamlLexerToken, content: string): BasicLexerToken =
-    (kind: kind, content: content)
+proc t(kind: YamlLexerToken, content: string,
+        typeHint: YamlLexerTypeHint = yTypeString): BasicLexerToken =
+    (kind: kind, content: content, typeHint: typeHint)
 
 suite "Lexing":
     test "Lexing: YAML Directive":
@@ -196,3 +204,13 @@ foo:
                  [t(yamlLineStart, ""),
                   t(yamlVerbatimTag, "tag:http://example.com/str"),
                   t(yamlScalarPart, "tagged"), t(yamlStreamEnd, nil)])
+    test "Lexing: Type hints":
+        ensure("false\nnull\nstring\n-13\n42.25\n-4e+3\n5.42e78",
+               [t(yamlLineStart, ""), t(yamlScalarPart, "false", yTypeBoolean),
+                t(yamlLineStart, ""), t(yamlScalarPart, "null", yTypeNull),
+                t(yamlLineStart, ""), t(yamlScalarPart, "string", yTypeString),
+                t(yamlLineStart, ""), t(yamlScalarPart, "-13", yTypeInteger),
+                t(yamlLineStart, ""), t(yamlScalarPart, "42.25", yTypeFloat),
+                t(yamlLineStart, ""), t(yamlScalarPart, "-4e+3", yTypeFloat),
+                t(yamlLineStart, ""), t(yamlScalarPart, "5.42e78", yTypeFloat),
+                t(yamlStreamEnd, nil)])

@@ -44,8 +44,8 @@ type
         ylDirective, ylDefineTagHandle, ylDefineTagURI, ylMajorVersion,
         ylMinorVersion, ylUnknownDirectiveParam, ylDirectiveComment,
         # scalar reading states
-        ylPlainScalar, ylSingleQuotedScalar, ylDoublyQuotedScalar,
-        ylEscape, ylBlockScalar, ylBlockScalarHeader,
+        ylPlainScalar, ylPlainScalarNone, ylSingleQuotedScalar,
+        ylDoublyQuotedScalar, ylEscape, ylBlockScalar, ylBlockScalarHeader,
         ylSpaceAfterPlainScalar, ylSpaceAfterQuotedScalar,
         # indentation
         ylIndentation,
@@ -58,6 +58,14 @@ type
         # anchoring
         ylAnchor, ylAlias
     
+    YamlLexerTypeHintState = enum
+        ythInitial, ythN, ythNU, ythNUL, ythNULL, ythF, ythFA, ythFAL, ythFALS,
+        ythFALSE, ythT, ythTR, ythTRU, ythTRUE, ythMinus, yth0, ythInt, 
+        ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent, ythNone
+    
+    YamlLexerTypeHint* = enum
+        yTypeInteger, yTypeFloat, yTypeBoolean, yTypeNull, yTypeString
+    
     YamlLexer* = object of BaseLexer
         indentations: seq[int]
         encoding: Encoding
@@ -65,6 +73,7 @@ type
         charoffset: int
         content*: string # my.content of the last returned token.
         line*, column*: int
+        typeHint*: YamlLexerTypeHint
 
 const
     UTF8NextLine           = toUTF8(Rune(0x85))
@@ -145,8 +154,26 @@ template yieldToken(kind: YamlLexerToken) {.dirty.} =
             echo "Lexer token: yamlScalar(\"", my.content, "\")"
         else:
             echo "Lexer token: ", kind
-    
     yield kind
+    my.content = ""
+
+template yieldScalarPart() {.dirty.} =
+    case typeHintState
+    of ythNULL:
+        my.typeHint = yTypeNull
+    of ythTRUE, ythFALSE:
+        my.typeHint = yTypeBoolean
+    of ythInt, yth0:
+        my.typeHint = yTypeInteger
+    of ythDecimal, ythExponent:
+        my.typeHint = yTypeFloat
+    else:
+        my.typeHint = yTypeString
+    
+    when defined(yamlDebug):
+        echo "Lexer token: yamlScalarPart(\"", my.content, "\".", my.typeHint,
+             ")"
+    yield yamlScalarPart
     my.content = ""
 
 template yieldError(message: string) {.dirty.} =
@@ -171,6 +198,138 @@ template handleLF() {.dirty.} =
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
 
+template advanceTypeHint(ch: char) {.dirty.} =
+    case ch
+    of '.':
+        case typeHintState
+        of yth0, ythInt:
+            typeHintState = ythDecimal
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of '+':
+        case typeHintState
+        of ythNumE:
+            typeHintState = ythNumEPlusMinus
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of '-':
+        case typeHintState
+        of ythInitial:
+            typeHintState = ythMinus
+        of ythNumE:
+            typeHintState = ythNumEPlusMinus
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of '0':
+        case typeHintState
+        of ythInitial, ythMinus:
+            typeHintState = yth0
+        of ythNumE, ythNumEPlusMinus:
+            typeHintState = ythExponent
+        of ythInt, ythDecimal, ythExponent:
+            discard
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of '1'..'9':
+        case typeHintState
+        of ythInitial, ythMinus:
+            typeHintState = ythInt
+        of ythNumE, ythNumEPlusMinus:
+            typeHintState = ythExponent
+        of ythInt, ythDecimal, ythExponent:
+            discard
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'a':
+        case typeHintState
+        of ythF:
+            typeHintState = ythFA
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'e':
+        case typeHintState
+        of yth0, ythInt, ythDecimal:
+            typeHintState = ythNumE
+        of ythTRU:
+            typeHintState = ythTRUE
+        of ythFALS:
+            typeHintState = ythFALSE
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'E':
+        case typeHintState
+        of yth0, ythInt, ythDecimal:
+            typeHintState = ythNumE
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'f':
+        case typeHintState
+        of ythInitial:
+            typeHintState = ythF
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'l':
+        case typeHintState
+        of ythNU:
+            typeHintState = ythNUL
+        of ythNUL:
+            typeHintState = ythNULL
+        of ythFA:
+            typeHintState = ythFAL
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'n':
+        case typeHintState
+        of ythInitial:
+            typeHintState = ythN
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'r':
+        case typeHintState
+        of ythT:
+            typeHintState = ythTR
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 's':
+        case typeHintState
+        of ythFAL:
+            typeHintState = ythFALS
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 't':
+        case typeHintState
+        of ythInitial:
+            typeHintState = ythT
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    of 'u':
+        case typeHintState
+        of ythN:
+            typeHintState = ythNU
+        of ythTR:
+            typeHintState = ythTRU
+        else:
+            typeHintState = ythNone
+            state = ylPlainScalarNone
+    else:
+        typeHintState = ythNone
+        state = ylPlainScalarNone
+    
+
 iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
     var
         # the following three values are used for parsing escaped unicode chars
@@ -188,6 +347,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             # Lexer must know whether it parses block or flow style. Therefore,
             # it counts the number of open flow arrays / maps here
         state = ylInitial # lexer state
+        typeHintState = ythInitial # for giving type hints of plain scalars
         lastIndentationLength = 0
             # after parsing the indentation of the line, this will hold the
             # indentation length of the current line. Needed for checking where
@@ -260,10 +420,20 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     yieldToken(yamlLineStart)
                     my.content = tmp
                     my.column = curPos
-                    state = ylPlainScalar
+                    state = ylPlainScalarNone
+                    typeHintState = ythNone
                 continue
             else:
-                state = ylPlainScalar
+                let tmp = my.content
+                my.content = ""
+                yieldToken(yamlLineStart)
+                my.content = tmp
+                if my.content.len == 1:
+                    typeHintState = ythMinus
+                    state = ylPlainScalar
+                else:
+                    typeHintState = ythNone
+                    state = ylPlainScalarNone
                 continue
         of ylDots:
             case c
@@ -275,10 +445,12 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     yieldToken(yamlDocumentEnd)
                     state = ylDirectiveLineEnd
                 else:
-                    state = ylPlainScalar
+                    state = ylPlainScalarNone
+                    typeHintState = ythNone
                 continue
             else:
-                state = ylPlainScalar
+                state = ylPlainScalarNone
+                typeHintState = ythNone
                 continue
         of ylDirectiveLineEnd:
             case c
@@ -432,7 +604,35 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
         of ylPlainScalar:
             case c
             of EndOfFile, '\r', '\x0A':
-                yieldToken(yamlScalarPart)
+                yieldScalarPart()
+                state = ylLineEnd
+                continue
+            of ':':
+                lastSpecialChar = c
+                state = ylSpaceAfterPlainScalar
+            of ' ':
+                state = ylSpaceAfterPlainScalar
+                continue
+            of ',':
+                if flowDepth > 0:
+                    lastSpecialChar = c
+                    state = ylSpaceAfterPlainScalar
+                else:
+                    my.content.add(c)
+                    state = ylPlainScalarNone
+                    typeHintState = ythNone
+            of '[', ']', '{', '}':
+                yieldScalarPart()
+                state = ylInitialInLine
+                continue
+            else:
+                advanceTypeHint(c)
+                my.content.add(c)
+        
+        of ylPlainScalarNone:
+            case c
+            of EndOfFile, '\r', '\x0A':
+                yieldScalarPart()
                 state = ylLineEnd
                 continue
             of ':':
@@ -448,7 +648,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 else:
                     my.content.add(c)
             of '[', ']', '{', '}':
-                yieldToken(yamlScalarPart)
+                yieldScalarPart()
                 state = ylInitialInLine
                 continue
             else:
@@ -458,20 +658,21 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
             if lastSpecialChar != '\0':
                 case c
                 of ' ', '\t', EndOfFile, '\r', '\x0A':
-                    yieldToken(yamlScalarPart)
+                    yieldScalarPart()
                     state = ylInitialInLine
                 else:
                     my.content.add(trailingSpace)
                     my.content.add(lastSpecialChar)
                     lastSpecialChar = '\0'
                     trailingSpace = ""
-                    state = ylPlainScalar
+                    state = ylPlainScalarNone
+                    typeHintState = ythNone
                 continue
             
             case c
             of EndOfFile, '\r', '\x0A':
                 trailingSpace = ""
-                yieldToken(yamlScalarPart)
+                yieldScalarPart()
                 state = ylLineEnd
                 continue
             of ' ', '\t':
@@ -483,7 +684,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content.add(trailingSpace)
                     my.content.add(c)
                     trailingSpace = ""
-                    state = ylPlainScalar
+                    state = ylPlainScalarNone
+                    typeHintState = ythNone
             of ':', '#':
                 lastSpecialChar = c
             of '[', ']', '{', '}':
@@ -495,7 +697,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 my.content.add(trailingSpace)
                 my.content.add(c)
                 trailingSpace = ""
-                state = ylPlainScalar
+                state = ylPlainScalarNone
+                typeHintState = ythNone
                 
         of ylInitialInLine:
             if lastSpecialChar != '\0':
@@ -538,6 +741,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     lastSpecialChar = '\0'
                     my.column = curPos - 1
                     state = ylPlainScalar
+                    typeHintState = ythInitial
+                    advanceTypeHint(lastSpecialChar)
                 continue
             case c
             of '\r', '\x0A', EndOfFile:
@@ -550,6 +755,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content = "" & c
                     my.column = curPos
                     state = ylPlainScalar
+                    typeHintState = ythInitial
+                    advanceTypeHint(c)
             of '[':
                 inc(flowDepth)
                 yieldToken(yamlOpeningBracket)
@@ -590,6 +797,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content = "" & c
                     my.column = curPos
                     state = ylPlainScalar
+                    typeHintState = ythInitial
+                    advanceTypeHint(c)
             of '?', ':':
                 my.column = curPos
                 lastSpecialChar = c
@@ -605,6 +814,8 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
                 my.content = "" & c
                 my.column = curPos
                 state = ylPlainScalar
+                typeHintState = ythInitial
+                advanceTypeHint(c)
         of ylComment, ylDirectiveComment:
             case c
             of EndOfFile, '\r', '\x0A':
@@ -823,7 +1034,7 @@ iterator tokens*(my: var YamlLexer): YamlLexerToken {.closure.} =
         of ylBlockScalar:
             case c
             of EndOfFile, '\r', '\x0A':
-                yieldToken(yamlScalarPart)
+                yieldScalarPart()
                 state = ylLineEnd
                 continue
             else:
