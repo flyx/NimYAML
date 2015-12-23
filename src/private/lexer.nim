@@ -164,10 +164,10 @@ template yieldScalarPart() {.dirty.} =
     of ythDecimal, ythExponent:
         my.typeHint = yTypeFloat
     else:
-        my.typeHint = yTypeString
+        my.typeHint = yTypeUnknown
     
     when defined(yamlDebug):
-        echo "Lexer token: tScalarPart(\"", my.content, "\".", my.typeHint,
+        echo "Lexer token: tScalarPart(\"", my.content, "\".", typeHintState,
              ")"
     yield tScalarPart
     my.content = ""
@@ -324,7 +324,6 @@ template advanceTypeHint(ch: char) {.dirty.} =
     else:
         typeHintState = ythNone
         state = ylPlainScalarNone
-    
 
 iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
     var
@@ -734,11 +733,11 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                         lastSpecialChar = '\0'
                 else:
                     my.content.add(lastSpecialChar)
+                    advanceTypeHint(lastSpecialChar)
                     lastSpecialChar = '\0'
                     my.column = curPos - 1
                     state = ylPlainScalar
                     typeHintState = ythInitial
-                    advanceTypeHint(lastSpecialChar)
                 continue
             case c
             of '\r', '\x0A', EndOfFile:

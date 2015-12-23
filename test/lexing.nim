@@ -48,7 +48,7 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
              expected[i].kind, ")"
 
 proc t(kind: YamlLexerToken, content: string,
-        typeHint: YamlTypeHint = yTypeString): BasicLexerToken =
+        typeHint: YamlTypeHint = yTypeUnknown): BasicLexerToken =
     (kind: kind, content: content, typeHint: typeHint)
 
 suite "Lexing":
@@ -210,10 +210,11 @@ foo:
                   t(tVerbatimTag, "tag:http://example.com/str"),
                   t(tScalarPart, "tagged"), t(tStreamEnd, nil)])
     test "Lexing: Type hints":
-        ensure("false\nnull\nstring\n-13\n42.25\n-4e+3\n5.42e78",
+        ensure("false\nnull\nunknown\n\"string\"\n-13\n42.25\n-4e+3\n5.42e78",
                [t(tLineStart, ""), t(tScalarPart, "false", yTypeBoolean),
                 t(tLineStart, ""), t(tScalarPart, "null", yTypeNull),
-                t(tLineStart, ""), t(tScalarPart, "string", yTypeString),
+                t(tLineStart, ""), t(tScalarPart, "unknown", yTypeUnknown),
+                t(tLineStart, ""), t(tScalar, "string", yTypeString),
                 t(tLineStart, ""), t(tScalarPart, "-13", yTypeInteger),
                 t(tLineStart, ""), t(tScalarPart, "42.25", yTypeFloat),
                 t(tLineStart, ""), t(tScalarPart, "-4e+3", yTypeFloat),

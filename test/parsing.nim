@@ -11,13 +11,20 @@ proc endDoc(): YamlParserEvent =
     new(result)
     result.kind = yamlEndDocument
 
-proc scalar(content: string, tag: TagId = tagQuestionMark,
-            anchor: AnchorId = anchorNone): YamlParserEvent =
+proc scalar(content: string, typeHint: YamlTypeHint,
+            tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
+           YamlParserEvent =
     new(result) 
     result.kind = yamlScalar
     result.scalarAnchor = anchor
     result.scalarTag = tag
     result.scalarContent = content
+    result.scalarType = typeHint
+
+proc scalar(content: string,
+            tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
+           YamlParserEvent =
+    result = scalar(content, yTypeUnknown, tag, anchor)
 
 proc startSequence(tag: TagId = tagQuestionMark,
                    anchor: AnchorId = anchorNone):
@@ -79,6 +86,9 @@ proc printDifference(expected, actual: YamlParserEvent) =
                                     ", got ",
                                     cast[int](actual.scalarContent[i]), ")"
                             break
+            elif expected.scalarType != actual.scalarType:
+                echo "[scalar] expected type hint ", expected.scalarType,
+                     ", got ", actual.scalarType
             else:
                 echo "[scalar] Unknown difference"
         of yamlStartMap, yamlStartSequence:
@@ -121,22 +131,25 @@ suite "Parsing":
     test "Parsing: Simple Scalar":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())
     test "Parsing: Simple Sequence":
-        ensure("- item", startDoc(), startSequence(), scalar("item"),
-               endSequence(), endDoc())
+        ensure("- false", startDoc(), startSequence(),
+               scalar("false", yTypeBoolean), endSequence(), endDoc())
     test "Parsing: Simple Map":
-        ensure("key: value\nkey2: value2", startDoc(), startMap(),
-               scalar("key"), scalar("value"), scalar("key2"), scalar("value2"),
-               endMap(), endDoc())
+        ensure("42: value\nkey2: -7.5", startDoc(), startMap(),
+               scalar("42", yTypeInteger), scalar("value"), scalar("key2"),
+               scalar("-7.5", yTypeFloat), endMap(), endDoc())
     test "Parsing: Explicit Map":
-        ensure("? key\n: value\n? key2\n: value2", startDoc(), startMap(),
-               scalar("key"), scalar("value"), scalar("key2"), scalar("value2"),
+        ensure("? null\n: value\n? true\n: value2", startDoc(), startMap(),
+               scalar("null", yTypeNull), scalar("value"),
+               scalar("true", yTypeBoolean), scalar("value2"),
                endMap(), endDoc())
     test "Parsing: Mixed Map (explicit to implicit)":
-        ensure("? a\n: b\nc: d", startDoc(), startMap(), scalar("a"),
-               scalar("b"), scalar("c"), scalar("d"), endMap(), endDoc())
+        ensure("? a\n: 13\n1.5: d", startDoc(), startMap(), scalar("a"),
+               scalar("13", yTypeInteger), scalar("1.5", yTypeFloat),
+               scalar("d"), endMap(), endDoc())
     test "Parsing: Mixed Map (implicit to explicit)":
-        ensure("a: b\n? c\n: d", startDoc(), startMap(), scalar("a"),
-               scalar("b"), scalar("c"), scalar("d"), endMap(), endDoc())
+        ensure("a: 4.2\n? 23\n: d", startDoc(), startMap(), scalar("a"),
+               scalar("4.2", yTypeFloat), scalar("23", yTypeInteger),
+               scalar("d"), endMap(), endDoc())
     test "Parsing: Missing values in map":
         ensure("? a\n? b\nc:", startDoc(), startMap(), scalar("a"), scalar(""),
                scalar("b"), scalar(""), scalar("c"), scalar(""), endMap(),
@@ -145,8 +158,8 @@ suite "Parsing":
         ensure(": a\n: b", startDoc(), startMap(), scalar(""), scalar("a"),
                scalar(""), scalar("b"), endMap(), endDoc())
     test "Parsing: Multiline scalars in explicit map":
-        ensure("? a\n  b\n: c\n  d\n? e\n  f", startDoc(), startMap(),
-               scalar("a b"), scalar("c d"), scalar("e f"), scalar(""),
+        ensure("? a\n  true\n: null\n  d\n? e\n  42", startDoc(), startMap(),
+               scalar("a true"), scalar("null d"), scalar("e 42"), scalar(""),
                endMap(), endDoc())
     test "Parsing: Map in Sequence":
         ensure(" - key: value", startDoc(), startSequence(), startMap(),
@@ -161,11 +174,12 @@ suite "Parsing":
                startSequence(), scalar("l1_i1"), scalar("l1_i2"), endSequence(),
                scalar("l2_i1"), endSequence(), endDoc())
     test "Parsing: Flow Sequence":
-        ensure("[a, b]", startDoc(), startSequence(), scalar("a"), scalar("b"),
-               endSequence(), endDoc())
+        ensure("[2, b]", startDoc(), startSequence(), scalar("2", yTypeInteger),
+               scalar("b"), endSequence(), endDoc())
     test "Parsing: Flow Map":
-        ensure("{a: b, c: d}", startDoc(), startMap(), scalar("a"), scalar("b"),
-               scalar("c"), scalar("d"), endMap(), endDoc())
+        ensure("{a: true, 1.337: d}", startDoc(), startMap(), scalar("a"),
+               scalar("true", yTypeBoolean), scalar("1.337", yTypeFloat),
+               scalar("d"), endMap(), endDoc())
     test "Parsing: Flow Sequence in Flow Sequence":
         ensure("[a, [b, c]]", startDoc(), startSequence(), scalar("a"),
                startSequence(), scalar("b"), scalar("c"), endSequence(),
@@ -202,7 +216,8 @@ suite "Parsing":
         ensure("a: |-\x0A ab\x0A \x0A \x0A", startDoc(), startMap(),
                scalar("a"), scalar("ab"), endMap(), endDoc())
     test "Parsing: non-specific tags of quoted strings":
-        ensure("\"a\"", startDoc(), scalar("a", tagExclamationMark), endDoc())
+        ensure("\"a\"", startDoc(),
+               scalar("a", yTypeString, tagExclamationMark), endDoc())
     test "Parsing: explicit non-specific tag":
         ensure("! a", startDoc(), scalar("a", tagExclamationMark), endDoc())
     test "Parsing: secondary tag handle resolution":
@@ -287,14 +302,14 @@ suite "Parsing":
                alias(1.AnchorId), alias(0.AnchorId), startSequence(),
                scalar("c"), alias(1.AnchorId), scalar("d"), endSequence(),
                endMap(), endDoc())
-    test "Parsing: tags on empty scalars":
+    test "Parsing: Tags on empty scalars":
         let
             idStr = parser.registerUri("tag:yaml.org,2002:str")
             idInt = parser.registerUri("tag:yaml.org,2002:int")
         ensure("!!str : a\nb: !!int\n!!str : !!str", startDoc(), startMap(),
                scalar("", idStr), scalar("a"), scalar("b"), scalar("", idInt),
                scalar("", idStr), scalar("", idStr), endMap(), endDoc())
-    test "Parsing: anchors on empty scalars":
+    test "Parsing: Anchors on empty scalars":
         ensure("&a : a\nb: &b\n&c : &a", startDoc(), startMap(),
                scalar("", tagQuestionMark, 0.AnchorId), scalar("a"),
                scalar("b"), scalar("", tagQuestionMark, 1.AnchorId),

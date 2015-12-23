@@ -22,6 +22,7 @@ type
             scalarAnchor* : AnchorId
             scalarTag*    : TagId
             scalarContent*: string # may not be nil (but empty)
+            scalarType*   : YamlTypeHint
         of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
             discard
         of yamlAlias:
@@ -37,7 +38,8 @@ type
 
 # interface
 
-proc parse*(parser: YamlSequentialParser, s: Stream): iterator(): YamlParserEvent
+proc parse*(parser: YamlSequentialParser, s: Stream):
+        iterator(): YamlParserEvent
 
 # implementation
 
