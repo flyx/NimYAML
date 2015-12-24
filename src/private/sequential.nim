@@ -267,8 +267,10 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
 
 template startPlainScalar() {.dirty.} =
     level.mode = mScalar
+    level.indentationColumn = lex.column
     scalarCache = lex.content
     scalarCacheType = lex.typeHint
+    scalarIndentation = lex.column
     state = ypBlockAfterScalar
 
 template handleTagHandle() {.dirty.} =
@@ -536,7 +538,6 @@ proc parse*(parser: YamlSequentialParser,
             of tColon:
                 assert level.mode in [mUnknown, mImplicitBlockMapKey, mScalar]
                 if level.mode in [mUnknown, mScalar]:
-                    level.indentationColumn = scalarIndentation
                     # tags and anchors are for key scalar, not for map.
                     yield YamlParserEvent(kind: yamlStartMap,
                                           objAnchor: anchorNone,
@@ -955,7 +956,6 @@ proc parse*(parser: YamlSequentialParser,
                                           indentationColumn: -1)
                     state = ypFlow
                 else:
-                    echo "level.mode = ", level.mode
                     yieldUnexpectedToken()
             of tClosingBrace:
                 if level.mode != mFlowMapValue:
