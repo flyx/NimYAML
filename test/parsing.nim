@@ -162,9 +162,11 @@ suite "Parsing":
                scalar("a true"), scalar("null d"), scalar("e 42"), scalar(""),
                endMap(), endDoc())
     test "Parsing: Map in Sequence":
-        ensure(" - key: value", startDoc(), startSequence(), startMap(),
-               scalar("key"), scalar("value"), endMap(), endSequence(),
-               endDoc())
+        ensure(" - key: value\n   key2: value2\n -\n   key3: value3",
+               startDoc(), startSequence(), startMap(), scalar("key"),
+               scalar("value"), scalar("key2"), scalar("value2"), endMap(),
+               startMap(), scalar("key3"), scalar("value3"), endMap(),
+               endSequence(), endDoc())
     test "Parsing: Sequence in Map":
         ensure("key:\n - item1\n - item2", startDoc(), startMap(),
                scalar("key"), startSequence(), scalar("item1"), scalar("item2"),

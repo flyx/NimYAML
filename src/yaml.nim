@@ -1,4 +1,4 @@
-import streams, unicode, lexbase, tables, strutils
+import streams, unicode, lexbase, tables, strutils, json
 
 type
     YamlTypeHint* = enum
@@ -41,7 +41,11 @@ type
 proc parse*(parser: YamlSequentialParser, s: Stream):
         iterator(): YamlParserEvent
 
+proc parseToJson*(s: Stream): seq[JsonNode]
+proc parseToJson*(s: string): seq[JsonNode]
+
 # implementation
 
 include private.lexer
 include private.sequential
+include private.json
