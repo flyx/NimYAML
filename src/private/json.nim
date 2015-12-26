@@ -1,7 +1,7 @@
 type
     Level = tuple[node: JsonNode, key: string]
 
-proc initLevel(node: JsonNode): Level = (node: node, key: nil)
+proc initLevel(node: JsonNode): Level = (node: node, key: cast[string](nil))
 
 proc jsonFromScalar(content: string, typeHint: YamlTypeHint): JsonNode =
     new(result)
@@ -35,7 +35,8 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
         tagNull  = parser.registerUri("tag:yaml.org,2002:null")
         tagInt   = parser.registerUri("tag:yaml.org,2002:int")
         tagFloat = parser.registerUri("tag:yaml.org,2002:float")
-        events = parser.parse(s)
+        events   = parser.parse(s)
+        anchors  = initTable[AnchorId, JsonNode]()
     
     for event in events():
         case event.kind
@@ -47,23 +48,36 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
             # we can savely assume that levels has e length of exactly 1.
             result.add(levels.pop().node)
         of yamlStartSequence:
-            levels.add((node: newJArray(), key: cast[string](nil)))
+            levels.add(initLevel(newJArray()))
+            if event.objAnchor != anchorNone:
+                anchors[event.objAnchor] = levels[levels.high].node
         of yamlStartMap:
-            levels.add((node: newJObject(), key: cast[string](nil)))
+            levels.add(initLevel(newJObject()))
+            if event.objAnchor != anchorNone:
+                anchors[event.objAnchor] = levels[levels.high].node
         of yamlScalar:
             case levels[levels.high].node.kind
             of JArray:
-                levels[levels.high].node.elems.add(
-                        jsonFromScalar(event.scalarContent, event.scalarType))
+                let jsonScalar = jsonFromScalar(event.scalarContent,
+                                                event.scalarType)
+                levels[levels.high].node.elems.add(jsonScalar)
+                if event.scalarAnchor != anchorNone:
+                    anchors[event.scalarAnchor] = jsonScalar
             of JObject:
                 if isNil(levels[levels.high].key):
                     # JSON only allows strings as keys
                     levels[levels.high].key = event.scalarContent
+                    if event.scalarAnchor != anchorNone:
+                        raise newException(ValueError,
+                                "scalar keys may not have anchors in JSON")
                 else:
+                    let jsonScalar = jsonFromScalar(event.scalarContent,
+                                                    event.scalarType)
                     levels[levels.high].node.fields.add(
-                            (key: levels[levels.high].key, val: jsonFromScalar(
-                                   event.scalarContent, event.scalarType)))
+                            (key: levels[levels.high].key, val: jsonScalar))
                     levels[levels.high].key = nil
+                    if event.scalarAnchor != anchorNone:
+                        anchors[event.scalarAnchor] = jsonScalar
             else:
                 discard # will never happen
         of yamlEndSequence, yamlEndMap:
@@ -91,4 +105,19 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
             echo "YAML error at line ", event.line, ", column ", event.column,
                  ": ", event.description
         of yamlAlias:
-            discard # todo
+            # we can savely assume that the alias exists in anchors
+            # (else the parser would have already thrown an exception)
+            case levels[levels.high].node.kind
+            of JArray:
+                levels[levels.high].node.elems.add(anchors[event.aliasTarget])
+            of JObject:
+                if isNil(levels[levels.high].key):
+                    raise newException(ValueError,
+                            "cannot use alias node as key in JSON")
+                else:
+                    levels[levels.high].node.fields.add(
+                            (key: levels[levels.high].key,
+                             val: anchors[event.aliasTarget]))
+                    levels[levels.high].key = nil
+            else:
+                discard # will never happen

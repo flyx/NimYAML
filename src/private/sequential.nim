@@ -25,36 +25,6 @@ type
     BlockScalarStyle = enum
         bsLiteral, bsFolded
 
-const
-    tagExclamationMark*: TagId = 0.TagId # "!" non-specific tag
-    tagQuestionMark*   : TagId = 1.TagId # "?" non-specific tag
-    anchorNone*: AnchorId = (-1).AnchorId   # no anchor defined
-
-# interface
-
-proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool
-
-proc `==`*(left, right: TagId): bool {.borrow.}
-proc `$`*(id: TagId): string {.borrow.}
-
-proc `==`*(left, right: AnchorId): bool {.borrow.}
-proc `$`*(id: AnchorId): string {.borrow.}
-
-proc newParser*(): YamlSequentialParser
-
-# iterators cannot be pre-declared.
-#
-# iterator events*(parser: YamlSequentialParser,
-#                  input: Stream): YamlParserEvent
-
-proc uri*(parser: YamlSequentialParser, id: TagId): string
-
-proc registerUri*(parser: var YamlSequentialParser, uri: string): TagId 
-
-proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
-
-# implementation
-
 proc newParser*(): YamlSequentialParser =
     new(result)
     result.tags = initOrderedTable[string, TagId]()

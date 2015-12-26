@@ -1,6 +1,8 @@
 nimcache
 nakefile
 test/tests
-test/tests.exe
-test/tests.pdb
-test/tests.ilk
+test/parsing
+test/lexing
+test/*.exe
+test/*.pdb
+test/*.ilk
