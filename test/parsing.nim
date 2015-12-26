@@ -1,5 +1,5 @@
 import "../src/yaml"
-import streams
+import streams, tables
 
 import unittest
 
@@ -100,6 +100,7 @@ proc printDifference(expected, actual: YamlStreamEvent) =
 
 template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
     var
+        parser = newParser(tagLib)
         i = 0
         events = parser.parse(newStringStream(input))
     
@@ -118,7 +119,7 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
 
 suite "Parsing":
     setup:
-        var parser = newParser()
+        var tagLib = coreTagLibrary()
     
     test "Parsing: Simple Scalar":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())
@@ -215,46 +216,30 @@ suite "Parsing":
     test "Parsing: explicit non-specific tag":
         ensure("! a", startDoc(), scalar("a", tagExclamationMark), endDoc())
     test "Parsing: secondary tag handle resolution":
-        let id = parser.registerUri("tag:yaml.org,2002:str")
-        ensure("!!str a", startDoc(), scalar("a", id), endDoc())
+        ensure("!!str a", startDoc(), scalar("a", tagString), endDoc())
     test "Parsing: resolving custom tag handles":
-        let id = parser.registerUri("tag:example.com,2015:foo")
+        let fooId = tagLib.registerUri("tag:example.com,2015:foo")
         ensure("%TAG !t! tag:example.com,2015:\n---\n!t!foo a", startDoc(),
-               scalar("a", id), endDoc())
+               scalar("a", fooId), endDoc())
     test "Parsing: tags in sequence":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-            idInt = parser.registerUri("tag:yaml.org,2002:int")
         ensure(" - !!str a\n - b\n - !!int c\n - d", startDoc(),
-               startSequence(), scalar("a", idStr), scalar("b"),
-               scalar("c", idInt), scalar("d"), endSequence(), endDoc())
+               startSequence(), scalar("a", tagString), scalar("b"),
+               scalar("c", tagInteger), scalar("d"), endSequence(), endDoc())
     test "Parsing: tags in implicit map":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-            idInt = parser.registerUri("tag:yaml.org,2002:int")
         ensure("!!str a: b\nc: !!int d\ne: !!str f\ng: h", startDoc(), startMap(),
-               scalar("a", idStr), scalar("b"), scalar("c"), scalar("d", idInt),
-               scalar("e"), scalar("f", idStr), scalar("g"), scalar("h"),
-               endMap(), endDoc())
+               scalar("a", tagString), scalar("b"), scalar("c"),
+               scalar("d", tagInteger), scalar("e"), scalar("f", tagString),
+               scalar("g"), scalar("h"), endMap(), endDoc())
     test "Parsing: tags in explicit map":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-            idInt = parser.registerUri("tag:yaml.org,2002:int")
         ensure("? !!str a\n: !!int b\n? c\n: !!str d", startDoc(), startMap(),
-               scalar("a", idStr), scalar("b", idInt), scalar("c"),
-               scalar("d", idStr), endMap(), endDoc())
+               scalar("a", tagString), scalar("b", tagInteger), scalar("c"),
+               scalar("d", tagString), endMap(), endDoc())
     test "Parsing: tags for flow objects":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-            idMap = parser.registerUri("tag:yaml.org,2002:map")
-            idSeq = parser.registerUri("tag:yaml.org,2002:seq")
-        ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(idMap),
-               scalar("k"), startSequence(idSeq), scalar("a"),
-               scalar("b", idStr), endSequence(), endMap(), endDoc())
+        ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(tagMap),
+               scalar("k"), startSequence(tagSequence), scalar("a"),
+               scalar("b", tagString), endSequence(), endMap(), endDoc())
     test "Parsing: Tag after directives end":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-        ensure("--- !!str\nfoo", startDoc(), scalar("foo", idStr), endDoc())
+        ensure("--- !!str\nfoo", startDoc(), scalar("foo", tagString), endDoc())
     test "Parsing: Simple Anchor":
         ensure("&a str", startDoc(), scalar("str", tagQuestionMark,
                                             0.AnchorId), endDoc())
@@ -271,12 +256,9 @@ suite "Parsing":
                scalar("d", tagQuestionMark, 1.AnchorId),
                endMap(), endDoc())
     test "Parsing: Anchors and tags":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-            idInt = parser.registerUri("tag:yaml.org,2002:int")
         ensure(" - &a !!str a\n - !!int b\n - &c !!int c\n - &d d", startDoc(),
-               startSequence(), scalar("a", idStr, 0.AnchorId),
-               scalar("b", idInt), scalar("c", idInt, 1.AnchorId),
+               startSequence(), scalar("a", tagString, 0.AnchorId),
+               scalar("b", tagInteger), scalar("c", tagInteger, 1.AnchorId),
                scalar("d", tagQuestionMark, 2.AnchorId), endSequence(),
                endDoc())
     test "Parsing: Aliases in sequence":
@@ -297,12 +279,10 @@ suite "Parsing":
                scalar("c"), alias(1.AnchorId), scalar("d"), endSequence(),
                endMap(), endDoc())
     test "Parsing: Tags on empty scalars":
-        let
-            idStr = parser.registerUri("tag:yaml.org,2002:str")
-            idInt = parser.registerUri("tag:yaml.org,2002:int")
         ensure("!!str : a\nb: !!int\n!!str : !!str", startDoc(), startMap(),
-               scalar("", idStr), scalar("a"), scalar("b"), scalar("", idInt),
-               scalar("", idStr), scalar("", idStr), endMap(), endDoc())
+               scalar("", tagString), scalar("a"), scalar("b"),
+               scalar("", tagInteger), scalar("", tagString),
+               scalar("", tagString), endMap(), endDoc())
     test "Parsing: Anchors on empty scalars":
         ensure("&a : a\nb: &b\n&c : &a", startDoc(), startMap(),
                scalar("", tagQuestionMark, 0.AnchorId), scalar("a"),

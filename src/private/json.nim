@@ -3,9 +3,28 @@ type
 
 proc initLevel(node: JsonNode): Level = (node: node, key: cast[string](nil))
 
-proc jsonFromScalar(content: string, typeHint: YamlTypeHint): JsonNode =
+proc jsonFromScalar(content: string, tag: TagId,
+                    typeHint: YamlTypeHint): JsonNode =
     new(result)
-    case typeHint
+    var mappedType: YamlTypeHint
+    
+    case tag
+    of tagQuestionMark:
+        mappedType = typeHint
+    of tagExclamationMark, tagString:
+        mappedType = yTypeString
+    of tagBoolean:
+        mappedType = yTypeBoolean
+    of tagInteger:
+        mappedType = yTypeInteger
+    of tagNull:
+        mappedType = yTypeNull
+    of tagFloat:
+        mappedType = yTypeFloat
+    else:
+        mappedType = yTypeUnknown
+    
+    case mappedType
     of yTypeInteger:
         result.kind = JInt
         result.num = parseBiggestInt(content)
@@ -28,15 +47,10 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
     newSeq(result, 0)
     
     var
-        levels   = newSeq[Level]()
-        parser   = newParser()
-        tagStr   = parser.registerUri("tag:yaml.org,2002:str")
-        tagBool  = parser.registerUri("tag:yaml.org,2002:bool")
-        tagNull  = parser.registerUri("tag:yaml.org,2002:null")
-        tagInt   = parser.registerUri("tag:yaml.org,2002:int")
-        tagFloat = parser.registerUri("tag:yaml.org,2002:float")
-        events   = parser.parse(s)
-        anchors  = initTable[AnchorId, JsonNode]()
+        levels  = newSeq[Level]()
+        parser  = newParser(coreTagLibrary())
+        events  = parser.parse(s)
+        anchors = initTable[AnchorId, JsonNode]()
     
     for event in events():
         case event.kind
@@ -56,9 +70,17 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
             if event.objAnchor != anchorNone:
                 anchors[event.objAnchor] = levels[levels.high].node
         of yamlScalar:
+            if levels.len == 0:
+                # parser ensures that next event will be yamlEndDocument
+                levels.add((node: jsonFromScalar(event.scalarContent,
+                                                 event.scalarTag,
+                                                 event.scalarType), key: nil))
+                continue
+            
             case levels[levels.high].node.kind
             of JArray:
                 let jsonScalar = jsonFromScalar(event.scalarContent,
+                                                event.scalarTag,
                                                 event.scalarType)
                 levels[levels.high].node.elems.add(jsonScalar)
                 if event.scalarAnchor != anchorNone:
@@ -72,6 +94,7 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
                                 "scalar keys may not have anchors in JSON")
                 else:
                     let jsonScalar = jsonFromScalar(event.scalarContent,
+                                                    event.scalarTag,
                                                     event.scalarType)
                     levels[levels.high].node.fields.add(
                             (key: levels[levels.high].key, val: jsonScalar))

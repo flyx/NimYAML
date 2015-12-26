@@ -684,7 +684,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
             of ':', '#':
                 lastSpecialChar = c
             of '[', ']', '{', '}':
-                yieldToken(tScalar)
+                yieldScalarPart()
                 trailingSpace = ""
                 state = ylInitialInLine
                 continue

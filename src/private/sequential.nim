@@ -25,23 +25,10 @@ type
     BlockScalarStyle = enum
         bsLiteral, bsFolded
 
-proc newParser*(): YamlSequentialParser =
+proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser =
     new(result)
-    result.tags = initOrderedTable[string, TagId]()
-    result.tags["!"] = tagExclamationMark
-    result.tags["?"] = tagQuestionMark
+    result.tagLib = tagLib
     result.anchors = initOrderedTable[string, AnchorId]()
-
-proc uri*(parser: YamlSequentialParser, id: TagId): string =
-    for pair in parser.tags.pairs:
-        if pair[1] == id:
-            return pair[0]
-    return nil
-
-proc registerUri*(parser: var YamlSequentialParser, uri: string): TagId =
-    result = cast[TagId](parser.tags.len)
-    if parser.tags.hasKeyOrPut(uri, result):
-        result = parser.tags[uri]
 
 proc anchor*(parser: YamlSequentialParser, id: AnchorId): string =
     for pair in parser.anchors.pairs:
@@ -106,10 +93,9 @@ proc resolveTag(parser: YamlSequentialParser, tag: var string,
         result = if quotedString: tagExclamationMark else: tagQuestionMark
     else:
         try:
-            result = parser.tags[tag]
+            result = parser.tagLib.tags[tag]
         except KeyError:
-            result = cast[TagId](parser.tags.len)
-            parser.tags[tag] = result
+            result = parser.tagLib.registerUri(tag)
         tag = ""
 
 template yieldScalar(content: string, typeHint: YamlTypeHint,

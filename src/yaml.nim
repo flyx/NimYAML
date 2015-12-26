@@ -34,14 +34,42 @@ type
     
     YamlStream* = iterator(): YamlStreamEvent
     
+    YamlTagLibrary* = object
+        tags: Table[string, TagId]
+        nextCustomTagId*: TagId 
+    
     YamlSequentialParser* = ref object
-        tags: OrderedTable[string, TagId]
+        tagLib: YamlTagLibrary
         anchors: OrderedTable[string, AnchorId]
 
 const
+    # failsafe schema
+
     tagExclamationMark*: TagId = 0.TagId # "!" non-specific tag
     tagQuestionMark*   : TagId = 1.TagId # "?" non-specific tag
-    anchorNone*: AnchorId = (-1).AnchorId   # no anchor defined
+    tagString*         : TagId = 2.TagId # !!str tag
+    tagSequence*       : TagId = 3.TagId # !!seq tag
+    tagMap*            : TagId = 4.TagId # !!map tag
+    
+    # json & core schema
+    
+    tagNull*    : TagId = 5.TagId # !!null tag
+    tagBoolean* : TagId = 6.TagId # !!bool tag
+    tagInteger* : TagId = 7.TagId # !!int tag
+    tagFloat*   : TagId = 8.TagId # !!float tag
+    
+    # other language-independent YAML types (from http://yaml.org/type/ )
+    
+    tagOrderedMap* : TagId = 9.TagId  # !!omap tag
+    tagPairs*      : TagId = 10.TagId # !!pairs tag
+    tagSet*        : TagId = 11.TagId # !!set tag
+    tagBinary*     : TagId = 12.TagId # !!binary tag
+    tagMerge*      : TagId = 13.TagId # !!merge tag
+    tagTimestamp*  : TagId = 14.TagId # !!timestamp tag
+    tagValue*      : TagId = 15.TagId # !!value tag
+    tagYaml*       : TagId = 16.TagId # !!yaml tag
+    
+    anchorNone*: AnchorId = (-1).AnchorId # no anchor defined
 
 # interface
 
@@ -55,11 +83,18 @@ proc `==`*(left, right: AnchorId): bool {.borrow.}
 proc `$`*(id: AnchorId): string {.borrow.}
 proc hash*(id: AnchorId): Hash {.borrow.}
 
-proc newParser*(): YamlSequentialParser
+proc initTagLibrary*(): YamlTagLibrary
+proc registerUri*(tagLib: var YamlTagLibrary, uri: string): TagId
+proc uri*(tagLib: YamlTagLibrary, id: TagId): string
 
-proc uri*(parser: YamlSequentialParser, id: TagId): string
+# these should be consts, but the Nim VM still has problems handling tables
+# properly, so we use constructor procs instead.
 
-proc registerUri*(parser: var YamlSequentialParser, uri: string): TagId 
+proc failsafeTagLibrary*(): YamlTagLibrary
+proc coreTagLibrary*(): YamlTagLibrary
+proc extendedTagLibrary*(): YamlTagLibrary
+
+proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser
 
 proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
 
@@ -71,5 +106,6 @@ proc parseToJson*(s: string): seq[JsonNode]
 # implementation
 
 include private.lexer
+include private.tagLibrary
 include private.sequential
 include private.json
