@@ -5,7 +5,7 @@ type
         yTypeInteger, yTypeFloat, yTypeBoolean, yTypeNull, yTypeString,
         yTypeUnknown
     
-    YamlParserEventKind* = enum
+    YamlStreamEventKind* = enum
         yamlStartDocument, yamlEndDocument, yamlStartMap, yamlEndMap,
         yamlStartSequence, yamlEndSequence, yamlScalar, yamlAlias,
         yamlError, yamlWarning
@@ -13,8 +13,8 @@ type
     TagId* = distinct int
     AnchorId* = distinct int
     
-    YamlParserEvent* = ref object
-        case kind*: YamlParserEventKind
+    YamlStreamEvent* = object
+        case kind*: YamlStreamEventKind
         of yamlStartMap, yamlStartSequence:
             objAnchor* : AnchorId
             objTag*    : TagId
@@ -32,6 +32,8 @@ type
             line*        : int
             column*      : int
     
+    YamlStream* = iterator(): YamlStreamEvent
+    
     YamlSequentialParser* = ref object
         tags: OrderedTable[string, TagId]
         anchors: OrderedTable[string, AnchorId]
@@ -43,7 +45,7 @@ const
 
 # interface
 
-proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool
+proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool
 
 proc `==`*(left, right: TagId): bool {.borrow.}
 proc `$`*(id: TagId): string {.borrow.}
@@ -61,8 +63,7 @@ proc registerUri*(parser: var YamlSequentialParser, uri: string): TagId
 
 proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
 
-proc parse*(parser: YamlSequentialParser, s: Stream):
-        iterator(): YamlParserEvent
+proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream
 
 proc parseToJson*(s: Stream): seq[JsonNode]
 proc parseToJson*(s: string): seq[JsonNode]

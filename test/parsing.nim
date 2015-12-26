@@ -3,18 +3,15 @@ import streams
 
 import unittest
 
-proc startDoc(): YamlParserEvent =
-    new(result)
+proc startDoc(): YamlStreamEvent =
     result.kind = yamlStartDocument
 
-proc endDoc(): YamlParserEvent =
-    new(result)
+proc endDoc(): YamlStreamEvent =
     result.kind = yamlEndDocument
 
 proc scalar(content: string, typeHint: YamlTypeHint,
             tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
-           YamlParserEvent =
-    new(result) 
+           YamlStreamEvent =
     result.kind = yamlScalar
     result.scalarAnchor = anchor
     result.scalarTag = tag
@@ -23,38 +20,33 @@ proc scalar(content: string, typeHint: YamlTypeHint,
 
 proc scalar(content: string,
             tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
-           YamlParserEvent =
+           YamlStreamEvent =
     result = scalar(content, yTypeUnknown, tag, anchor)
 
 proc startSequence(tag: TagId = tagQuestionMark,
                    anchor: AnchorId = anchorNone):
-        YamlParserEvent =
-    new(result)
+        YamlStreamEvent =
     result.kind = yamlStartSequence
     result.objAnchor = anchor
     result.objTag = tag
 
-proc endSequence(): YamlParserEvent =
-    new(result)
+proc endSequence(): YamlStreamEvent =
     result.kind = yamlEndSequence
 
 proc startMap(tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
-        YamlParserEvent =
-    new(result)
+        YamlStreamEvent =
     result.kind = yamlStartMap
     result.objAnchor = anchor
     result.objTag = tag
 
-proc endMap(): YamlParserEvent =
-    new(result)
+proc endMap(): YamlStreamEvent =
     result.kind = yamlEndMap
 
-proc alias(target: AnchorId): YamlParserEvent =
-    new(result)
+proc alias(target: AnchorId): YamlStreamEvent =
     result.kind = yamlAlias
     result.aliasTarget = target
 
-proc printDifference(expected, actual: YamlParserEvent) =
+proc printDifference(expected, actual: YamlStreamEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
         if actual.kind == yamlError:
@@ -106,7 +98,7 @@ proc printDifference(expected, actual: YamlParserEvent) =
         else:
             echo "Unknown difference in event kind " & $expected.kind
 
-template ensure(input: string, expected: varargs[YamlParserEvent]) {.dirty.} =
+template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
     var
         i = 0
         events = parser.parse(newStringStream(input))

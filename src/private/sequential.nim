@@ -49,7 +49,7 @@ proc anchor*(parser: YamlSequentialParser, id: AnchorId): string =
             return pair[0]
     return nil
 
-proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool =
+proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
     if left.kind != right.kind:
         return false
     case left.kind
@@ -70,11 +70,11 @@ proc `==`*(left: YamlParserEvent, right: YamlParserEvent): bool =
                  left.line == right.line and left.column == right.column
     
 template yieldWarning(d: string) {.dirty.} =
-    yield YamlParserEvent(kind: yamlWarning, description: d,
+    yield YamlStreamEvent(kind: yamlWarning, description: d,
                           line: lex.line, column: lex.column)
 
 template yieldError(d: string) {.dirty.} =
-    yield YamlParserEvent(kind: yamlError, description: d,
+    yield YamlStreamEvent(kind: yamlError, description: d,
                           line: lex.line, column: lex.column)
     break parserLoop
 
@@ -117,20 +117,20 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
     when defined(yamlDebug):
         echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
              "scalar[\"", content, "\", type=", typeHint, "]"
-    yield YamlParserEvent(kind: yamlScalar,
+    yield YamlStreamEvent(kind: yamlScalar,
             scalarAnchor: resolveAnchor(parser, anchor),
             scalarTag: resolveTag(parser, tag, quoted),
             scalarContent: content,
             scalarType: typeHint)
 
-template yieldStart(k: YamlParserEventKind) {.dirty.} =
+template yieldStart(k: YamlStreamEventKind) {.dirty.} =
     when defined(yamlDebug):
         echo "Parser token [mode=", level.mode, ", state=", state, "]: ", k
-    yield YamlParserEvent(kind: k, objAnchor: resolveAnchor(parser, anchor),
+    yield YamlStreamEvent(kind: k, objAnchor: resolveAnchor(parser, anchor),
                           objTag: resolveTag(parser, tag))
 
 template yieldDocumentEnd() {.dirty.} =
-    yield YamlParserEvent(kind: yamlEndDocument)
+    yield YamlStreamEvent(kind: yamlEndDocument)
     tagShorthands = initTable[string, string]()
     tagShorthands["!"] = "!"
     tagShorthands["!!"] = "tag:yaml.org,2002:"
@@ -140,16 +140,16 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     case lvl.mode
     of mExplicitBlockMapKey, mFlowMapKey:
         yieldScalar("", yTypeUnknown)
-        yield YamlParserEvent(kind: yamlEndMap)
+        yield YamlStreamEvent(kind: yamlEndMap)
     of mImplicitBlockMapKey, mBlockMapValue, mFlowMapValue:
-        yield YamlParserEvent(kind: yamlEndMap)
+        yield YamlStreamEvent(kind: yamlEndMap)
     of mBlockSequenceItem, mFlowSequenceItem:
-        yield YamlParserEvent(kind: yamlEndSequence)
+        yield YamlStreamEvent(kind: yamlEndSequence)
     of mScalar:
         when defined(yamlDebug):
             echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
                  "scalar[\"", scalarCache, "\", type=", scalarCacheType, "]"
-        yield YamlParserEvent(kind: yamlScalar,
+        yield YamlStreamEvent(kind: yamlScalar,
                               scalarAnchor: resolveAnchor(parser, anchor),
                               scalarTag: resolveTag(parser, tag),
                               scalarContent: scalarCache,
@@ -188,7 +188,7 @@ template closeAllLevels() {.dirty.} =
 
 template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
                               next: DocumentLevelMode,
-                              entering: YamlParserEventKind,
+                              entering: YamlStreamEventKind,
                               emptyScalarOnOpening: bool = false) {.dirty.} =
     leaveMoreIndentedLevels()
     if level.indicatorColumn == lex.column or
@@ -259,9 +259,8 @@ template handleTagHandle() {.dirty.} =
     else:
         yieldError("Unknown tag shorthand: " & handle)
 
-proc parse*(parser: YamlSequentialParser,
-            s: Stream): iterator(): YamlParserEvent =
-  result = iterator(): YamlParserEvent =
+proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
+  result = iterator(): YamlStreamEvent =
     var
         # parsing state
         lex: YamlLexer
@@ -341,15 +340,15 @@ proc parse*(parser: YamlSequentialParser,
             of tComment:
                 discard
             of tDirectivesEnd:
-                yield YamlParserEvent(kind: yamlStartDocument)
+                yield YamlStreamEvent(kind: yamlStartDocument)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
                 state = ypAfterDirectivesEnd
             of tDocumentEnd, tStreamEnd:
-                yield YamlParserEvent(kind: yamlStartDocument)
+                yield YamlStreamEvent(kind: yamlStartDocument)
                 yieldDocumentEnd()
             else:
-                yield YamlParserEvent(kind: yamlStartDocument)
+                yield YamlStreamEvent(kind: yamlStartDocument)
                 state = ypBlockLineStart
                 continue
         of ypSkipDirective:
@@ -456,7 +455,7 @@ proc parse*(parser: YamlSequentialParser,
                     yieldError("Unexpected alias")
             of tStreamEnd:
                 closeAllLevels()
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yield YamlStreamEvent(kind: yamlEndDocument)
                 break
             of tDocumentEnd:
                 closeAllLevels()
@@ -509,7 +508,7 @@ proc parse*(parser: YamlSequentialParser,
                 assert level.mode in [mUnknown, mImplicitBlockMapKey, mScalar]
                 if level.mode in [mUnknown, mScalar]:
                     # tags and anchors are for key scalar, not for map.
-                    yield YamlParserEvent(kind: yamlStartMap,
+                    yield YamlStreamEvent(kind: yamlStartMap,
                                           objAnchor: anchorNone,
                                           objTag: tagQuestionMark)
                 level.mode = mBlockMapValue
@@ -538,7 +537,7 @@ proc parse*(parser: YamlSequentialParser,
                 if ancestry.len > 0:
                     level = ancestry.pop()
                     closeAllLevels()
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yield YamlStreamEvent(kind: yamlEndDocument)
                 break
             else:
                 yieldUnexpectedToken()
@@ -547,14 +546,14 @@ proc parse*(parser: YamlSequentialParser,
             of tColon:
                 assert level.mode in [mUnknown, mImplicitBlockMapKey]
                 if level.mode == mUnknown:
-                    yield YamlParserEvent(kind: yamlStartMap,
+                    yield YamlStreamEvent(kind: yamlStartMap,
                                           objAnchor: anchorNone,
                                           objTag: tagQuestionMark)
                 level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-                yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
+                yield YamlStreamEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 state = ypBlockAfterColon
             of tLineStart:
                 if level.mode == mImplicitBlockMapKey:
@@ -562,10 +561,10 @@ proc parse*(parser: YamlSequentialParser,
                 if level.mode == mUnknown:
                     assert ancestry.len > 0
                     level = ancestry.pop()
-                yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
+                yield YamlStreamEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 state = ypBlockLineStart
             of tStreamEnd:
-                yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
+                yield YamlStreamEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 if level.mode == mUnknown:
                     assert ancestry.len > 0
                     level = ancestry.pop()
@@ -651,7 +650,7 @@ proc parse*(parser: YamlSequentialParser,
                 state = ypBlockLineStart
             of tStreamEnd:
                 closeAllLevels()
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yield YamlStreamEvent(kind: yamlEndDocument)
                 break
             of tOpeningBracket, tOpeningBrace:
                 state = ypFlow
@@ -679,7 +678,7 @@ proc parse*(parser: YamlSequentialParser,
                 if noAnchor:
                     # cannot use yield within try/except, so do it here
                     yieldError("[alias] Unknown anchor: " & lex.content)
-                yield YamlParserEvent(kind: yamlAlias, aliasTarget: aliasCache)
+                yield YamlStreamEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 level = ancestry.pop()
                 state = ypBlockLineEnd
             else:
@@ -691,7 +690,7 @@ proc parse*(parser: YamlSequentialParser,
                         ypBlockLineStart
             of tStreamEnd:
                 closeAllLevels()
-                yield YamlParserEvent(kind: yamlEndDocument)
+                yield YamlStreamEvent(kind: yamlEndDocument)
                 break
             else:
                 yieldUnexpectedToken("line end")
@@ -830,7 +829,7 @@ proc parse*(parser: YamlSequentialParser,
                     level = ancestry.pop()
                 if level.mode != mFlowMapValue:
                     yieldUnexpectedToken()
-                yield YamlParserEvent(kind: yamlEndMap)
+                yield YamlStreamEvent(kind: yamlEndMap)
                 if ancestry.len > 0:
                     level = ancestry.pop()
                     case level.mode
@@ -847,7 +846,7 @@ proc parse*(parser: YamlSequentialParser,
                 if level.mode != mFlowSequenceItem:
                     yieldUnexpectedToken()
                 else:
-                    yield YamlParserEvent(kind: yamlEndSequence)
+                    yield YamlStreamEvent(kind: yamlEndSequence)
                     if ancestry.len > 0:
                         level = ancestry.pop()
                         case level.mode
@@ -864,7 +863,7 @@ proc parse*(parser: YamlSequentialParser,
                 anchor = lex.content
                 state = ypFlowAfterAnchor
             of tAlias:
-                yield YamlParserEvent(kind: yamlAlias,
+                yield YamlStreamEvent(kind: yamlAlias,
                         aliasTarget: resolveAlias(parser, lex.content))
                 state = ypFlowAfterObject
                 level = ancestry.pop()
@@ -931,7 +930,7 @@ proc parse*(parser: YamlSequentialParser,
                 if level.mode != mFlowMapValue:
                     yieldUnexpectedToken()
                 else:
-                    yield YamlParserEvent(kind: yamlEndMap)
+                    yield YamlStreamEvent(kind: yamlEndMap)
                     if ancestry.len > 0:
                         level = ancestry.pop()
                         case level.mode
@@ -945,7 +944,7 @@ proc parse*(parser: YamlSequentialParser,
                 if level.mode != mFlowSequenceItem:
                     yieldUnexpectedToken()
                 else:
-                    yield YamlParserEvent(kind: yamlEndSequence)
+                    yield YamlStreamEvent(kind: yamlEndSequence)
                     if ancestry.len > 0:
                         level = ancestry.pop()
                         case level.mode
