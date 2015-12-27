@@ -1,11 +1,11 @@
-import streams, unicode, lexbase
+import streams, unicode, lexbase, macros
 
 import unittest
 
 type
     YamlTypeHint* = enum
-        yTypeInteger, yTypeFloat, yTypeBoolean, yTypeNull, yTypeString,
-        yTypeUnknown
+        yTypeInteger, yTypeFloat, yTypeFloatInf, yTypeFloatNaN, yTypeBoolTrue,
+        yTypeBoolFalse, yTypeNull, yTypeString, yTypeUnknown
 include "../src/private/lexer"
 
 type BasicLexerToken = tuple[kind: YamlLexerToken, content: string,
@@ -210,13 +210,15 @@ foo:
                   t(tVerbatimTag, "tag:http://example.com/str"),
                   t(tScalarPart, "tagged"), t(tStreamEnd, nil)])
     test "Lexing: Type hints":
-        ensure("false\nnull\nunknown\n\"string\"\n-13\n42.25\n-4e+3\n5.42e78",
-               [t(tLineStart, ""), t(tScalarPart, "false", yTypeBoolean),
+        ensure("False\nnull\nYES\nunknown\n\"string\"\n-13\n42.25\n-4e+3\n5.42e78\n-.NaN",
+               [t(tLineStart, ""), t(tScalarPart, "False", yTypeBoolFalse),
                 t(tLineStart, ""), t(tScalarPart, "null", yTypeNull),
+                t(tLineStart, ""), t(tScalarPart, "YES", yTypeBoolTrue),
                 t(tLineStart, ""), t(tScalarPart, "unknown", yTypeUnknown),
                 t(tLineStart, ""), t(tScalar, "string", yTypeString),
                 t(tLineStart, ""), t(tScalarPart, "-13", yTypeInteger),
                 t(tLineStart, ""), t(tScalarPart, "42.25", yTypeFloat),
                 t(tLineStart, ""), t(tScalarPart, "-4e+3", yTypeFloat),
                 t(tLineStart, ""), t(tScalarPart, "5.42e78", yTypeFloat),
+                t(tLineStart, ""), t(tScalarPart, "-.NaN", yTypeFloatNaN),
                 t(tStreamEnd, nil)])

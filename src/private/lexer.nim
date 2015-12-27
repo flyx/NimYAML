@@ -58,9 +58,28 @@ type
         ylAnchor, ylAlias
     
     YamlTypeHintState = enum
-        ythInitial, ythN, ythNU, ythNUL, ythNULL, ythF, ythFA, ythFAL, ythFALS,
-        ythFALSE, ythT, ythTR, ythTRU, ythTRUE, ythMinus, yth0, ythInt, 
-        ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent, ythNone
+        ythInitial,
+        ythF, ythFA, ythFAL, ythFALS, ythFALSE,
+        ythN, ythNU, ythNUL, ythNULL,
+              ythNO,
+        ythO, ythON,
+              ythOF, ythOFF,
+        ythT, ythTR, ythTRU, ythTRUE,
+        ythY, ythYE, ythYES,
+        
+        ythPoint, ythPointI, ythPointIN, ythPointINF,
+                  ythPointN, ythPointNA, ythPointNAN,
+        
+        ythLowerFA, ythLowerFAL, ythLowerFALS,
+        ythLowerNU, ythLowerNUL,
+        ythLowerOF,
+        ythLowerTR, ythLowerTRU,
+        ythLowerYE,
+        
+        ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
+        
+        ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus,
+        ythExponent, ythNone
     
     YamlLexer = object of BaseLexer
         indentations: seq[int]
@@ -157,12 +176,18 @@ template yieldScalarPart() {.dirty.} =
     case typeHintState
     of ythNULL:
         my.typeHint = yTypeNull
-    of ythTRUE, ythFALSE:
-        my.typeHint = yTypeBoolean
+    of ythTRUE, ythON, ythYES, ythY:
+        my.typeHint = yTypeBoolTrue
+    of ythFALSE, ythOFF, ythNO, ythN:
+        my.typeHint = yTypeBoolFalse
     of ythInt, yth0:
         my.typeHint = yTypeInteger
     of ythDecimal, ythExponent:
         my.typeHint = yTypeFloat
+    of ythPointINF:
+        my.typeHint = yTypeFloatInf
+    of ythPointNAN:
+        my.typeHint = yTypeFloatNaN
     else:
         my.typeHint = yTypeUnknown
     
@@ -194,136 +219,132 @@ template handleLF() {.dirty.} =
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
 
+macro typeHintStateMachine(c: untyped, content: untyped): stmt =
+    assert content.kind == nnkStmtList
+    result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
+    for branch in content.children:
+        assert branch.kind == nnkOfBranch
+        var 
+            charBranch = newNimNode(nnkOfBranch, branch)
+            i = 0
+            stateBranches = newNimNode(nnkCaseStmt, branch).add(
+                    newIdentNode("typeHintState"))
+        while branch[i].kind != nnkStmtList:
+            charBranch.add(copyNimTree(branch[i]))
+            inc(i)
+        for rule in branch[i].children:
+            assert rule.kind == nnkInfix
+            assert ($rule[0].ident == "=>")
+            var stateBranch = newNimNode(nnkOfBranch, rule)
+            case rule[1].kind
+            of nnkBracket:
+                for item in rule[1].children:
+                    stateBranch.add(item)
+            of nnkIdent:
+                stateBranch.add(rule[1])
+            else:
+                assert false
+            if rule[2].kind == nnkNilLit:
+                stateBranch.add(newStmtList(newNimNode(nnkDiscardStmt).add(
+                        newEmptyNode())))
+            else:
+                stateBranch.add(newStmtList(newAssignment(
+                        newIdentNode("typeHintState"), copyNimTree(rule[2]))))
+            stateBranches.add(stateBranch)
+        stateBranches.add(newNimNode(nnkElse).add(newStmtList(newAssignment(
+                newIdentNode("typeHintState"), newIdentNode("ythNone")),
+                newAssignment(newIdentNode("state"),
+                newIdentNode("ylPlainScalarNone")))))
+        charBranch.add(newStmtList(stateBranches))
+        result.add(charBranch)
+    result.add(newNimNode(nnkElse).add(newStmtList(newAssignment(
+                newIdentNode("typeHintState"), newIdentNode("ythNone")),
+                newAssignment(newIdentNode("state"),
+                newIdentNode("ylPlainScalarNone")))))
+
 template advanceTypeHint(ch: char) {.dirty.} =
-    case ch
+    typeHintStateMachine ch:
     of '.':
-        case typeHintState
-        of yth0, ythInt:
-            typeHintState = ythDecimal
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
-    of '+':
-        case typeHintState
-        of ythNumE:
-            typeHintState = ythNumEPlusMinus
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        [yth0, ythInt]         => ythDecimal
+        [ythInitial, ythMinus] => ythPoint
+    of '+': ythNumE => ythNumEPlusMinus
     of '-':
-        case typeHintState
-        of ythInitial:
-            typeHintState = ythMinus
-        of ythNumE:
-            typeHintState = ythNumEPlusMinus
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        ythInitial => ythMinus
+        ythNumE    => ythNumEPlusMinus
     of '0':
-        case typeHintState
-        of ythInitial, ythMinus:
-            typeHintState = yth0
-        of ythNumE, ythNumEPlusMinus:
-            typeHintState = ythExponent
-        of ythInt, ythDecimal, ythExponent:
-            discard
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        [ythInitial, ythMinus]      => yth0
+        [ythNumE, ythNumEPlusMinus] => ythExponent
     of '1'..'9':
-        case typeHintState
-        of ythInitial, ythMinus:
-            typeHintState = ythInt
-        of ythNumE, ythNumEPlusMinus:
-            typeHintState = ythExponent
-        of ythInt, ythDecimal, ythExponent:
-            discard
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        [ythInitial, ythMinus]            => ythInt
+        [ythNumE, ythNumEPlusMinus]       => ythExponent
+        [ythInt, ythDecimal, ythExponent] => nil
     of 'a':
-        case typeHintState
-        of ythF:
-            typeHintState = ythFA
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        ythF           => ythLowerFA
+        ythPointN      => ythPointNA
+        ythPointLowerN => ythPointLowerNA
+    of 'A':
+        ythF      => ythFA
+        ythPointN => ythPointNA
     of 'e':
-        case typeHintState
-        of yth0, ythInt, ythDecimal:
-            typeHintState = ythNumE
-        of ythTRU:
-            typeHintState = ythTRUE
-        of ythFALS:
-            typeHintState = ythFALSE
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        [yth0, ythInt, ythDecimal] => ythNumE
+        ythLowerFALS => ythFALSE
+        ythLowerTRU  => ythTRUE
+        ythY         => ythLowerYE
     of 'E':
-        case typeHintState
-        of yth0, ythInt, ythDecimal:
-            typeHintState = ythNumE
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        [yth0, ythInt, ythDecimal] => ythNumE
+        ythFALS => ythFALSE
+        ythTRU  => ythTRUE
+        ythY    => ythYE
     of 'f':
-        case typeHintState
-        of ythInitial:
-            typeHintState = ythF
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        ythInitial      => ythF
+        ythO            => ythLowerOF
+        ythLowerOF      => ythOFF
+        ythPointLowerIN => ythPointINF
+    of 'F':
+        ythInitial => ythF
+        ythO       => ythOF
+        ythOF      => ythOFF
+        ythPointIN => ythPointINF
+    of 'i', 'I': ythPoint => ythPointI
     of 'l':
-        case typeHintState
-        of ythNU:
-            typeHintState = ythNUL
-        of ythNUL:
-            typeHintState = ythNULL
-        of ythFA:
-            typeHintState = ythFAL
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        ythLowerNU  => ythLowerNUL
+        ythLowerNUL => ythNULL
+        ythLowerFA  => ythLowerFAL
+    of 'L':
+        ythNU  => ythNUL
+        ythNUL => ythNULL
+        ythFA  => ythFAL
     of 'n':
-        case typeHintState
-        of ythInitial:
-            typeHintState = ythN
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
-    of 'r':
-        case typeHintState
-        of ythT:
-            typeHintState = ythTR
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        ythInitial      => ythN
+        ythO            => ythON
+        ythPoint        => ythPointLowerN
+        ythPointI       => ythPointLowerIN
+        ythPointLowerNA => ythPointNAN
+    of 'N':
+        ythInitial => ythN
+        ythO       => ythON
+        ythPoint   => ythPointN
+        ythPointI  => ythPointIN
+        ythPointNA => ythPointNAN
+    of 'o', 'O':
+        ythInitial => ythO
+        ythN       => ythNO
+    of 'r': ythT => ythLowerTR
+    of 'R': ythT => ythTR
     of 's':
-        case typeHintState
-        of ythFAL:
-            typeHintState = ythFALS
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
-    of 't':
-        case typeHintState
-        of ythInitial:
-            typeHintState = ythT
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
+        ythLowerFAL => ythLowerFALS
+        ythLowerYE  => ythYES
+    of 'S':
+        ythFAL => ythFALS
+        ythYE  => ythYES
+    of 't', 'T': ythInitial => ythT
     of 'u':
-        case typeHintState
-        of ythN:
-            typeHintState = ythNU
-        of ythTR:
-            typeHintState = ythTRU
-        else:
-            typeHintState = ythNone
-            state = ylPlainScalarNone
-    else:
-        typeHintState = ythNone
-        state = ylPlainScalarNone
+        ythN       => ythLowerNU
+        ythLowerTR => ythLowerTRU
+    of 'U':
+        ythN  => ythNU
+        ythTR => ythTRU
+    of 'y', 'Y': ythInitial => ythY
 
 iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
     var

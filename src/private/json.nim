@@ -14,13 +14,20 @@ proc jsonFromScalar(content: string, tag: TagId,
     of tagExclamationMark, tagString:
         mappedType = yTypeString
     of tagBoolean:
-        mappedType = yTypeBoolean
+        case typeHint
+        of yTypeBoolTrue:
+            mappedType = yTypeBoolTrue
+        of yTypeBoolFalse:
+            mappedType = yTypeBoolFalse
+        else:
+            raise newException(ValueError, "Invalid boolean value: " & content)
     of tagInteger:
         mappedType = yTypeInteger
     of tagNull:
         mappedType = yTypeNull
     of tagFloat:
         mappedType = yTypeFloat
+        ## TODO: NaN, inf
     else:
         mappedType = yTypeUnknown
     
@@ -31,9 +38,12 @@ proc jsonFromScalar(content: string, tag: TagId,
     of yTypeFloat:
         result.kind = JFloat
         result.fnum = parseFloat(content)
-    of yTypeBoolean:
+    of yTypeBoolTrue:
         result.kind = JBool
-        result.bval = parseBool(content)
+        result.bval = true
+    of yTypeBoolFalse:
+        result.kind = JBool
+        result.bval = false
     of yTypeNull:
         result.kind = JNull
     else:

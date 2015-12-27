@@ -128,16 +128,16 @@ suite "Parsing":
     test "Parsing: Simple Scalar":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())
     test "Parsing: Simple Sequence":
-        ensure("- false", startDoc(), startSequence(),
-               scalar("false", yTypeBoolean), endSequence(), endDoc())
+        ensure("- off", startDoc(), startSequence(),
+               scalar("off", yTypeBoolFalse), endSequence(), endDoc())
     test "Parsing: Simple Map":
         ensure("42: value\nkey2: -7.5", startDoc(), startMap(),
                scalar("42", yTypeInteger), scalar("value"), scalar("key2"),
                scalar("-7.5", yTypeFloat), endMap(), endDoc())
     test "Parsing: Explicit Map":
-        ensure("? null\n: value\n? true\n: value2", startDoc(), startMap(),
+        ensure("? null\n: value\n? ON\n: value2", startDoc(), startMap(),
                scalar("null", yTypeNull), scalar("value"),
-               scalar("true", yTypeBoolean), scalar("value2"),
+               scalar("ON", yTypeBoolTrue), scalar("value2"),
                endMap(), endDoc())
     test "Parsing: Mixed Map (explicit to implicit)":
         ensure("? a\n: 13\n1.5: d", startDoc(), startMap(), scalar("a"),
@@ -176,8 +176,8 @@ suite "Parsing":
         ensure("[2, b]", startDoc(), startSequence(), scalar("2", yTypeInteger),
                scalar("b"), endSequence(), endDoc())
     test "Parsing: Flow Map":
-        ensure("{a: true, 1.337: d}", startDoc(), startMap(), scalar("a"),
-               scalar("true", yTypeBoolean), scalar("1.337", yTypeFloat),
+        ensure("{a: Y, 1.337: d}", startDoc(), startMap(), scalar("a"),
+               scalar("Y", yTypeBoolTrue), scalar("1.337", yTypeFloat),
                scalar("d"), endMap(), endDoc())
     test "Parsing: Flow Sequence in Flow Sequence":
         ensure("[a, [b, c]]", startDoc(), startSequence(), scalar("a"),

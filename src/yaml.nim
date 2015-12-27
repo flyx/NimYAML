@@ -1,9 +1,41 @@
-import streams, unicode, lexbase, tables, strutils, json, hashes, queues
+## This module provides facilities to generate and interpret
+## `YAML <http://yaml.org>`_ character streams. All primitive operations on
+## data objects use a ``YamlStream`` either as source or as output. Because this
+## stream is implemented as iterator, it is possible to process YAML input and
+## output sequentially, i.e. without loading the processed data structure
+## completely into RAM. This supports processing of large data structures.
+##
+## As YAML is a strict superset of `JSON <http://json.org>`_, JSON input is
+## automatically supported. Additionally, there is functionality available to
+## convert any YAML stream into JSON. While JSON is less readable than YAML,
+## this enhances interoperability with other languages.
+
+import streams, unicode, lexbase, tables, strutils, json, hashes, queues, macros
 
 type
     YamlTypeHint* = enum
-        yTypeInteger, yTypeFloat, yTypeBoolean, yTypeNull, yTypeString,
-        yTypeUnknown
+        ## A type hint is a friendly message from the YAML lexer, telling you
+        ## it thinks a scalar string probably is of a certain type. You are not
+        ## required to adhere to this information. The first matching RegEx will
+        ## be the type hint of a scalar string.
+        ##
+        ## ================== =========================
+        ## Name               RegEx
+        ## ================== =========================
+        ## ``yTypeInteger``   ``0 | -? [1-9] [0-9]*``
+        ## ``yTypeFloat``     ``-? [1-9] ( \. [0-9]* [1-9] )? ( e [-+] [1-9] [0-9]* )?``
+        ## ``yTypeFloatInf``  ``-? \. (inf | Inf | INF)``
+        ## ``yTypeFloatNaN``  ``-? \. (nan | NaN | NAN)``
+        ## ``yTypeBoolTrue``  ``y|Y|yes|Yes|YES|true|True|TRUE|on|On|ON``
+        ## ``yTypeBoolFalse`` ``n|N|no|No|NO|false|False|FALSE|off|Off|OFF``
+        ## ``yTypeNull``      ``~ | null | Null | NULL``
+        ## ``yTypeString``    *none*
+        ## ``yTypeUnknown``   ``*``
+        ##
+        ## The value `yTypeString` is not returned based on RegExes, but for
+        ## scalars that are quoted within the YAML input character stream.
+        yTypeInteger, yTypeFloat, yTypeFloatInf, yTypeFloatNaN, yTypeBoolTrue,
+        yTypeBoolFalse, yTypeNull, yTypeString, yTypeUnknown
     
     YamlStreamEventKind* = enum
         yamlStartDocument, yamlEndDocument, yamlStartMap, yamlEndMap,
