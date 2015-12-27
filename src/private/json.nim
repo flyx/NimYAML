@@ -63,12 +63,12 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
             result.add(levels.pop().node)
         of yamlStartSequence:
             levels.add(initLevel(newJArray()))
-            if event.objAnchor != anchorNone:
-                anchors[event.objAnchor] = levels[levels.high].node
+            if event.seqAnchor != anchorNone:
+                anchors[event.seqAnchor] = levels[levels.high].node
         of yamlStartMap:
             levels.add(initLevel(newJObject()))
-            if event.objAnchor != anchorNone:
-                anchors[event.objAnchor] = levels[levels.high].node
+            if event.mapAnchor != anchorNone:
+                anchors[event.mapAnchor] = levels[levels.high].node
         of yamlScalar:
             if levels.len == 0:
                 # parser ensures that next event will be yamlEndDocument

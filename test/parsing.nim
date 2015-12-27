@@ -27,8 +27,8 @@ proc startSequence(tag: TagId = tagQuestionMark,
                    anchor: AnchorId = anchorNone):
         YamlStreamEvent =
     result.kind = yamlStartSequence
-    result.objAnchor = anchor
-    result.objTag = tag
+    result.seqAnchor = anchor
+    result.seqTag = tag
 
 proc endSequence(): YamlStreamEvent =
     result.kind = yamlEndSequence
@@ -36,8 +36,8 @@ proc endSequence(): YamlStreamEvent =
 proc startMap(tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
         YamlStreamEvent =
     result.kind = yamlStartMap
-    result.objAnchor = anchor
-    result.objTag = tag
+    result.mapAnchor = anchor
+    result.mapTag = tag
 
 proc endMap(): YamlStreamEvent =
     result.kind = yamlEndMap
@@ -83,12 +83,16 @@ proc printDifference(expected, actual: YamlStreamEvent) =
                      ", got ", actual.scalarType
             else:
                 echo "[scalar] Unknown difference"
-        of yamlStartMap, yamlStartSequence:
-            if expected.objTag != actual.objTag:
-                echo "[object.tag] expected ", expected.objTag, ", got ",
-                     actual.objTag
+        of yamlStartMap:
+            if expected.mapTag != actual.mapTag:
+                echo "[map.tag] expected ", expected.mapTag, ", got ",
+                     actual.mapTag
             else:
-                echo "[object.tag] Unknown difference"
+                echo "[map.tag] Unknown difference"
+        of yamlStartSequence:
+            if expected.seqTag != actual.seqTag:
+                echo "[seq.tag] expected ", expected.seqTag, ", got ",
+                     actual.seqTag
         of yamlAlias:
             if expected.aliasTarget != actual.aliasTarget:
                 echo "[alias] expected ", expected.aliasTarget, ", got ",

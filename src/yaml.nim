@@ -1,4 +1,4 @@
-import streams, unicode, lexbase, tables, strutils, json, hashes
+import streams, unicode, lexbase, tables, strutils, json, hashes, queues
 
 type
     YamlTypeHint* = enum
@@ -15,9 +15,13 @@ type
     
     YamlStreamEvent* = object
         case kind*: YamlStreamEventKind
-        of yamlStartMap, yamlStartSequence:
-            objAnchor* : AnchorId
-            objTag*    : TagId
+        of yamlStartMap:
+            mapAnchor* : AnchorId
+            mapTag*    : TagId
+            mapMayHaveKeyObjects* : bool
+        of yamlStartSequence:
+            seqAnchor* : AnchorId
+            seqTag*    : TagId
         of yamlScalar:
             scalarAnchor* : AnchorId
             scalarTag*    : TagId
@@ -41,33 +45,50 @@ type
     YamlSequentialParser* = ref object
         tagLib: YamlTagLibrary
         anchors: OrderedTable[string, AnchorId]
-
+    
+    YamlDumpStyle* = enum
+        yDumpMinimal, yDumpCanonical, yDumpDefault, yDumpJson, yDumpBlockOnly
 const
     # failsafe schema
 
-    tagExclamationMark*: TagId = 0.TagId # "!" non-specific tag
-    tagQuestionMark*   : TagId = 1.TagId # "?" non-specific tag
-    tagString*         : TagId = 2.TagId # !!str tag
-    tagSequence*       : TagId = 3.TagId # !!seq tag
-    tagMap*            : TagId = 4.TagId # !!map tag
+    tagExclamationMark*: TagId = 0.TagId ## ``!`` non-specific tag
+    tagQuestionMark*   : TagId = 1.TagId ## ``?`` non-specific tag
+    tagString*         : TagId = 2.TagId ## \
+        ## `!!str <http://yaml.org/type/str.html >`_ tag
+    tagSequence*       : TagId = 3.TagId ## \
+        ## `!!seq <http://yaml.org/type/seq.html>`_ tag
+    tagMap*            : TagId = 4.TagId ## \
+        ## `!!map <http://yaml.org/type/map.html>`_ tag
     
     # json & core schema
     
-    tagNull*    : TagId = 5.TagId # !!null tag
-    tagBoolean* : TagId = 6.TagId # !!bool tag
-    tagInteger* : TagId = 7.TagId # !!int tag
-    tagFloat*   : TagId = 8.TagId # !!float tag
+    tagNull*    : TagId = 5.TagId ## \
+        ## `!!null <http://yaml.org/type/null.html>`_ tag
+    tagBoolean* : TagId = 6.TagId ## \
+        ## `!!bool <http://yaml.org/type/bool.html>`_ tag
+    tagInteger* : TagId = 7.TagId ## \
+        ## `!!int <http://yaml.org/type/int.html>`_ tag
+    tagFloat*   : TagId = 8.TagId ## \
+        ## `!!float <http://yaml.org/type/float.html>`_ tag
     
     # other language-independent YAML types (from http://yaml.org/type/ )
     
-    tagOrderedMap* : TagId = 9.TagId  # !!omap tag
-    tagPairs*      : TagId = 10.TagId # !!pairs tag
-    tagSet*        : TagId = 11.TagId # !!set tag
-    tagBinary*     : TagId = 12.TagId # !!binary tag
-    tagMerge*      : TagId = 13.TagId # !!merge tag
-    tagTimestamp*  : TagId = 14.TagId # !!timestamp tag
-    tagValue*      : TagId = 15.TagId # !!value tag
-    tagYaml*       : TagId = 16.TagId # !!yaml tag
+    tagOrderedMap* : TagId = 9.TagId  ## \
+        ## `!!omap <http://yaml.org/type/omap.html>`_ tag
+    tagPairs*      : TagId = 10.TagId ## \
+        ## `!!pairs <http://yaml.org/type/pairs.html>`_ tag
+    tagSet*        : TagId = 11.TagId ## \
+        ## `!!set <http://yaml.org/type/set.html>`_ tag
+    tagBinary*     : TagId = 12.TagId ## \
+        ## `!!binary <http://yaml.org/type/binary.html>`_ tag
+    tagMerge*      : TagId = 13.TagId ## \
+        ## `!!merge <http://yaml.org/type/merge.html>`_ tag
+    tagTimestamp*  : TagId = 14.TagId ## \
+        ## `!!timestamp <http://yaml.org/type/timestamp.html>`_ tag
+    tagValue*      : TagId = 15.TagId ## \
+        ## `!!value <http://yaml.org/type/value.html>`_ tag
+    tagYaml*       : TagId = 16.TagId ## \
+        ## `!!yaml <http://yaml.org/type/yaml.html>`_ tag
     
     anchorNone*: AnchorId = (-1).AnchorId # no anchor defined
 
@@ -103,9 +124,16 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream
 proc parseToJson*(s: Stream): seq[JsonNode]
 proc parseToJson*(s: string): seq[JsonNode]
 
+proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
+           style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2)
+
+proc transform*(input: Stream, output: Stream, style: YamlDumpStyle,
+                indentationStep: int = 2)
+
 # implementation
 
 include private.lexer
 include private.tagLibrary
 include private.sequential
 include private.json
+include private.dumper

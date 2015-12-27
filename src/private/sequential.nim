@@ -42,9 +42,12 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
     case left.kind
     of yamlStartDocument, yamlEndDocument, yamlEndMap, yamlEndSequence:
         result = true
-    of yamlStartMap, yamlStartSequence:
-        result = left.objAnchor == right.objAnchor and
-                 left.objTag == right.objTag
+    of yamlStartMap:
+        result = left.mapAnchor == right.mapAnchor and
+                 left.mapTag == right.mapTag
+    of yamlStartSequence:
+        result = left.seqAnchor == right.seqAnchor and
+                 left.seqTag == right.seqTag
     of yamlScalar:
         result = left.scalarAnchor == right.scalarAnchor and
                  left.scalarTag == right.scalarTag and
@@ -109,11 +112,25 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
             scalarContent: content,
             scalarType: typeHint)
 
-template yieldStart(k: YamlStreamEventKind) {.dirty.} =
+template yieldStartMap() {.dirty.} =
     when defined(yamlDebug):
-        echo "Parser token [mode=", level.mode, ", state=", state, "]: ", k
-    yield YamlStreamEvent(kind: k, objAnchor: resolveAnchor(parser, anchor),
-                          objTag: resolveTag(parser, tag))
+        echo "Parser token [mode=", level.mode, ", state=", state, "]: yamlStartMap"
+    yield YamlStreamEvent(kind: yamlStartMap,
+                          mapAnchor: resolveAnchor(parser, anchor),
+                          mapTag: resolveTag(parser, tag))
+
+template yieldStartSequence() {.dirty.} =
+    when defined(yamlDebug):
+        echo "Parser token [mode=", level.mode, ", state=", state, "]: yamlStartSequence"
+    yield YamlStreamEvent(kind: yamlStartSequence,
+                          seqAnchor: resolveAnchor(parser, anchor),
+                          seqTag: resolveTag(parser, tag))
+
+template yieldStart(t: YamlStreamEventKind) {.dirty.} =
+    when t == yamlStartMap:
+        yieldStartMap()
+    else:
+        yieldStartSequence()
 
 template yieldDocumentEnd() {.dirty.} =
     yield YamlStreamEvent(kind: yamlEndDocument)
@@ -495,8 +512,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 if level.mode in [mUnknown, mScalar]:
                     # tags and anchors are for key scalar, not for map.
                     yield YamlStreamEvent(kind: yamlStartMap,
-                                          objAnchor: anchorNone,
-                                          objTag: tagQuestionMark)
+                                          mapAnchor: anchorNone,
+                                          mapTag: tagQuestionMark)
                 level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -533,8 +550,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 assert level.mode in [mUnknown, mImplicitBlockMapKey]
                 if level.mode == mUnknown:
                     yield YamlStreamEvent(kind: yamlStartMap,
-                                          objAnchor: anchorNone,
-                                          objTag: tagQuestionMark)
+                                          mapAnchor: anchorNone,
+                                          mapTag: tagQuestionMark)
                 level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
