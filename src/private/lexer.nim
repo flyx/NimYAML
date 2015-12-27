@@ -731,6 +731,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                         state = ylTagHandle
                         my.content = "!"
                         lastSpecialChar = '\0'
+                    my.column = curPos - 1
                 else:
                     my.content.add(lastSpecialChar)
                     advanceTypeHint(lastSpecialChar)

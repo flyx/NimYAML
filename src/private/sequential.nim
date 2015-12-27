@@ -106,6 +106,10 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
     when defined(yamlDebug):
         echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
              "scalar[\"", content, "\", type=", typeHint, "]"
+    if objectTag.len > 0:
+        if tag.len > 0:
+            yieldError("Duplicate tag for scalar")
+        tag = objectTag
     yield YamlStreamEvent(kind: yamlScalar,
             scalarAnchor: resolveAnchor(parser, anchor),
             scalarTag: resolveTag(parser, tag, quoted),
@@ -227,7 +231,7 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
                 cachedAnchor = anchor
                 cachedTag    = tag
             anchor = ""
-            tag = ""
+            tag = objectTag
             yieldStart(entering)
             anchor = cachedAnchor
             tag = cachedTag
@@ -286,6 +290,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         
         # cached values
         tag: string = ""
+        objectTag: string = ""
         anchor: string = ""
         scalarCache: string = nil
         scalarCacheType: YamlTypeHint
@@ -363,6 +368,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             case token
             of tTagHandle:
                 handleTagHandle()
+                objectTag = tag
+                tag = ""
                 state = ypBlockLineEnd
             of tComment:
                 state = ypBlockLineEnd
@@ -373,7 +380,11 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         of ypBlockLineStart:
             case token
             of tLineStart:
-                discard
+                if objectTag.len > 0:
+                    yieldError("Duplicate tag for object")
+                else:
+                    objectTag = tag
+                    tag = ""
             of tDash:
                 handleBlockIndicator([mBlockSequenceItem], [],
                                      mBlockSequenceItem, yamlStartSequence)
@@ -499,21 +510,20 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 closeAllLevels()
                 state = ypAfterDirectivesEnd
                 continue
-            of tAlias:
+            else:
                 leaveMoreIndentedLevels()
+                if level.mode == mScalar:
+                    yieldUnexpectedToken()
                 state = ypBlockLineStart
                 continue
-            else:
-                yieldUnexpectedToken()
         of ypBlockAfterScalar:
             case token
             of tColon:
                 assert level.mode in [mUnknown, mImplicitBlockMapKey, mScalar]
                 if level.mode in [mUnknown, mScalar]:
-                    # tags and anchors are for key scalar, not for map.
                     yield YamlStreamEvent(kind: yamlStartMap,
                                           mapAnchor: anchorNone,
-                                          mapTag: tagQuestionMark)
+                                          mapTag: parser.resolveTag(objectTag))
                 level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -584,11 +594,9 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             of tAnchor:
                 anchor = lex.content
                 state = ypBlockAfterAnchorAndTag
-            of tScalar, tColon, tStreamEnd:
+            of tScalar, tColon, tStreamEnd, tScalarPart:
                 state = ypBlockLineStart
                 continue
-            of tScalarPart:
-                startPlainScalar()
             of tLineStart:
                 state = ypBlockLineStart
             of tOpeningBracket, tOpeningBrace:
@@ -602,11 +610,9 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 state = ypBlockLineStart
                 continue
             case token
-            of tScalar, tColon, tStreamEnd:
+            of tScalar, tColon, tStreamEnd, tScalarPart:
                 state = ypBlockLineStart
                 continue
-            of tScalarPart:
-                startPlainScalar()
             of tLineStart:
                 discard
             of tOpeningBracket, tOpeningBrace:
@@ -627,11 +633,9 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 state = ypBlockLineStart
                 continue
             case token
-            of tScalar, tColon, tStreamEnd:
+            of tScalar, tColon, tStreamEnd, tScalarPart:
                 state = ypBlockLineStart
                 continue
-            of tScalarPart:
-                startPlainScalar()
             of tLineStart:
                 discard
             of tOpeningBracket, tOpeningBrace:

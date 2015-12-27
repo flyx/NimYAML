@@ -50,8 +50,8 @@ proc printDifference(expected, actual: YamlStreamEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
         if actual.kind == yamlError:
-            echo "Error message: (", actual.line, ", ", actual.column, ") ",
-                 actual.description
+            echo "Error message: (line: ", actual.line, ", column: ",
+                 actual.column, ") ", actual.description
         elif actual.kind == yamlWarning:
             echo "Warning message: " & actual.description
     else:
@@ -238,6 +238,12 @@ suite "Parsing":
         ensure("? !!str a\n: !!int b\n? c\n: !!str d", startDoc(), startMap(),
                scalar("a", tagString), scalar("b", tagInteger), scalar("c"),
                scalar("d", tagString), endMap(), endDoc())
+    test "Parsing: tags for block objects":
+        ensure("--- !!map\nfoo: !!seq\n  - a\n  - !!str b\n!!str bar: !!str baz",
+               startDoc(), startMap(tagMap), scalar("foo"),
+               startSequence(tagSequence), scalar("a"), scalar("b", tagString),
+               endSequence(), scalar("bar", tagString),
+               scalar("baz", tagString), endMap(), endDoc())
     test "Parsing: tags for flow objects":
         ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(tagMap),
                scalar("k"), startSequence(tagSequence), scalar("a"),
