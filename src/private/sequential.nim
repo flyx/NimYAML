@@ -66,15 +66,15 @@ proc `$`*(event: YamlStreamEvent): string =
         discard
     of yamlStartMap:
         result &= "tag=" & $event.mapTag
-        if event.mapAnchor != anchorNone:
+        if event.mapAnchor != yAnchorNone:
             result &= ", anchor=" & $event.mapAnchor
     of yamlStartSequence:
         result &= "tag=" & $event.seqTag
-        if event.seqAnchor != anchorNone:
+        if event.seqAnchor != yAnchorNone:
             result &= ", anchor=" & $event.seqAnchor
     of yamlScalar:
         result &= "tag=" & $event.scalarTag
-        if event.scalarAnchor != anchorNone:
+        if event.scalarAnchor != yAnchorNone:
             result &= ", anchor=" & $event.scalarAnchor
         result &= ", typeHint=" & $event.scalarType
         result &= ", content=\"" & event.scalarContent & '\"'
@@ -103,7 +103,7 @@ template yieldUnexpectedToken(expected: string = "") {.dirty.} =
 
 proc resolveAnchor(parser: YamlSequentialParser, anchor: var string):
         AnchorId {.inline.} =
-    result = anchorNone
+    result = yAnchorNone
     if anchor.len > 0:
         result = cast[AnchorId](parser.anchors.len)
         if parser.anchors.hasKeyOrPut(anchor, result):
@@ -114,12 +114,13 @@ proc resolveAlias(parser: YamlSequentialParser, name: string): AnchorId =
     try:
         result = parser.anchors[name]
     except KeyError:
-        result = anchorNone
+        result = yAnchorNone
 
 proc resolveTag(parser: YamlSequentialParser, tag: var string,
                 quotedString: bool = false): TagId {.inline.} =
     if tag.len == 0:
-        result = if quotedString: tagExclamationMark else: tagQuestionMark
+        result = if quotedString: parser.tagLib.tags["!"] else:
+                parser.tagLib.tags["?"]
     else:
         try:
             result = parser.tagLib.tags[tag]
@@ -322,7 +323,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         scalarCacheType: YamlTypeHint
         scalarIndentation: int
         scalarCacheIsQuoted: bool = false
-        aliasCache = anchorNone
+        aliasCache = yAnchorNone
         
     lex.open(s)
     tagShorthands["!"] = "!"
@@ -480,7 +481,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     yieldError("Unexpected scalar")
             of tAlias:
                 aliasCache = resolveAlias(parser, lex.content)
-                if aliasCache == anchorNone:
+                if aliasCache == yAnchorNone:
                     yieldError("[alias] Unknown anchor: " & lex.content)
                 if ancestry.len > 0:
                     if level.mode == mUnknown:
@@ -542,7 +543,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 assert level.mode in [mUnknown, mImplicitBlockMapKey, mScalar]
                 if level.mode in [mUnknown, mScalar]:
                     yield YamlStreamEvent(kind: yamlStartMap,
-                                          mapAnchor: anchorNone,
+                                          mapAnchor: yAnchorNone,
                                           mapTag: parser.resolveTag(objectTag))
                 level.mode = mBlockMapValue
                 ancestry.add(level)
@@ -580,8 +581,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 assert level.mode in [mUnknown, mImplicitBlockMapKey]
                 if level.mode == mUnknown:
                     yield YamlStreamEvent(kind: yamlStartMap,
-                                          mapAnchor: anchorNone,
-                                          mapTag: tagQuestionMark)
+                                          mapAnchor: yAnchorNone,
+                                          mapTag: parser.resolveTag(objectTag))
                 level.mode = mBlockMapValue
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,

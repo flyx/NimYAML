@@ -10,7 +10,7 @@ proc endDoc(): YamlStreamEvent =
     result.kind = yamlEndDocument
 
 proc scalar(content: string, typeHint: YamlTypeHint,
-            tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
+            tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
            YamlStreamEvent =
     result.kind = yamlScalar
     result.scalarAnchor = anchor
@@ -19,12 +19,12 @@ proc scalar(content: string, typeHint: YamlTypeHint,
     result.scalarType = typeHint
 
 proc scalar(content: string,
-            tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
+            tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
            YamlStreamEvent =
     result = scalar(content, yTypeUnknown, tag, anchor)
 
-proc startSequence(tag: TagId = tagQuestionMark,
-                   anchor: AnchorId = anchorNone):
+proc startSequence(tag: TagId = yTagQuestionMark,
+                   anchor: AnchorId = yAnchorNone):
         YamlStreamEvent =
     result.kind = yamlStartSequence
     result.seqAnchor = anchor
@@ -33,7 +33,7 @@ proc startSequence(tag: TagId = tagQuestionMark,
 proc endSequence(): YamlStreamEvent =
     result.kind = yamlEndSequence
 
-proc startMap(tag: TagId = tagQuestionMark, anchor: AnchorId = anchorNone):
+proc startMap(tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
         YamlStreamEvent =
     result.kind = yamlStartMap
     result.mapAnchor = anchor
@@ -216,86 +216,86 @@ suite "Parsing":
                scalar("a"), scalar("ab"), endMap(), endDoc())
     test "Parsing: non-specific tags of quoted strings":
         ensure("\"a\"", startDoc(),
-               scalar("a", yTypeString, tagExclamationMark), endDoc())
+               scalar("a", yTypeString, yTagExclamationMark), endDoc())
     test "Parsing: explicit non-specific tag":
-        ensure("! a", startDoc(), scalar("a", tagExclamationMark), endDoc())
+        ensure("! a", startDoc(), scalar("a", yTagExclamationMark), endDoc())
     test "Parsing: secondary tag handle resolution":
-        ensure("!!str a", startDoc(), scalar("a", tagString), endDoc())
+        ensure("!!str a", startDoc(), scalar("a", yTagString), endDoc())
     test "Parsing: resolving custom tag handles":
         let fooId = tagLib.registerUri("tag:example.com,2015:foo")
         ensure("%TAG !t! tag:example.com,2015:\n---\n!t!foo a", startDoc(),
                scalar("a", fooId), endDoc())
     test "Parsing: tags in sequence":
         ensure(" - !!str a\n - b\n - !!int c\n - d", startDoc(),
-               startSequence(), scalar("a", tagString), scalar("b"),
-               scalar("c", tagInteger), scalar("d"), endSequence(), endDoc())
+               startSequence(), scalar("a", yTagString), scalar("b"),
+               scalar("c", yTagInteger), scalar("d"), endSequence(), endDoc())
     test "Parsing: tags in implicit map":
         ensure("!!str a: b\nc: !!int d\ne: !!str f\ng: h", startDoc(), startMap(),
-               scalar("a", tagString), scalar("b"), scalar("c"),
-               scalar("d", tagInteger), scalar("e"), scalar("f", tagString),
+               scalar("a", yTagString), scalar("b"), scalar("c"),
+               scalar("d", yTagInteger), scalar("e"), scalar("f", yTagString),
                scalar("g"), scalar("h"), endMap(), endDoc())
     test "Parsing: tags in explicit map":
         ensure("? !!str a\n: !!int b\n? c\n: !!str d", startDoc(), startMap(),
-               scalar("a", tagString), scalar("b", tagInteger), scalar("c"),
-               scalar("d", tagString), endMap(), endDoc())
+               scalar("a", yTagString), scalar("b", yTagInteger), scalar("c"),
+               scalar("d", yTagString), endMap(), endDoc())
     test "Parsing: tags for block objects":
         ensure("--- !!map\nfoo: !!seq\n  - a\n  - !!str b\n!!str bar: !!str baz",
-               startDoc(), startMap(tagMap), scalar("foo"),
-               startSequence(tagSequence), scalar("a"), scalar("b", tagString),
-               endSequence(), scalar("bar", tagString),
-               scalar("baz", tagString), endMap(), endDoc())
+               startDoc(), startMap(yTagMap), scalar("foo"),
+               startSequence(yTagSequence), scalar("a"), scalar("b", yTagString),
+               endSequence(), scalar("bar", yTagString),
+               scalar("baz", yTagString), endMap(), endDoc())
     test "Parsing: tags for flow objects":
-        ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(tagMap),
-               scalar("k"), startSequence(tagSequence), scalar("a"),
-               scalar("b", tagString), endSequence(), endMap(), endDoc())
+        ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(yTagMap),
+               scalar("k"), startSequence(yTagSequence), scalar("a"),
+               scalar("b", yTagString), endSequence(), endMap(), endDoc())
     test "Parsing: Tag after directives end":
-        ensure("--- !!str\nfoo", startDoc(), scalar("foo", tagString), endDoc())
+        ensure("--- !!str\nfoo", startDoc(), scalar("foo", yTagString), endDoc())
     test "Parsing: Simple Anchor":
-        ensure("&a str", startDoc(), scalar("str", tagQuestionMark,
+        ensure("&a str", startDoc(), scalar("str", yTagQuestionMark,
                                             0.AnchorId), endDoc())
     test "Parsing: Anchors in sequence":
         ensure(" - &a a\n - b\n - &c c\n - &a d", startDoc(), startSequence(),
-               scalar("a", tagQuestionMark, 0.AnchorId), scalar("b"),
-               scalar("c", tagQuestionMark, 1.AnchorId),
-               scalar("d", tagQuestionMark, 0.AnchorId), endSequence(),
+               scalar("a", yTagQuestionMark, 0.AnchorId), scalar("b"),
+               scalar("c", yTagQuestionMark, 1.AnchorId),
+               scalar("d", yTagQuestionMark, 0.AnchorId), endSequence(),
                endDoc())
     test "Parsing: Anchors in map":
         ensure("&a a: b\nc: &d d", startDoc(), startMap(),
-               scalar("a", tagQuestionMark, 0.AnchorId),
+               scalar("a", yTagQuestionMark, 0.AnchorId),
                scalar("b"), scalar("c"),
-               scalar("d", tagQuestionMark, 1.AnchorId),
+               scalar("d", yTagQuestionMark, 1.AnchorId),
                endMap(), endDoc())
     test "Parsing: Anchors and tags":
         ensure(" - &a !!str a\n - !!int b\n - &c !!int c\n - &d d", startDoc(),
-               startSequence(), scalar("a", tagString, 0.AnchorId),
-               scalar("b", tagInteger), scalar("c", tagInteger, 1.AnchorId),
-               scalar("d", tagQuestionMark, 2.AnchorId), endSequence(),
+               startSequence(), scalar("a", yTagString, 0.AnchorId),
+               scalar("b", yTagInteger), scalar("c", yTagInteger, 1.AnchorId),
+               scalar("d", yTagQuestionMark, 2.AnchorId), endSequence(),
                endDoc())
     test "Parsing: Aliases in sequence":
         ensure(" - &a a\n - &b b\n - *a\n - *b", startDoc(), startSequence(),
-               scalar("a", tagQuestionMark, 0.AnchorId),
-               scalar("b", tagQuestionMark, 1.AnchorId), alias(0.AnchorId),
+               scalar("a", yTagQuestionMark, 0.AnchorId),
+               scalar("b", yTagQuestionMark, 1.AnchorId), alias(0.AnchorId),
                alias(1.AnchorId), endSequence(), endDoc())
     test "Parsing: Aliases in map":
         ensure("&a a: &b b\n*a: *b", startDoc(), startMap(),
-               scalar("a", tagQuestionMark, 0.AnchorId),
-               scalar("b", tagQuestionMark, 1.AnchorId), alias(0.AnchorId),
+               scalar("a", yTagQuestionMark, 0.AnchorId),
+               scalar("b", yTagQuestionMark, 1.AnchorId), alias(0.AnchorId),
                alias(1.AnchorId), endMap(), endDoc())
     test "Parsing: Aliases in flow":
         ensure("{ &a [a, &b b]: *b, *a: [c, *b, d]}", startDoc(), startMap(),
-               startSequence(tagQuestionMark, 0.AnchorId), scalar("a"),
-               scalar("b", tagQuestionMark, 1.AnchorId), endSequence(),
+               startSequence(yTagQuestionMark, 0.AnchorId), scalar("a"),
+               scalar("b", yTagQuestionMark, 1.AnchorId), endSequence(),
                alias(1.AnchorId), alias(0.AnchorId), startSequence(),
                scalar("c"), alias(1.AnchorId), scalar("d"), endSequence(),
                endMap(), endDoc())
     test "Parsing: Tags on empty scalars":
         ensure("!!str : a\nb: !!int\n!!str : !!str", startDoc(), startMap(),
-               scalar("", tagString), scalar("a"), scalar("b"),
-               scalar("", tagInteger), scalar("", tagString),
-               scalar("", tagString), endMap(), endDoc())
+               scalar("", yTagString), scalar("a"), scalar("b"),
+               scalar("", yTagInteger), scalar("", yTagString),
+               scalar("", yTagString), endMap(), endDoc())
     test "Parsing: Anchors on empty scalars":
         ensure("&a : a\nb: &b\n&c : &a", startDoc(), startMap(),
-               scalar("", tagQuestionMark, 0.AnchorId), scalar("a"),
-               scalar("b"), scalar("", tagQuestionMark, 1.AnchorId),
-               scalar("", tagQuestionMark, 2.AnchorId),
-               scalar("", tagQuestionMark, 0.AnchorId), endMap(), endDoc())
+               scalar("", yTagQuestionMark, 0.AnchorId), scalar("a"),
+               scalar("b"), scalar("", yTagQuestionMark, 1.AnchorId),
+               scalar("", yTagQuestionMark, 2.AnchorId),
+               scalar("", yTagQuestionMark, 0.AnchorId), endMap(), endDoc())

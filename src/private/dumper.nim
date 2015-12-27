@@ -94,7 +94,7 @@ proc startItem(target: Stream, style: YamlDumpStyle, indentation: int,
     
 proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: YamlTagLibrary,
                        anchor: AnchorId) =
-    if tag notin [tagQuestionMark, tagExclamationMark]:
+    if tag notin [yTagQuestionMark, yTagExclamationMark]:
         let tagUri = tagLib.uri(tag)
         if tagUri.startsWith("tag:yaml.org,2002:"):
             target.write("!!")
@@ -104,7 +104,7 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: YamlTagLibrary,
             target.write("!<")
             target.write(tagUri)
             target.write("> ")
-    if anchor != anchorNone:
+    if anchor != yAnchorNone:
         target.write("&")
         # TODO: properly select an anchor
         target.write(cast[byte]('a') + cast[byte](anchor))

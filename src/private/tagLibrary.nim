@@ -1,6 +1,6 @@
 proc initTagLibrary*(): YamlTagLibrary =
     result.tags = initTable[string, TagId]()
-    result.nextCustomTagId = 1000.TagId
+    result.nextCustomTagId = yFirstCustomTagId
 
 proc registerUri*(tagLib: var YamlTagLibrary, uri: string): TagId =
     tagLib.tags[uri] = tagLib.nextCustomTagId
@@ -15,25 +15,25 @@ proc uri*(tagLib: YamlTagLibrary, id: TagId): string =
 
 proc failsafeTagLibrary*(): YamlTagLibrary =
     result = initTagLibrary()
-    result.tags["!"] = tagExclamationMark
-    result.tags["?"] = tagQuestionMark
-    result.tags["tag:yaml.org,2002:str"] = tagString
-    result.tags["tag:yaml.org,2002:seq"] = tagSequence
-    result.tags["tag:yaml.org,2002:map"] = tagMap
+    result.tags["!"] = yTagExclamationMark
+    result.tags["?"] = yTagQuestionMark
+    result.tags["tag:yaml.org,2002:str"] = yTagString
+    result.tags["tag:yaml.org,2002:seq"] = yTagSequence
+    result.tags["tag:yaml.org,2002:map"] = yTagMap
 
 proc coreTagLibrary*(): YamlTagLibrary =
     result = failsafeTagLibrary()
-    result.tags["tag:yaml.org,2002:null"] = tagNull
-    result.tags["tag:yaml.org,2002:bool"] = tagBoolean
-    result.tags["tag:yaml.org,2002:int"] = tagInteger
-    result.tags["tag:yaml.org,2002:float"] = tagFloat
+    result.tags["tag:yaml.org,2002:null"]  = yTagNull
+    result.tags["tag:yaml.org,2002:bool"]  = yTagBoolean
+    result.tags["tag:yaml.org,2002:int"]   = yTagInteger
+    result.tags["tag:yaml.org,2002:float"] = yTagFloat
 
 proc extendedTagLibrary*(): YamlTagLibrary =
     result = coreTagLibrary()
-    result.tags["tag:yaml.org,2002:omap"] = tagOrderedMap
-    result.tags["tag:yaml.org,2002:pairs"] = tagPairs
-    result.tags["tag:yaml.org,2002:binary"] = tagBinary
-    result.tags["tag:yaml.org,2002:merge"] = tagMerge
-    result.tags["tag:yaml.org,2002:timestamp"] = tagTimestamp
-    result.tags["tag:yaml.org,2002:value"] = tagValue
-    result.tags["tag:yaml.org,2002:yaml"] = tagYaml
+    result.tags["tag:yaml.org,2002:omap"]      = yTagOrderedMap
+    result.tags["tag:yaml.org,2002:pairs"]     = yTagPairs
+    result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
+    result.tags["tag:yaml.org,2002:merge"]     = yTagMerge
+    result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
+    result.tags["tag:yaml.org,2002:value"]     = yTagValue
+    result.tags["tag:yaml.org,2002:yaml"]      = yTagYaml

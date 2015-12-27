@@ -9,11 +9,11 @@ proc jsonFromScalar(content: string, tag: TagId,
     var mappedType: YamlTypeHint
     
     case tag
-    of tagQuestionMark:
+    of yTagQuestionMark:
         mappedType = typeHint
-    of tagExclamationMark, tagString:
+    of yTagExclamationMark, yTagString:
         mappedType = yTypeString
-    of tagBoolean:
+    of yTagBoolean:
         case typeHint
         of yTypeBoolTrue:
             mappedType = yTypeBoolTrue
@@ -21,11 +21,11 @@ proc jsonFromScalar(content: string, tag: TagId,
             mappedType = yTypeBoolFalse
         else:
             raise newException(ValueError, "Invalid boolean value: " & content)
-    of tagInteger:
+    of yTagInteger:
         mappedType = yTypeInteger
-    of tagNull:
+    of yTagNull:
         mappedType = yTypeNull
-    of tagFloat:
+    of yTagFloat:
         mappedType = yTypeFloat
         ## TODO: NaN, inf
     else:
@@ -73,11 +73,11 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
             result.add(levels.pop().node)
         of yamlStartSequence:
             levels.add(initLevel(newJArray()))
-            if event.seqAnchor != anchorNone:
+            if event.seqAnchor != yAnchorNone:
                 anchors[event.seqAnchor] = levels[levels.high].node
         of yamlStartMap:
             levels.add(initLevel(newJObject()))
-            if event.mapAnchor != anchorNone:
+            if event.mapAnchor != yAnchorNone:
                 anchors[event.mapAnchor] = levels[levels.high].node
         of yamlScalar:
             if levels.len == 0:
@@ -93,13 +93,13 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
                                                 event.scalarTag,
                                                 event.scalarType)
                 levels[levels.high].node.elems.add(jsonScalar)
-                if event.scalarAnchor != anchorNone:
+                if event.scalarAnchor != yAnchorNone:
                     anchors[event.scalarAnchor] = jsonScalar
             of JObject:
                 if isNil(levels[levels.high].key):
                     # JSON only allows strings as keys
                     levels[levels.high].key = event.scalarContent
-                    if event.scalarAnchor != anchorNone:
+                    if event.scalarAnchor != yAnchorNone:
                         raise newException(ValueError,
                                 "scalar keys may not have anchors in JSON")
                 else:
@@ -109,7 +109,7 @@ proc parseToJson*(s: Stream): seq[JsonNode] =
                     levels[levels.high].node.fields.add(
                             (key: levels[levels.high].key, val: jsonScalar))
                     levels[levels.high].key = nil
-                    if event.scalarAnchor != anchorNone:
+                    if event.scalarAnchor != yAnchorNone:
                         anchors[event.scalarAnchor] = jsonScalar
             else:
                 discard # will never happen
