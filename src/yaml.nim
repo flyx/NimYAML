@@ -95,6 +95,7 @@ const
 # interface
 
 proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool
+proc `$`*(event: YamlStreamEvent): string
 
 proc `==`*(left, right: TagId): bool {.borrow.}
 proc `$`*(id: TagId): string {.borrow.}

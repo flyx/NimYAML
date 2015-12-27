@@ -58,7 +58,33 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
     of yamlError, yamlWarning:
         result = left.description == right.description and
                  left.line == right.line and left.column == right.column
-    
+
+proc `$`*(event: YamlStreamEvent): string =
+    result = $event.kind & '('
+    case event.kind
+    of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
+        discard
+    of yamlStartMap:
+        result &= "tag=" & $event.mapTag
+        if event.mapAnchor != anchorNone:
+            result &= ", anchor=" & $event.mapAnchor
+    of yamlStartSequence:
+        result &= "tag=" & $event.seqTag
+        if event.seqAnchor != anchorNone:
+            result &= ", anchor=" & $event.seqAnchor
+    of yamlScalar:
+        result &= "tag=" & $event.scalarTag
+        if event.scalarAnchor != anchorNone:
+            result &= ", anchor=" & $event.scalarAnchor
+        result &= ", typeHint=" & $event.scalarType
+        result &= ", content=\"" & event.scalarContent & '\"'
+    of yamlAlias:
+        result &= "aliasTarget=" & $event.aliasTarget
+    of yamlWarning, yamlError:
+        result &= "line=" & $event.line & ", column=" & $event.column
+        result &= ", description=\"" & event.description & '\"'
+    result &= ")"
+        
 template yieldWarning(d: string) {.dirty.} =
     yield YamlStreamEvent(kind: yamlWarning, description: d,
                           line: lex.line, column: lex.column)
@@ -502,13 +528,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     continue
                 yieldUnexpectedToken()
             of tDocumentEnd, tStreamEnd:
-                closeAllLevels()
-                scalarCache = nil
-                state = ypInitial
-                continue
-            of tDirectivesEnd:
-                closeAllLevels()
-                state = ypAfterDirectivesEnd
+                state = ypBlockLineStart
                 continue
             else:
                 leaveMoreIndentedLevels()
