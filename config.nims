@@ -1,15 +1,26 @@
 task build, "Compile the YAML module into a library":
-    exec "nim c --app:lib -d:release yaml"
-    setCommand "nop"
+    --app:lib
+    --d:release
+    setCommand "c", "yaml"
 
 task tests, "Run all tests":
-    exec "nim c -r --verbosity:0 test/tests"
-    setCommand "nop"
+    --r
+    --verbosity:0
+    setCommand "c", "test/tests"
 
 task lexerTests, "Run lexer tests":
-    exec "nim c -r --verbosity:0 test/lexing"
-    setCommand "nop"
+    --r
+    --verbosity:0
+    setCommand "c", "test/lexing"
 
 task parserTests, "Run parser tests":
-    exec "nim c --verbosity:0 -r test/parsing"
+    --r
+    --verbosity:0
+    setCommand "c", "test/parsing"
+    
+task doc, "Generate documentation":
+    setCommand "doc2", "yaml"
+
+task clean, "Remove all generated files":
+    exec "rm -f yaml.html libyaml.* test/tests test/parsing test/lexing"
     setCommand "nop"

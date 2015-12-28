@@ -1,8 +1,9 @@
 nimcache
-nakefile
 test/tests
 test/parsing
 test/lexing
 test/*.exe
 test/*.pdb
 test/*.ilk
+yaml.html
+libyaml.*
