@@ -38,6 +38,12 @@ proc jsonFromScalar(content: string, tag: TagId,
     of yTypeFloat:
         result.kind = JFloat
         result.fnum = parseFloat(content)
+    of yTypeFloatInf:
+        result.kind = JFloat
+        result.fnum = if content[0] == '-': NegInf else: Inf
+    of yTypeFloatNaN:
+        result.kind = JFloat
+        result.fnum = NaN
     of yTypeBoolTrue:
         result.kind = JBool
         result.bval = true

@@ -294,6 +294,13 @@ proc parseToJson*(s: Stream): seq[JsonNode]
     ## representation. The input may not contain any tags apart from those in
     ## ``coreTagLibrary``. Anchors and aliases will be resolved. Maps in the
     ## input must not contain non-scalars as keys.
+    ##
+    ## **Warning:** The special float values ``[+-]Inf`` and ``NaN`` will be
+    ## parsed into Nim's JSON structure without error. However, they cannot be
+    ## rendered to a JSON character stream, because these values are not part
+    ## of the JSON specification. Nim's JSON implementation currently does not
+    ## check for these values and will output invalid JSON when rendering one
+    ## of these values into a JSON character stream.
     
 proc parseToJson*(s: string): seq[JsonNode]
     ## see `parseToJson <#parseToJson,Stream,seq[JsonNode]>`_
