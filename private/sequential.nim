@@ -298,7 +298,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
     var
         # parsing state
         lex: YamlLexer
-        state = ypInitial
+        state: YamlParserState = ypInitial
         
         # document state
         foundYamlDirective = false

@@ -1,4 +1,4 @@
-import "../src/yaml"
+import "../yaml"
 import streams, tables
 
 import unittest
@@ -124,6 +124,8 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
 suite "Parsing":
     setup:
         var tagLib = coreTagLibrary()
+    teardown:
+        discard
     
     test "Parsing: Simple Scalar":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())

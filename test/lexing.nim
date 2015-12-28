@@ -6,7 +6,7 @@ type
     YamlTypeHint* = enum
         yTypeInteger, yTypeFloat, yTypeFloatInf, yTypeFloatNaN, yTypeBoolTrue,
         yTypeBoolFalse, yTypeNull, yTypeString, yTypeUnknown
-include "../src/private/lexer"
+include "../private/lexer"
 
 type BasicLexerToken = tuple[kind: YamlLexerToken, content: string,
                              typeHint: YamlTypeHint]
@@ -52,6 +52,12 @@ proc t(kind: YamlLexerToken, content: string,
     (kind: kind, content: content, typeHint: typeHint)
 
 suite "Lexing":
+    setup:
+        discard
+    
+    teardown:
+        discard
+
     test "Lexing: YAML Directive":
         ensure("%YAML 1.2", [t(tYamlDirective, nil),
                              t(tVersionPart, "1"),

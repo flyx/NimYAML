@@ -362,8 +362,9 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
         flowDepth = 0
             # Lexer must know whether it parses block or flow style. Therefore,
             # it counts the number of open flow arrays / maps here
-        state = ylInitial # lexer state
-        typeHintState = ythInitial # for giving type hints of plain scalars
+        state: YamlLexerState = ylInitial # lexer state
+        typeHintState: YamlTypeHintState = ythInitial
+            # for giving type hints of plain scalars
         lastIndentationLength = 0
             # after parsing the indentation of the line, this will hold the
             # indentation length of the current line. Needed for checking where
