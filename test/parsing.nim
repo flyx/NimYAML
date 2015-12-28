@@ -1,5 +1,4 @@
 import "../yaml"
-import streams, tables
 
 import unittest
 

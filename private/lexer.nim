@@ -164,8 +164,8 @@ proc open(my: var YamlLexer, input: Stream) =
     my.indentations = newSeq[int]()
     my.detect_encoding()
     my.content = ""
-    my.line = 0
-    my.column = 0
+    my.line = 1
+    my.column = 1
 
 template yieldToken(kind: YamlLexerToken) {.dirty.} =
     when defined(yamlDebug):
@@ -205,6 +205,7 @@ template yieldLexerError(message: string) {.dirty.} =
     when defined(yamlDebug):
         echo "Lexer error: " & message
     my.content = message
+    my.column = curPos
     yield tError
     my.content = ""
 
@@ -212,13 +213,13 @@ template handleCR() {.dirty.} =
     my.bufpos = lexbase.handleCR(my, my.bufpos + my.charoffset) + my.charlen -
             my.charoffset - 1
     my.line.inc()
-    curPos = 0
+    curPos = 1
 
 template handleLF() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) +
             my.charlen - my.charoffset - 1
     my.line.inc()
-    curPos = 0
+    curPos = 1
 
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
@@ -376,7 +377,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
         blockScalarIndentation = -1
             # when parsing a block scalar, this will be set to the indentation
             # of the line that starts the flow scalar.
-        curPos = 0
+        curPos = 1
     
     while true:
         let c = my.buf[my.bufpos + my.charoffset]
@@ -410,12 +411,12 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
         of ylInitialContent:
             case c
             of '-':
-                my.column = 0
+                my.column = curPos
                 state = ylDashes
                 continue
             of '.':
                 yieldToken(tLineStart)
-                my.column = 0
+                my.column = curPos
                 state = ylDots
                 continue
             else:

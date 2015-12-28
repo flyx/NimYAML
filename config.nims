@@ -21,6 +21,11 @@ task parserTests, "Run parser tests":
 task doc, "Generate documentation":
     setCommand "doc2", "yaml"
 
+task bench, "Benchmarking":
+    --d:release
+    --r
+    setCommand "c", "bench/json"
+
 task clean, "Remove all generated files":
     exec "rm -f yaml.html libyaml.* test/tests test/parsing test/lexing"
     setCommand "nop"

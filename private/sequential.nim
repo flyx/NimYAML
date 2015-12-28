@@ -766,12 +766,12 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                         else:
                             discard
                     
-                    if lex.content.len > level.indentationColumn:
+                    if lex.content.len > level.indentationColumn - 1:
                         if blockScalar == bsFolded:
                             if blockScalarTrailing == " ":
                                 blockScalarTrailing = "\x0A"
                         scalarCache &= blockScalarTrailing &
-                                lex.content[level.indentationColumn..^1]
+                                lex.content[level.indentationColumn - 1..^1]
                         blockScalarTrailing = ""
                             
             of tScalarPart:
@@ -859,8 +859,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 if level.mode == mUnknown:
                     yieldScalar("", yTypeUnknown)
                     level = ancestry.pop()
-                if level.mode != mFlowMapValue:
-                    yieldUnexpectedToken()
+                if level.mode != mFlowMapKey:
+                    yieldUnexpectedToken($level.mode)
                 yield YamlStreamEvent(kind: yamlEndMap)
                 if ancestry.len > 0:
                     level = ancestry.pop()
@@ -1002,3 +1002,5 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             else:
                 yieldUnexpectedToken("document end")
         token = nextToken(lex)
+        if token == tError:
+            yieldError("Lexer error: " & lex.content)

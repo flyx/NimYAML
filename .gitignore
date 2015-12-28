@@ -7,3 +7,5 @@ test/*.pdb
 test/*.ilk
 yaml.html
 libyaml.*
+bench/json
+
