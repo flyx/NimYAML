@@ -1,3 +1,9 @@
+#            NimYAML - YAML implementation in Nim
+#        (c) Copyright 2015 Felix Krause
+#
+#    See the file "copying.txt", included in this
+#    distribution, for details about the copyright.
+
 ## This module provides facilities to generate and interpret
 ## `YAML <http://yaml.org>`_ character streams. All primitive operations on
 ## data objects use a `YamlStream <#YamlStream>`_ either as source or as
@@ -12,6 +18,7 @@
 ## this enhances interoperability with other languages.
 
 import streams, unicode, lexbase, tables, strutils, json, hashes, queues, macros
+export streams, tables, json
 
 type
     YamlTypeHint* = enum
