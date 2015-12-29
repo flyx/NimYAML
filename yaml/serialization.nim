@@ -110,13 +110,6 @@ proc prepend*(event: YamlStreamEvent, s: YamlStream): YamlStream =
         for e in s():
             yield e
 
-proc wrapWithDocument*(s: YamlStream): YamlStream =
-    result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlStartDocument)
-        for event in s():
-            yield event
-        yield YamlStreamEvent(kind: yamlEndDocument)
-
 proc construct*(s: YamlStream, result: var string) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
@@ -278,3 +271,21 @@ proc serialize*[K, V](value: Table[K, V],
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndMap)
+
+proc load*[K](input: Stream, target: var K) =
+    var
+        parser = newParser(coreTagLibrary())
+        events = parser.parse(input)
+    assert events().kind == yamlStartDocument
+    construct(events, target)
+    assert events().kind == yamlEndDocument
+
+proc dump*[K](value: K, target: Stream, style: YamlDumpStyle = yDumpDefault,
+              indentationStep: int = 2) =
+    var serialized = serialize(value, style == yDumpCanonical)
+    var events = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlStartDocument)
+        for event in serialized():
+            yield event
+        yield YamlStreamEvent(kind: yamlEndDocument)
+    present(events, target, coreTagLibrary(), style, indentationStep)

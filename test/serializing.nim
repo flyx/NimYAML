@@ -26,8 +26,7 @@ suite "Serialization":
     test "Serialize string sequence":
         var input = @["a", "b"]
         var output = newStringStream()
-        dump(wrapWithDocument(serialize(input)), output, coreTagLibrary(),
-             yDumpBlockOnly)
+        dump(input, output, yDumpBlockOnly)
         assert output.data == "%YAML 1.2\n--- \n- a\n- b"
     
     test "Load Table[int, string]":
@@ -47,8 +46,7 @@ suite "Serialization":
         input[23] = "dreiundzwanzig"
         input[42] = "zweiundvierzig"
         var output = newStringStream()
-        dump(wrapWithDocument(serialize(input)), output, coreTagLibrary(),
-                yDumpBlockOnly)
+        dump(input, output, yDumpBlockOnly)
         assert output.data == "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig"
     
     test "Load Sequences in Sequence":
@@ -67,8 +65,7 @@ suite "Serialization":
     test "Serialize Sequences in Sequence":
         let input = @[@[1, 2, 3], @[4, 5], @[6]]
         var output = newStringStream()
-        dump(wrapWithDocument(serialize(input)), output, coreTagLibrary(),
-                yDumpDefault)
+        dump(input, output, yDumpDefault)
         assert output.data == "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]"
     
     test "Load custom object":
@@ -86,6 +83,5 @@ suite "Serialization":
     test "Serialize custom object":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
-        dump(wrapWithDocument(serialize(input)), output, coreTagLibrary(),
-                yDumpBlockOnly)
+        dump(input, output, yDumpBlockOnly)
         assert output.data == "%YAML 1.2\n--- \nfirstname: Peter\nsurname: Pan\nage: 12"

@@ -29,6 +29,28 @@ type
     BlockScalarStyle = enum
         bsLiteral, bsFolded
 
+proc `$`*(id: TagId): string =
+    case id
+    of yTagQuestionMark: "?"
+    of yTagExclamationMark: "!"
+    of yTagString: "!!str"
+    of yTagSequence: "!!seq"
+    of yTagMap: "!!map"
+    of yTagNull: "!!null"
+    of yTagBoolean: "!!bool"
+    of yTagInteger: "!!int"
+    of yTagFloat: "!!float"
+    of yTagOrderedMap: "!!omap"
+    of yTagPairs: "!!pairs"
+    of yTagSet: "!!set"
+    of yTagBinary: "!!binary"
+    of yTagMerge: "!!merge"
+    of yTagTimestamp: "!!timestamp"
+    of yTagValue: "!!value"
+    of yTagYaml: "!!yaml"
+    else:
+        "<" & $cast[int](id) & ">"
+
 proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser =
     new(result)
     result.tagLib = tagLib
@@ -39,55 +61,6 @@ proc anchor*(parser: YamlSequentialParser, id: AnchorId): string =
         if pair[1] == id:
             return pair[0]
     return nil
-
-proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
-    if left.kind != right.kind:
-        return false
-    case left.kind
-    of yamlStartDocument, yamlEndDocument, yamlEndMap, yamlEndSequence:
-        result = true
-    of yamlStartMap:
-        result = left.mapAnchor == right.mapAnchor and
-                 left.mapTag == right.mapTag
-    of yamlStartSequence:
-        result = left.seqAnchor == right.seqAnchor and
-                 left.seqTag == right.seqTag
-    of yamlScalar:
-        result = left.scalarAnchor == right.scalarAnchor and
-                 left.scalarTag == right.scalarTag and
-                 left.scalarContent == right.scalarContent and
-                 left.scalarType == right.scalarType
-    of yamlAlias:
-        result = left.aliasTarget == right.aliasTarget
-    of yamlError, yamlWarning:
-        result = left.description == right.description and
-                 left.line == right.line and left.column == right.column
-
-proc `$`*(event: YamlStreamEvent): string =
-    result = $event.kind & '('
-    case event.kind
-    of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
-        discard
-    of yamlStartMap:
-        result &= "tag=" & $event.mapTag
-        if event.mapAnchor != yAnchorNone:
-            result &= ", anchor=" & $event.mapAnchor
-    of yamlStartSequence:
-        result &= "tag=" & $event.seqTag
-        if event.seqAnchor != yAnchorNone:
-            result &= ", anchor=" & $event.seqAnchor
-    of yamlScalar:
-        result &= "tag=" & $event.scalarTag
-        if event.scalarAnchor != yAnchorNone:
-            result &= ", anchor=" & $event.scalarAnchor
-        result &= ", typeHint=" & $event.scalarType
-        result &= ", content=\"" & event.scalarContent & '\"'
-    of yamlAlias:
-        result &= "aliasTarget=" & $event.aliasTarget
-    of yamlWarning, yamlError:
-        result &= "line=" & $event.line & ", column=" & $event.column
-        result &= ", description=\"" & event.description & '\"'
-    result &= ")"
         
 template yieldWarning(d: string) {.dirty.} =
     yield YamlStreamEvent(kind: yamlWarning, description: d,

@@ -85,7 +85,7 @@ type
         ## The value ``mapMayHaveKeyObjects`` is a hint from a serializer and is
         ## used for choosing an appropriate presentation mode for a YAML map
         ## (flow or block, explicit or implicit) by
-        ## `dump <#dump,YamlStream,Stream,YamlTagLibrary,YamlDumpStyle,int>`_.
+        ## `present <#present,YamlStream,Stream,YamlTagLibrary,YamlDumpStyle,int>`_.
         ## If it is set to ``false``, the map may only have scalars as keys.
         ##
         ## The value ``scalarType`` is a hint from the lexer, see
@@ -239,8 +239,22 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool
 proc `$`*(event: YamlStreamEvent): string
     ## outputs a human-readable string describing the given event
 
+proc startDocEvent*(): YamlStreamEvent {.inline.}
+proc endDocEvent*(): YamlStreamEvent {.inline.}
+proc startMapEvent*(tag: TagId = yTagQuestionMark,
+                    anchor: AnchorId = yAnchorNone,
+                    mayHaveKeyObjects: bool = true): YamlStreamEvent {.inline.}
+proc endMapEvent*(): YamlStreamEvent {.inline.}
+proc startSeqEvent*(tag: TagId = yTagQuestionMark,
+                    anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline.}
+proc endSeqEvent*(): YamlStreamEvent {.inline.}
+proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
+                  anchor: AnchorId = yAnchorNone, 
+                  typeHint: YamlTypeHint = yTypeUnknown):
+                  YamlStreamEvent {.inline.}
+
 proc `==`*(left, right: TagId): bool {.borrow.}
-proc `$`*(id: TagId): string {.borrow.}
+proc `$`*(id: TagId): string
 proc hash*(id: TagId): Hash {.borrow.}
 
 proc `==`*(left, right: AnchorId): bool {.borrow.}
@@ -310,8 +324,8 @@ proc constructJson*(s: YamlStream): seq[JsonNode]
     ## check for these values and will output invalid JSON when rendering one
     ## of these values into a JSON character stream.
     
-proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
-           style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2)
+proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
+              style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2)
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
     
 proc transform*(input: Stream, output: Stream, style: YamlDumpStyle,
@@ -323,6 +337,7 @@ proc transform*(input: Stream, output: Stream, style: YamlDumpStyle,
 
 include private.lexer
 include private.tagLibrary
+include private.events
 include private.sequential
 include private.json
 include private.dumper

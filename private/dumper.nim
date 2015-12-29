@@ -13,8 +13,9 @@ type
         dFlowSequenceStart
 
 proc needsEscaping(scalar: string): bool =
-    scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '\x0A',
-                 '\c'}) != -1
+    scalar.len == 0 or 
+            scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%',
+                         '\x0A', '\c'}) != -1
 
 proc writeDoubleQuoted(scalar: string, s: Stream) =
     s.write('"')
@@ -116,8 +117,8 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: YamlTagLibrary,
         target.write(cast[byte]('a') + cast[byte](anchor))
         target.write(' ')
 
-proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
-           style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2) =
+proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
+              style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2) =
     var
         cached = initQueue[YamlStreamEvent]()
         cacheIterator = iterator(): YamlStreamEvent =
@@ -147,8 +148,20 @@ proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 writeTagAndAnchor(target,
                                   item.scalarTag, tagLib, item.scalarAnchor)
             
-            if item.scalarContent.needsEscaping or
-               style in [yDumpCanonical, yDumpJson]:
+            if (style == yDumpJson and item.scalarTag in [yTagQuestionMark,
+                                                          yTagBoolean] and
+                    item.scalarType in [yTypeBoolTrue, yTypeBoolFalse]):
+                if item.scalarType == yTypeBoolTrue:
+                    target.write("true")
+                else:
+                    target.write("false")
+            elif style == yDumpCanonical or item.scalarContent.needsEscaping or
+               (style == yDumpJson and
+                (item.scalarTag notin [yTagQuestionMark, yTagInteger, yTagFloat,
+                                       yTagBoolean, yTagNull] or
+                 (item.scalarTag == yTagQuestionMark and item.scalarType notin
+                  [yTypeBoolFalse, yTypeBoolTrue, yTypeInteger, yTypeFloat,
+                   yTypeNull]))):
                 writeDoubleQuoted(item.scalarContent, target)
             else:
                 target.write(item.scalarContent)
@@ -193,21 +206,15 @@ proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                                           item.seqTag, tagLib, item.seqAnchor)
                 else:
                     if style != yDumpJson:
-                        target.write('\x0A')
                         writeTagAndAnchor(target,
                                           item.seqTag, tagLib, item.seqAnchor)
+                    target.write('\x0A')
                     indentation += indentationStep
             else:
-                if nextState == dBlockSequenceItem:
-                    if style != yDumpJson:
-                        writeTagAndAnchor(target,
-                                          item.seqTag, tagLib, item.seqAnchor)
-                    startItem(target, style, indentation, levels[levels.high])
-                else:
-                    startItem(target, style, indentation, levels[levels.high])
-                    if style != yDumpJson:
-                        writeTagAndAnchor(target,
-                                          item.seqTag, tagLib, item.seqAnchor)
+                startItem(target, style, indentation, levels[levels.high])
+                if style != yDumpJson:
+                    writeTagAndAnchor(target,
+                                      item.seqTag, tagLib, item.seqAnchor)
                 indentation += indentationStep
             
             if nextState == dFlowSequenceStart:
@@ -267,7 +274,8 @@ proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                     indentation += indentationStep
             else:
                 if nextState in
-                        [dBlockExplicitMapValue, dBlockImplicitMapValue]:
+                        [dBlockExplicitMapValue, dBlockImplicitMapValue,
+                         dBlockImplicitMapKey]:
                     if style != yDumpJson:
                         writeTagAndAnchor(target,
                                           item.mapTag, tagLib, item.mapAnchor)
@@ -368,5 +376,5 @@ proc transform*(input: Stream, output: Stream, style: YamlDumpStyle,
     var
         tagLib = extendedTagLibrary()
         parser = newParser(tagLib)
-    dump(parser.parse(input), output, tagLib, style,
-         indentationStep)
+    present(parser.parse(input), output, tagLib, style,
+            indentationStep)
