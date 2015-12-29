@@ -218,6 +218,8 @@ Output:
    - Support for more standard library types
    - Support for ref and ptr types
    - Support for anchors and aliases
+   - Support polymorphism
+   - Support variant objects
    - Make it possible for user to define a tag URI for custom types
    - Use `concept` type class `Serializable` or something
  * General:
