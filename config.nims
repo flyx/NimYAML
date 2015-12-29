@@ -17,7 +17,12 @@ task parserTests, "Run parser tests":
     --r
     --verbosity:0
     setCommand "c", "test/parsing"
-    
+
+task serializationTests, "Run serialization tests":
+    --r
+    --verbosity:0
+    setCommand "c", "test/serializing"
+
 task doc, "Generate documentation":
     setCommand "doc2", "yaml"
 

@@ -2,6 +2,7 @@ nimcache
 test/tests
 test/parsing
 test/lexing
+test/serializing
 test/*.exe
 test/*.pdb
 test/*.ilk
