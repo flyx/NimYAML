@@ -126,33 +126,32 @@ proc genJsonString(size: int, maxStringLen: int): string =
             result.add(s)
             curSize += s.len
 
-var cYaml1k, cYaml10k, cYaml100k, cJson1k, cJson10k, cJson100k: clock
-
-randomize(42)
-let
+var
+    cYaml1k, cYaml10k, cYaml100k, cJson1k, cJson10k, cJson100k: clock
     json1k   = genJsonString(1, 32)
     json10k  = genJsonString(10, 32)
     json100k = genJsonString(100, 32)
-
-var s = newStringStream(json1k)
+    parser = newParser(coreTagLibrary())
+    
+    s = newStringStream(json1k)
 
 block:
     bench(cYaml1k):
-        let res = parseToJson(s)
+        let res = constructJson(parser.parse(s))
         assert res[0].kind == JObject
 
 s = newStringStream(json10k)
 
 block:
     bench(cYaml10k):
-        let res = parseToJson(s)
+        let res = constructJson(parser.parse(s))
         assert res[0].kind == JObject
 
 s = newStringStream(json100k)
 
 block:
     bench(cYaml100k):
-        let res = parseToJson(s)
+        let res = constructJson(parser.parse(s))
         assert res[0].kind == JObject
 
 block:

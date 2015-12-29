@@ -62,19 +62,14 @@ proc jsonFromScalar(content: string, tag: TagId,
         result.kind = JString
         result.str = content
 
-proc parseToJson*(s: string): seq[JsonNode] =
-    result = parseToJson(newStringStream(s))
-
-proc parseToJson*(s: Stream): seq[JsonNode] =
+proc constructJson*(s: YamlStream): seq[JsonNode] =
     newSeq(result, 0)
     
     var
         levels  = newSeq[Level]()
-        parser  = newParser(coreTagLibrary())
-        events  = parser.parse(s)
         anchors = initTable[AnchorId, JsonNode]()
     
-    for event in events():
+    for event in s():
         case event.kind
         of yamlStartDocument:
             # we don't need to do anything here; root node will be created

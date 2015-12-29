@@ -296,11 +296,12 @@ proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
 proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream
     ## Parse a YAML character stream. ``s`` must be readable.
 
-proc parseToJson*(s: Stream): seq[JsonNode]
-    ## Parse a YAML character stream to the standard library's in-memory JSON
-    ## representation. The input may not contain any tags apart from those in
-    ## ``coreTagLibrary``. Anchors and aliases will be resolved. Maps in the
-    ## input must not contain non-scalars as keys.
+proc constructJson*(s: YamlStream): seq[JsonNode]
+    ## Construct an in-memory JSON tree from a YAML event stream. The stream may
+    ## not contain any tags apart from those in  ``coreTagLibrary``. Anchors and
+    ## aliases will be resolved. Maps in the  input must not contain
+    ## non-scalars as keys. Each element of the result represents one document
+    ## in the YAML stream.
     ##
     ## **Warning:** The special float values ``[+-]Inf`` and ``NaN`` will be
     ## parsed into Nim's JSON structure without error. However, they cannot be
@@ -309,9 +310,6 @@ proc parseToJson*(s: Stream): seq[JsonNode]
     ## check for these values and will output invalid JSON when rendering one
     ## of these values into a JSON character stream.
     
-proc parseToJson*(s: string): seq[JsonNode]
-    ## see `parseToJson <#parseToJson,Stream,seq[JsonNode]>`_
-
 proc dump*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
            style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2)
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
