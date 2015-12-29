@@ -25,10 +25,12 @@ macro make_serializable*(types: stmt): stmt =
         assert objectTy[1].kind == nnkEmpty
         let recList = objectTy[2]
         assert recList.kind == nnkRecList
+        
+        # construct()
+        
         var constructProc = newProc(newIdentNode("construct"), [
                 newEmptyNode(),
-                newIdentDefs(newIdentNode("s"), newNimNode(nnkVarTy).add(
-                             newIdentNode("YamlStream"))),
+                newIdentDefs(newIdentNode("s"), newIdentNode("YamlStream")),
                 newIdentDefs(newIdentNode("result"),
                              newNimNode(nnkVarTy).add(tIdent))])
         var impl = quote do:
@@ -63,6 +65,44 @@ macro make_serializable*(types: stmt): stmt =
             
         constructProc[6] = impl
         result.add(constructProc)
+        
+        # serialize()
+        
+        var serializeProc = newProc(newIdentNode("serialize"), [
+                newIdentNode("YamlStream"),
+                newIdentDefs(newIdentNode("value"), tIdent),
+                newIdentDefs(newIdentNode("verboseTags"), newIdentNode("bool"),
+                             newIdentNode("false"))])
+        var iterBody = quote do:
+            yield YamlStreamEvent(kind: yamlStartMap,
+                                  mapTag: yTagQuestionMark,
+                                  mapAnchor: yAnchorNone)
+            yield YamlStreamEvent(kind: yamlEndMap)
+        
+        var i = 1
+        for field in objectFields(recList):
+            let
+                fieldIterIdent = newIdentNode($field.name & "Events")
+                fieldNameString = newStrLitNode($field.name)
+            iterbody.insert(i, quote do:
+                yield YamlStreamEvent(kind: yamlScalar,
+                                      scalarTag: yTagQuestionMark,
+                                      scalarAnchor: yAnchorNone,
+                                      scalarContent: `fieldNameString`)
+            )
+            iterbody.insert(i + 1, newVarStmt(fieldIterIdent,
+                    newCall("serialize", newDotExpr(newIdentNode("value"),
+                    field.name), newIdentNode("verboseTags"))))
+            iterbody.insert(i + 2, quote do:
+                for event in `fieldIterIdent`():
+                    yield event
+            )
+            i += 3
+        impl = newStmtList(newAssignment(newIdentNode("result"), newProc(
+                newEmptyNode(), [newIdentNode("YamlStreamEvent")], iterBody,
+                nnkIteratorDef)))
+        serializeProc[6] = impl
+        result.add(serializeProc)
 
 proc prepend*(event: YamlStreamEvent, s: YamlStream): YamlStream =
     result = iterator(): YamlStreamEvent =
@@ -70,7 +110,14 @@ proc prepend*(event: YamlStreamEvent, s: YamlStream): YamlStream =
         for e in s():
             yield e
 
-proc construct*(s: var YamlStream, result: var string) =
+proc wrapWithDocument*(s: YamlStream): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlStartDocument)
+        for event in s():
+            yield event
+        yield YamlStreamEvent(kind: yamlEndDocument)
+
+proc construct*(s: YamlStream, result: var string) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
@@ -78,7 +125,13 @@ proc construct*(s: var YamlStream, result: var string) =
         raise newException(ValueError, "Wrong tag for string.")
     result = item.scalarContent
 
-proc construct*(s: var YamlStream, result: var int) =
+proc serialize*(value: string, verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlScalar, scalarTag:
+                if verboseTags: yTagString else: yTagQuestionMark,
+                scalarAnchor: yAnchorNone, scalarContent: value)
+
+proc construct*(s: YamlStream, result: var int) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
@@ -87,7 +140,13 @@ proc construct*(s: var YamlStream, result: var int) =
         raise newException(ValueError, "Wrong scalar type for int.")
     result = parseInt(item.scalarContent)
 
-proc contruct*(s: var YamlStream, result: var int64) =
+proc serialize*(value: int, verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlScalar, scalarTag:
+                if verboseTags: yTagInteger else: yTagQuestionMark,
+                scalarAnchor: yAnchorNone, scalarContent: $value)
+
+proc contruct*(s: YamlStream, result: var int64) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
@@ -96,7 +155,13 @@ proc contruct*(s: var YamlStream, result: var int64) =
         raise newException(ValueError, "Wrong scalar type for int64.")
     result = parseBiggestInt(item.scalarContent)
 
-proc construct*(s: var YamlStream, result: var float) =
+proc serialize*(value: int64, verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlScalar, scalarTag:
+                if verboseTags: yTagInteger else: yTagQuestionMark,
+                scalarAnchor: yAnchorNone, scalarContent: $value)
+
+proc construct*(s: YamlStream, result: var float) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
@@ -115,7 +180,19 @@ proc construct*(s: var YamlStream, result: var float) =
     else:
         raise newException(ValueError, "Wrong scalar type for float.")
 
-proc construct*(s: var YamlStream, result: var bool) =
+proc serialize*(value: float, verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        var asString = case value
+            of Inf: ".inf"
+            of NegInf: "-.inf"
+            of NaN: ".nan"
+            else: $value
+    
+        yield YamlStreamEvent(kind: yamlScalar, scalarTag:
+                if verboseTags: yTagFloat else: yTagQuestionMark,
+                scalarAnchor: yAnchorNone, scalarContent: asString)
+
+proc construct*(s: YamlStream, result: var bool) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
@@ -129,7 +206,14 @@ proc construct*(s: var YamlStream, result: var bool) =
     else:
         raise newException(ValueError, "Wrong scalar type for bool.")
 
-proc construct*[T](s: var YamlStream, result: var seq[T]) =
+proc serialize*(value: bool, verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlScalar, scalarTag:
+                if verboseTags: yTagBoolean else: yTagQuestionMark,
+                scalarAnchor: yAnchorNone, scalarContent:
+                if value: "y" else: "n")
+
+proc construct*[T](s: YamlStream, result: var seq[T]) =
     var event = s()
     if finished(s) or event.kind != yamlStartSequence:
         raise newException(ValueError, "Construction error!")
@@ -149,7 +233,17 @@ proc construct*[T](s: var YamlStream, result: var seq[T]) =
         if finished(s):
             raise newException(ValueError, "Construction error!")
 
-proc construct*[K, V](s: var YamlStream, result: var Table[K, V]) =
+proc serialize*[T](value: seq[T], verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlStartSequence, seqTag: yTagQuestionMark,
+                              seqAnchor: yAnchorNone)
+        for item in value:
+            var events = serialize(item, verboseTags)
+            for event in events():
+                yield event
+        yield YamlStreamEvent(kind: yamlEndSequence)
+
+proc construct*[K, V](s: YamlStream, result: var Table[K, V]) =
     var event = s()
     if finished(s) or event.kind != yamlStartMap:
         raise newException(ValueError, "Construction error!")
@@ -170,3 +264,17 @@ proc construct*[K, V](s: var YamlStream, result: var Table[K, V]) =
         event = s()
         if finished(s):
             raise newException(ValueError, "Construction error!")
+
+proc serialize*[K, V](value: Table[K, V],
+                      verboseTags: bool = false): YamlStream =
+    result = iterator(): YamlStreamEvent =
+        yield YamlStreamEvent(kind: yamlStartMap, mapTag: yTagQuestionMark,
+                              mapAnchor: yAnchorNone)
+        for key, value in value.pairs:
+            var events = serialize(key, verboseTags)
+            for event in events():
+                yield event
+            events = serialize(value, verboseTags)
+            for event in events():
+                yield event
+        yield YamlStreamEvent(kind: yamlEndMap)
