@@ -114,6 +114,7 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
         if tag.len > 0:
             yieldError("Duplicate tag for scalar")
         tag = objectTag
+        objectTag = ""
     yield YamlStreamEvent(kind: yamlScalar,
             scalarAnchor: resolveAnchor(parser, anchor),
             scalarTag: resolveTag(parser, tag, quoted),
@@ -144,7 +145,7 @@ template yieldDocumentEnd() {.dirty.} =
     yield YamlStreamEvent(kind: yamlEndDocument)
     tagShorthands = initTable[string, string]()
     tagShorthands["!"] = "!"
-    tagShorthands["!!"] = "tag:yaml.org,2002:"
+    tagShorthands["!!"] = yamlTagRepositoryPrefix
     parser.anchors = initOrderedTable[string, AnchorId]()
 
 template closeLevel(lvl: DocumentLevel) {.dirty.} =
@@ -239,8 +240,11 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
             yieldStart(entering)
             anchor = cachedAnchor
             tag = cachedTag
+            objectTag = ""
             yieldScalar("", yTypeUnknown)
         else:
+            tag = objectTag
+            objectTag = ""
             yieldStart(entering)
         ancestry.add(level)
         level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -304,7 +308,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         
     lex.open(s)
     tagShorthands["!"] = "!"
-    tagShorthands["!!"] = "tag:yaml.org,2002:"
+    tagShorthands["!!"] = yamlTagRepositoryPrefix
     
     var nextToken = tokens
     var token = nextToken(lex)
@@ -384,11 +388,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         of ypBlockLineStart:
             case token
             of tLineStart:
-                if objectTag.len > 0:
-                    yieldError("Duplicate tag for object")
-                else:
-                    objectTag = tag
-                    tag = ""
+                discard
             of tDash:
                 handleBlockIndicator([mBlockSequenceItem], [],
                                      mBlockSequenceItem, yamlStartSequence)
@@ -596,6 +596,11 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 state = ypBlockLineStart
                 continue
             of tLineStart:
+                if objectTag.len > 0:
+                    yieldError("Duplicate tag for object")
+                else:
+                    objectTag = tag
+                    tag = ""
                 state = ypBlockLineStart
             of tOpeningBracket, tOpeningBrace:
                 state = ypFlow
@@ -635,7 +640,12 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 state = ypBlockLineStart
                 continue
             of tLineStart:
-                discard
+                if objectTag.len > 0:
+                    yieldError("Duplicate tag for object")
+                else:
+                    objectTag = tag
+                    tag = ""
+                state = ypBlockLineStart
             of tOpeningBracket, tOpeningBrace:
                 state = ypFlow
                 continue

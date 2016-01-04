@@ -162,24 +162,23 @@ assert persons[1].additionalAttributes["location"] == "Celle"
 
 # dumping
 
-dump(persons, newFileStream(stdout), yDumpCanonical)
-
+dump(persons, newFileStream(stdout), ypsCanonical)
 ```
 
 Output:
 
 ```
 %YAML 1.2
----
+--- !nim:seq(nim:Person)
 [
-  {
-    ? "firstname"
+  !nim:Person {
+    ? !!str "firstname"
     : !!str "Peter",
-    ? "surname"
+    ? !!str "surname"
     : !!str "Pan",
-    ? "age"
+    ? !!str "age"
     : !!int "12",
-    ? "additionalAttributes"
+    ? !!str "additionalAttributes"
     : {
       ? !!str "canFly"
       : !!str "yes",
@@ -187,14 +186,14 @@ Output:
       : !!str "Neverland"
     }
   },
-  {
-    ? "firstname"
+  !nim:Person {
+    ? !!str "firstname"
     : !!str "Karl",
-    ? "surname"
+    ? !!str "surname"
     : !!str "Koch",
-    ? "age"
+    ? !!str "age"
     : !!int "23",
-    ? "additionalAttributes"
+    ? !!str "additionalAttributes"
     : {
       ? !!str "occupation"
       : !!str "Hacker",
@@ -212,6 +211,8 @@ Output:
    - Setup github pages site with proper API documentation
  * Lexer:
    - Add type hints for more scalar types
+ * Parser:
+   - Properly handle leading spaces in block scalars
  * Serialization:
    - Generate local tags and use them
    - Support for tuples

@@ -245,6 +245,12 @@ suite "Parsing":
                startSequence(yTagSequence), scalar("a"), scalar("b", yTagString),
                endSequence(), scalar("bar", yTagString),
                scalar("baz", yTagString), endMap(), endDoc())
+    test "Parsing: root tag for block sequence":
+        ensure("--- !!seq\n- a", startDoc(), startSequence(yTagSequence),
+                scalar("a"), endSequence(), endDoc())
+    test "Parsing: root tag for explicit block map":
+        ensure("--- !!map\n? a\n: b", startDoc(), startMap(yTagMap),
+                scalar("a"), scalar("b"), endMap(), endDoc())
     test "Parsing: tags for flow objects":
         ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(yTagMap),
                scalar("k"), startSequence(yTagSequence), scalar("a"),

@@ -154,7 +154,8 @@ type
         ## ``coreTagLibrary``. But it is also possible to use a completely empty
         ## library and treat all URIs as custom tags.
         tags*: Table[string, TagId]
-        nextCustomTagId*: TagId 
+        nextCustomTagId*: TagId
+        secondaryPrefix*: string
     
     YamlSequentialParser* = ref object
         ## A parser object. Retains its ``YamlTagLibrary`` across calls to
@@ -165,23 +166,25 @@ type
         tagLib: YamlTagLibrary
         anchors: OrderedTable[string, AnchorId]
     
-    YamlDumpStyle* = enum
-        ## Different output styles to use for dumping YAML character streams.
+    YamlPresentationStyle* = enum
+        ## Different styles for YAML character stream output.
         ##
-        ## - ``yDumpMinimal``: Single-line flow-only output which tries to
+        ## - ``ypsMinimal``: Single-line flow-only output which tries to
         ##   use as few characters as possible.
-        ## - ``yDumpCanonical``: Canonical YAML output. Writes all tags except
+        ## - ``ypsCanonical``: Canonical YAML output. Writes all tags except
         ##   for the non-specific tags ``?`` and ``!``, uses flow style, quotes
         ##   all string scalars.
-        ## - ``yDumpDefault``: Tries to be as human-readable as possible. Uses
+        ## - ``ypsDefault``: Tries to be as human-readable as possible. Uses
         ##   block style by default, but tries to condense maps and sequences
         ##   which only contain scalar nodes into a single line using flow
         ##   style.
-        ## - ``yDumpJson``: Omits the ``%YAML`` directive and the ``---``
+        ## - ``ypsJson``: Omits the ``%YAML`` directive and the ``---``
         ##   marker. Uses flow style. Flattens anchors and aliases, omits tags.
         ##   Output will be parseable as JSON. ``YamlStream`` to dump may only
         ##   contain one document.
-        yDumpMinimal, yDumpCanonical, yDumpDefault, yDumpJson, yDumpBlockOnly
+        ## - ``ypsBlockOnly``: Formats all output in block style, does not use
+        ##   flow style at all.
+        ypsMinimal, ypsCanonical, ypsDefault, ypsJson, ypsBlockOnly
 const
     # failsafe schema
 
@@ -230,6 +233,8 @@ const
     
     yAnchorNone*: AnchorId = (-1).AnchorId ## \
         ## yielded when no anchor was defined for a YAML node
+    
+    yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
 
 # interface
 
@@ -325,10 +330,11 @@ proc constructJson*(s: YamlStream): seq[JsonNode]
     ## of these values into a JSON character stream.
     
 proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
-              style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2)
+              style: YamlPresentationStyle = ypsDefault,
+              indentationStep: int = 2)
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
     
-proc transform*(input: Stream, output: Stream, style: YamlDumpStyle,
+proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
                 indentationStep: int = 2)
     ## Parser ``input`` as YAML character stream and then dump it to ``output``
     ## without resolving any tags, anchors and aliases.

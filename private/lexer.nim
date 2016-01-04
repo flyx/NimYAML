@@ -881,8 +881,15 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 state = ylTagSuffix
             of 'a' .. 'z', 'A' .. 'Z', '0' .. '9', '-':
                 my.content.add(c)
+            of '#', ';', '/', '?', ':', '@', '&', '=', '+', '$', ',', '_', '.',
+               '~', '*', '\'', '(', ')':
+               let suffix = my.content[1..^1]
+               my.content = "!"
+               yield(tTagHandle)
+               my.content = suffix
+               state = ylTagSuffix
             of ' ', '\t', EndOfFile, '\r', '\x0A':
-                var suffix = my.content[1..^1]
+                let suffix = my.content[1..^1]
                 my.content = "!"
                 yieldToken(tTagHandle)
                 my.content = suffix

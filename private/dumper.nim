@@ -25,7 +25,7 @@ proc writeDoubleQuoted(scalar: string, s: Stream) =
         s.write(c)
     s.write('"')        
 
-proc startItem(target: Stream, style: YamlDumpStyle, indentation: int,
+proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
                state: var DumperState) =
     case state
     of dBlockExplicitMapValue:
@@ -56,7 +56,7 @@ proc startItem(target: Stream, style: YamlDumpStyle, indentation: int,
         target.write("? ")
         state = dFlowExplicitMapKey
     of dFlowImplicitMapStart:
-        if style == yDumpJson:
+        if style == ypsJson:
             target.write("\x0A")
             target.write(repeat(' ', indentation))
         state = dFlowImplicitMapKey
@@ -69,7 +69,7 @@ proc startItem(target: Stream, style: YamlDumpStyle, indentation: int,
         target.write(": ")
         state = dFlowImplicitMapValue
     of dFlowImplicitMapValue:
-        if style == yDumpJson:
+        if style == ypsJson:
             target.write(",\x0A")
             target.write(repeat(' ', indentation))
         else:
@@ -81,31 +81,34 @@ proc startItem(target: Stream, style: YamlDumpStyle, indentation: int,
         target.write("- ")
     of dFlowSequenceStart:
         case style
-        of yDumpMinimal, yDumpDefault:
+        of ypsMinimal, ypsDefault:
             discard
-        of yDumpCanonical, yDumpJson:
+        of ypsCanonical, ypsJson:
             target.write('\x0A')
             target.write(repeat(' ', indentation))
-        of yDumpBlockOnly:
+        of ypsBlockOnly:
             discard # can never happen
         state = dFlowSequenceItem
     of dFlowSequenceItem:
         case style
-        of yDumpMinimal, yDumpDefault:
+        of ypsMinimal, ypsDefault:
             target.write(", ")
-        of yDumpCanonical, yDumpJson:
+        of ypsCanonical, ypsJson:
             target.write(",\x0A")
             target.write(repeat(' ', indentation))
-        of yDumpBlockOnly:
+        of ypsBlockOnly:
             discard # can never happen
     
 proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: YamlTagLibrary,
                        anchor: AnchorId) =
     if tag notin [yTagQuestionMark, yTagExclamationMark]:
         let tagUri = tagLib.uri(tag)
-        if tagUri.startsWith("tag:yaml.org,2002:"):
+        if tagUri.startsWith(tagLib.secondaryPrefix):
             target.write("!!")
             target.write(tagUri[18..^1])
+            target.write(' ')
+        elif tagUri.startsWith("!"):
+            target.write(tagUri)
             target.write(' ')
         else:
             target.write("!<")
@@ -118,7 +121,8 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: YamlTagLibrary,
         target.write(' ')
 
 proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
-              style: YamlDumpStyle = yDumpDefault, indentationStep: int = 2) =
+              style: YamlPresentationStyle = ypsDefault,
+              indentationStep: int = 2) =
     var
         cached = initQueue[YamlStreamEvent]()
         cacheIterator = iterator(): YamlStreamEvent =
@@ -135,28 +139,31 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
     for item in cacheIterator():
         case item.kind
         of yamlStartDocument:
-            if style != yDumpJson:
+            if style != ypsJson:
                 # TODO: tag directives
-                target.write("%YAML 1.2\x0A--- ")
+                target.write("%YAML 1.2\x0A")
+                if tagLib.secondaryPrefix != yamlTagRepositoryPrefix:
+                    target.write("%TAG !! " & tagLib.secondaryPrefix & '\x0A')
+                target.write("--- ")
         of yamlScalar:
             if levels.len == 0:
-                if style != yDumpJson:
+                if style != ypsJson:
                     target.write('\x0A')
             else:
                 startItem(target, style, indentation, levels[levels.high])
-            if style != yDumpJson:
+            if style != ypsJson:
                 writeTagAndAnchor(target,
                                   item.scalarTag, tagLib, item.scalarAnchor)
             
-            if (style == yDumpJson and item.scalarTag in [yTagQuestionMark,
+            if (style == ypsJson and item.scalarTag in [yTagQuestionMark,
                                                           yTagBoolean] and
                     item.scalarType in [yTypeBoolTrue, yTypeBoolFalse]):
                 if item.scalarType == yTypeBoolTrue:
                     target.write("true")
                 else:
                     target.write("false")
-            elif style == yDumpCanonical or item.scalarContent.needsEscaping or
-               (style == yDumpJson and
+            elif style == ypsCanonical or item.scalarContent.needsEscaping or
+               (style == ypsJson and
                 (item.scalarTag notin [yTagQuestionMark, yTagInteger, yTagFloat,
                                        yTagBoolean, yTagNull] or
                  (item.scalarTag == yTagQuestionMark and item.scalarType notin
@@ -175,7 +182,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
         of yamlStartSequence:
             var nextState: DumperState
             case style
-            of yDumpDefault:
+            of ypsDefault:
                 var length = 0
                 while true:
                     let next = s()
@@ -194,32 +201,32 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                         break
                 nextState = if length <= 60: dFlowSequenceStart else:
                             dBlockSequenceItem
-            of yDumpMinimal, yDumpJson, yDumpCanonical:
+            of ypsMinimal, ypsJson, ypsCanonical:
                 nextState = dFlowSequenceStart
-            of yDumpBlockOnly:
+            of ypsBlockOnly:
                 nextState = dBlockSequenceItem 
             
             if levels.len == 0:
                 if nextState == dBlockSequenceItem:
-                    if style != yDumpJson:
+                    if style != ypsJson:
                         writeTagAndAnchor(target,
                                           item.seqTag, tagLib, item.seqAnchor)
                 else:
-                    if style != yDumpJson:
+                    if style != ypsJson:
                         writeTagAndAnchor(target,
                                           item.seqTag, tagLib, item.seqAnchor)
                     target.write('\x0A')
                     indentation += indentationStep
             else:
                 startItem(target, style, indentation, levels[levels.high])
-                if style != yDumpJson:
+                if style != ypsJson:
                     writeTagAndAnchor(target,
                                       item.seqTag, tagLib, item.seqAnchor)
                 indentation += indentationStep
             
             if nextState == dFlowSequenceStart:
                 target.write('[')
-            if levels.len > 0 and style in [yDumpJson, yDumpCanonical] and
+            if levels.len > 0 and style in [ypsJson, ypsCanonical] and
                     levels[levels.high] in
                     [dBlockExplicitMapKey, dBlockExplicitMapValue,
                      dBlockImplicitMapKey, dBlockImplicitMapValue,
@@ -229,7 +236,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
         of yamlStartMap:
             var nextState: DumperState
             case style
-            of yDumpDefault:
+            of ypsDefault:
                 var length = 0
                 while true:
                     let next = s()
@@ -249,25 +256,25 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 nextState = if length <= 60: dFlowImplicitMapStart else:
                             if item.mapMayHaveKeyObjects:
                             dBlockExplicitMapValue else: dBlockImplicitMapValue
-            of yDumpMinimal:
+            of ypsMinimal:
                 nextState = if item.mapMayHaveKeyObjects:
                             dFlowExplicitMapStart else: dFlowImplicitMapStart
-            of yDumpCanonical:
+            of ypsCanonical:
                 nextState = dFlowExplicitMapStart
-            of yDumpJson:
+            of ypsJson:
                 nextState = dFlowImplicitMapStart
-            of yDumpBlockOnly:
+            of ypsBlockOnly:
                 nextState = if item.mapMayHaveKeyObjects:
                             dBlockExplicitMapValue else: dBlockImplicitMapValue
             
             if levels.len == 0:
                 if nextState in
                         [dBlockExplicitMapValue, dBlockImplicitMapValue]:
-                    if style != yDumpJson:
+                    if style != ypsJson:
                         writeTagAndAnchor(target,
                                           item.mapTag, tagLib, item.mapAnchor)
                 else:
-                    if style != yDumpJson:
+                    if style != ypsJson:
                         target.write('\x0A')
                         writeTagAndAnchor(target,
                                           item.mapTag, tagLib, item.mapAnchor)
@@ -276,20 +283,20 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 if nextState in
                         [dBlockExplicitMapValue, dBlockImplicitMapValue,
                          dBlockImplicitMapKey]:
-                    if style != yDumpJson:
+                    if style != ypsJson:
                         writeTagAndAnchor(target,
                                           item.mapTag, tagLib, item.mapAnchor)
                     startItem(target, style, indentation, levels[levels.high])
                 else:
                     startItem(target, style, indentation, levels[levels.high])
-                    if style != yDumpJson:
+                    if style != ypsJson:
                         writeTagAndAnchor(target,
                                           item.mapTag, tagLib, item.mapAnchor)
                 indentation += indentationStep
             
             if nextState in [dFlowImplicitMapStart, dFlowExplicitMapStart]:
                 target.write('{')
-            if levels.len > 0 and style in [yDumpJson, yDumpCanonical] and
+            if levels.len > 0 and style in [ypsJson, ypsCanonical] and
                     levels[levels.high] in
                     [dBlockExplicitMapKey, dBlockExplicitMapValue,
                      dBlockImplicitMapKey, dBlockImplicitMapValue,
@@ -303,9 +310,9 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             case levels.pop()
             of dFlowSequenceItem:
                 case style
-                of yDumpDefault, yDumpMinimal, yDumpBlockOnly:
+                of ypsDefault, ypsMinimal, ypsBlockOnly:
                     target.write(']')
-                of yDumpJson, yDumpCanonical:
+                of ypsJson, ypsCanonical:
                     indentation -= indentationStep
                     target.write('\x0A')
                     target.write(repeat(' ', indentation))
@@ -316,7 +323,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                              dBlockSequenceItem]:
                         continue
             of dFlowSequenceStart:
-                if levels.len > 0 and style in [yDumpJson, yDumpCanonical] and
+                if levels.len > 0 and style in [ypsJson, ypsCanonical] and
                         levels[levels.high] in
                         [dBlockExplicitMapKey, dBlockExplicitMapValue,
                          dBlockImplicitMapKey, dBlockImplicitMapValue,
@@ -334,9 +341,9 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             case levels.pop()
             of dFlowImplicitMapValue, dFlowExplicitMapValue:
                 case style
-                of yDumpDefault, yDumpMinimal, yDumpBlockOnly:
+                of ypsDefault, ypsMinimal, ypsBlockOnly:
                     target.write('}')
-                of yDumpJson, yDumpCanonical:
+                of ypsJson, ypsCanonical:
                     indentation -= indentationStep
                     target.write('\x0A')
                     target.write(repeat(' ', indentation))
@@ -347,7 +354,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                              dBlockSequenceItem]:
                         continue
             of dFlowImplicitMapStart, dFlowExplicitMapStart:
-                if levels.len > 0 and style in [yDumpJson, yDumpCanonical] and
+                if levels.len > 0 and style in [ypsJson, ypsCanonical] and
                         levels[levels.high] in
                         [dBlockExplicitMapKey, dBlockExplicitMapValue,
                          dBlockImplicitMapKey, dBlockImplicitMapValue,
@@ -371,7 +378,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             raise newException(ValueError, "(" & $item.line & ", " &
                                $item.column & "): " & item.description)
 
-proc transform*(input: Stream, output: Stream, style: YamlDumpStyle,
+proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
                 indentationStep: int = 2) =
     var
         tagLib = extendedTagLibrary()

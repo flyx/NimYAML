@@ -9,7 +9,7 @@ make_serializable:
 
 suite "Serialization":
     setup:
-        var parser = newParser(coreTagLibrary())
+        var parser = newParser(serializationTagLibrary)
 
     test "Load string sequence":
         let input = newStringStream(" - a\n - b")
@@ -26,7 +26,7 @@ suite "Serialization":
     test "Serialize string sequence":
         var input = @["a", "b"]
         var output = newStringStream()
-        dump(input, output, yDumpBlockOnly)
+        dump(input, output, ypsBlockOnly, ytsNone)
         assert output.data == "%YAML 1.2\n--- \n- a\n- b"
     
     test "Load Table[int, string]":
@@ -46,7 +46,7 @@ suite "Serialization":
         input[23] = "dreiundzwanzig"
         input[42] = "zweiundvierzig"
         var output = newStringStream()
-        dump(input, output, yDumpBlockOnly)
+        dump(input, output, ypsBlockOnly, ytsNone)
         assert output.data == "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig"
     
     test "Load Sequences in Sequence":
@@ -65,7 +65,7 @@ suite "Serialization":
     test "Serialize Sequences in Sequence":
         let input = @[@[1, 2, 3], @[4, 5], @[6]]
         var output = newStringStream()
-        dump(input, output, yDumpDefault)
+        dump(input, output, ypsDefault, ytsNone)
         assert output.data == "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]"
     
     test "Load custom object":
@@ -83,5 +83,42 @@ suite "Serialization":
     test "Serialize custom object":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
-        dump(input, output, yDumpBlockOnly)
+        dump(input, output, ypsBlockOnly, ytsNone)
         assert output.data == "%YAML 1.2\n--- \nfirstname: Peter\nsurname: Pan\nage: 12"
+    
+    test "Load sequence with explicit tags":
+        let input = newStringStream(
+            "--- !nim:seq(tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
+        var
+            result: seq[string]
+            events = parser.parse(input)
+        assert events().kind == yamlStartDocument
+        construct(events, result)
+        assert events().kind == yamlEndDocument
+        assert result[0] == "one"
+        assert result[1] == "two"
+    
+    test "Serialize sequence with explicit tags":
+        let input = @["one", "two"]
+        var output = newStringStream()
+        dump(input, output, ypsBlockOnly, ytsAll)
+        assert output.data == "%YAML 1.2\n--- !nim:seq(tag:yaml.org,2002:str)\n- !!str one\n- !!str two"
+    
+    test "Load custom object with explicit root tag":
+        let input = newStringStream(
+            "--- !nim:Person\nfirstname: Peter\nsurname: Pan\nage: 12")
+        var
+            result: Person
+            events = parser.parse(input)
+        assert events().kind == yamlStartDocument
+        construct(events, result)
+        assert events().kind == yamlEndDocument
+        assert result.firstname == "Peter"
+        assert result.surname   == "Pan"
+        assert result.age       == 12
+    
+    test "Serialize custom object with explicit root tag":
+        let input = Person(firstname: "Peter", surname: "Pan", age: 12)
+        var output = newStringStream()
+        dump(input, output, ypsBlockOnly, ytsRootOnly)
+        assert output.data == "%YAML 1.2\n--- !nim:Person\nfirstname: Peter\nsurname: Pan\nage: 12"

@@ -7,6 +7,7 @@
 proc initTagLibrary*(): YamlTagLibrary =
     result.tags = initTable[string, TagId]()
     result.nextCustomTagId = yFirstCustomTagId
+    result.secondaryPrefix = yamlTagRepositoryPrefix
 
 proc registerUri*(tagLib: var YamlTagLibrary, uri: string): TagId =
     tagLib.tags[uri] = tagLib.nextCustomTagId
