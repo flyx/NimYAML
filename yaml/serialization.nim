@@ -39,7 +39,7 @@ static:
             for i in 0..numFields - 1:
                 yield (name: identDefs[i], t: identDefs[^2])
 
-template presentTag(t: typedesc): TagId {.dirty.} =
+template presentTag(t: typedesc, tagStyle: YamlTagStyle): TagId =
      if tagStyle == ytsNone: yTagQuestionMark else: yamlTag(t)
 
 proc lazyLoadTag*(uri: string): TagId {.inline.} =
@@ -124,48 +124,50 @@ macro make_serializable*(types: stmt): stmt =
                 newIdentDefs(newIdentNode("tagStyle"),
                              newIdentNode("YamlTagStyle"),
                              newIdentNode("ytsNone"))])
-        var iterBody = newStmtList(newNimNode(nnkYieldStmt).add(
-            newNimNode(nnkObjConstr).add(newIdentNode("YamlStreamEvent"),
-                newNimNode(nnkExprColonExpr).add(newIdentNode("kind"),
-                    newIdentNode("yamlStartMap")),
-                newNimNode(nnkExprColonExpr).add(newIdentNode("mapTag"),
-                    newNimNode(nnkIfExpr).add(newNimNode(nnkElifExpr).add(
-                        newNimNode(nnkInfix).add(newIdentNode("=="),
-                            newIdentNode("tagStyle"), newIdentNode("ytsNone")),
-                        newIdentNode("yTagQuestionMark")
-                    ), newNimNode(nnkElseExpr).add(
-                        newCall("yamlTag", newCall("type", tIdent))
-                    ))),
-                newNimNode(nnkExprColonExpr).add(newIdentNode("mapAnchor"),
-                    newIdentNode("yAnchorNone"))    
-            )
+        var iterBody = newStmtList(
+            newLetStmt(newIdentNode("childTagStyle"), newNimNode(nnkIfExpr).add(
+                newNimNode(nnkElifExpr).add(
+                    newNimNode(nnkInfix).add(newIdentNode("=="),
+                        newIdentNode("tagStyle"), newIdentNode("ytsRootOnly")),
+                    newIdentNode("ytsNone")
+                ), newNimNode(nnkElseExpr).add(newIdentNode("tagStyle")))),
+            newNimNode(nnkYieldStmt).add(
+                newNimNode(nnkObjConstr).add(newIdentNode("YamlStreamEvent"),
+                    newNimNode(nnkExprColonExpr).add(newIdentNode("kind"),
+                        newIdentNode("yamlStartMap")),
+                    newNimNode(nnkExprColonExpr).add(newIdentNode("mapTag"),
+                        newNimNode(nnkIfExpr).add(newNimNode(nnkElifExpr).add(
+                            newNimNode(nnkInfix).add(newIdentNode("=="),
+                                newIdentNode("tagStyle"),
+                                newIdentNode("ytsNone")),
+                            newIdentNode("yTagQuestionMark")
+                        ), newNimNode(nnkElseExpr).add(
+                            newCall("yamlTag", newCall("type", tIdent))
+                        ))),
+                    newNimNode(nnkExprColonExpr).add(newIdentNode("mapAnchor"),
+                        newIdentNode("yAnchorNone"))    
+                )
         ), newNimNode(nnkYieldStmt).add(newNimNode(nnkObjConstr).add(
             newIdentNode("YamlStreamEvent"), newNimNode(nnkExprColonExpr).add(
                 newIdentNode("kind"), newIdentNode("yamlEndMap")
             )
         )))
         
-        var i = 1
+        var i = 2
         for field in objectFields(recList):
             let
                 fieldIterIdent = newIdentNode($field.name & "Events")
                 fieldNameString = newStrLitNode($field.name)
             iterbody.insert(i, quote do:
                 yield YamlStreamEvent(kind: yamlScalar,
-                                      scalarTag: presentTag(string),
+                                      scalarTag: presentTag(string,
+                                                            childTagStyle),
                                       scalarAnchor: yAnchorNone,
                                       scalarContent: `fieldNameString`)
             )
             iterbody.insert(i + 1, newVarStmt(fieldIterIdent,
                     newCall("serialize", newDotExpr(newIdentNode("value"),
-                    field.name), newNimNode(nnkIfExpr).add(
-                        newNimNode(nnkElifExpr).add(
-                            newNimNode(nnkInfix).add(newIdentNode("=="),
-                                newIdentNode("tagStyle"),
-                                newIdentNode("ytsRootOnly")),
-                            newIdentNode("ytsNone")),
-                        newNimNode(nnkElseExpr).add(
-                            newIdentNode("tagStyle"))))))
+                    field.name), newIdentNode("childTagStyle"))))
             iterbody.insert(i + 2, quote do:
                 for event in `fieldIterIdent`():
                     yield event
@@ -196,7 +198,8 @@ proc construct*(s: YamlStream, result: var string) =
 proc serialize*(value: string,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlScalar, scalarTag: presentTag(string),
+        yield YamlStreamEvent(kind: yamlScalar,
+                              scalarTag: presentTag(string, tagStyle),
                               scalarAnchor: yAnchorNone, scalarContent: value)
 
 proc yamlTag*(T: typedesc[int]): TagId {.inline.} = yTagInteger
@@ -214,7 +217,7 @@ proc serialize*(value: int,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         yield YamlStreamEvent(kind: yamlScalar,
-                              scalarTag: presentTag(int),
+                              scalarTag: presentTag(int, tagStyle),
                               scalarAnchor: yAnchorNone, scalarContent: $value)
 
 proc yamlTag*(T: typedesc[int64]): TagId {.inline.} = yTagInteger
@@ -231,7 +234,8 @@ proc contruct*(s: YamlStream, result: var int64) =
 proc serialize*(value: int64,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlScalar, scalarTag: presentTag(int64),
+        yield YamlStreamEvent(kind: yamlScalar,
+                              scalarTag: presentTag(int64, tagStyle),
                               scalarAnchor: yAnchorNone, scalarContent: $value)
 
 proc yamlTag*(T: typedesc[float]): TagId {.inline.} = yTagFloat
@@ -264,7 +268,8 @@ proc serialize*(value: float,
             of NaN: ".nan"
             else: $value
     
-        yield YamlStreamEvent(kind: yamlScalar, scalarTag: presentTag(float),
+        yield YamlStreamEvent(kind: yamlScalar,
+                scalarTag: presentTag(float, tagStyle),
                 scalarAnchor: yAnchorNone, scalarContent: asString)
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline.} = yTagBoolean
@@ -287,7 +292,7 @@ proc serialize*(value: bool,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         yield YamlStreamEvent(kind: yamlScalar,
-                              scalarTag: presentTag(bool),
+                              scalarTag: presentTag(bool, tagStyle),
                               scalarAnchor: yAnchorNone, scalarContent:
                               if value: "y" else: "n")
 
@@ -323,12 +328,12 @@ proc construct*[T](s: YamlStream, result: var seq[T]) =
 proc serialize*[T](value: seq[T],
                    tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
+        let childTagStyle = if tagStyle == ytsRootOnly: ytsNone else: tagStyle
         yield YamlStreamEvent(kind: yamlStartSequence,
-                              seqTag: presentTag(seq[T]),
+                              seqTag: presentTag(seq[T], tagStyle),
                               seqAnchor: yAnchorNone)
         for item in value:
-            var events = serialize(item, if tagStyle == ytsRootOnly:
-                                         ytsNone else: tagStyle)
+            var events = serialize(item, childTagStyle)
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndSequence)
@@ -369,15 +374,15 @@ proc construct*[K, V](s: YamlStream, result: var Table[K, V]) =
 proc serialize*[K, V](value: Table[K, V],
                       tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlStartMap, mapTag: yTagQuestionMark,
+        let childTagStyle = if tagStyle == ytsRootOnly: ytsNone else: tagStyle
+        yield YamlStreamEvent(kind: yamlStartMap,
+                              mapTag: presentTag(Table[K, V], tagStyle),
                               mapAnchor: yAnchorNone)
         for key, value in value.pairs:
-            var events = serialize(key, if tagStyle == ytsRootOnly:
-                                        ytsNone else: tagStyle)
+            var events = serialize(key, childTagStyle)
             for event in events():
                 yield event
-            events = serialize(value, if tagStyle == ytsRootOnly:
-                                      ytsNone else: tagStyle)
+            events = serialize(value, childTagStyle)
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndMap)

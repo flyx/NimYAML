@@ -102,7 +102,7 @@ suite "Serialization":
         let input = @["one", "two"]
         var output = newStringStream()
         dump(input, output, ypsBlockOnly, ytsAll)
-        assert output.data == "%YAML 1.2\n--- !nim:seq(tag:yaml.org,2002:str)\n- !!str one\n- !!str two"
+        assert output.data == "%YAML 1.2\n--- !nim:seq(tag:yaml.org,2002:str) \n- !!str one\n- !!str two"
     
     test "Load custom object with explicit root tag":
         let input = newStringStream(
@@ -121,4 +121,4 @@ suite "Serialization":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, ypsBlockOnly, ytsRootOnly)
-        assert output.data == "%YAML 1.2\n--- !nim:Person\nfirstname: Peter\nsurname: Pan\nage: 12"
+        assert output.data == "%YAML 1.2\n--- !nim:Person \nfirstname: Peter\nsurname: Pan\nage: 12"
