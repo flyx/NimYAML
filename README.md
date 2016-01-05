@@ -229,6 +229,11 @@ Output:
      objects and tuples)
    - Make it possible for user to define a tag URI for custom types
    - Use `concept` type class `Serializable` or something
+   - Check for and avoid name clashes when generating local tags for custom
+     object types.
+   - Possibly use `genSym` for predefined and generated `yamlTag` procs because
+     they are an implementation detail and should not be visible to the caller.
+     same goes for `lazyLoadTag` and `safeLoadUri`.
  * General:
    - Proper error handling (do not use `ValueError` for everything)
    - Proper error handling, seriously
