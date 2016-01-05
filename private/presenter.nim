@@ -323,7 +323,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             of ypsCanonical:
                 nextState = dFlowExplicitMapStart
             of ypsJson:
-                if levels[levels.high] in
+                if levels.len > 0 and levels[levels.high] in
                         [dFlowImplicitMapStart, dFlowImplicitMapValue]:
                     raise newException(YamlPresenterJsonError,
                             "Cannot have map as map key in JSON output!")

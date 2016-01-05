@@ -34,3 +34,7 @@ task bench, "Benchmarking":
 task clean, "Remove all generated files":
     exec "rm -f yaml.html libyaml.* test/tests test/parsing test/lexing"
     setCommand "nop"
+
+task server, "Compile server daemon":
+    --d:release
+    setCommand "c", "server/server"
