@@ -22,7 +22,11 @@ routes:
         var
             output = newStringStream()
             resultNode = newJObject()
-        headers["Access-Control-Allow-Origin"] = "https://flyx.github.io"
+        headers["Access-Control-Allow-Origin"] = "*"
+        headers["Pragma"] = "no-cache"
+        headers["Cache-Control"] = "no-cache"
+        headers["Expires"] = "0"
+        echo "INPUT: ", @"input", "STYLE:", @"style"
         try:
             try:
                 transform(newStringStream(@"input"), output, style)
@@ -40,9 +44,9 @@ routes:
                 resultNode["code"] = %2
                 resultNode["message"] = %e.msg
             headers["Content-Type"] = "application/json"
-            resp resultNode.pretty
+            let s = resultNode.pretty
+            resp s, "application/json"
         except:
-            status = Http500
-            resp getCurrentException().repr
+            resp Http500, getCurrentException().repr, "text/plain;charset=utf-8"
 
 runForever()
