@@ -155,13 +155,22 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 writeTagAndAnchor(target,
                                   item.scalarTag, tagLib, item.scalarAnchor)
             
-            if (style == ypsJson and item.scalarTag in [yTagQuestionMark,
-                                                          yTagBoolean] and
-                    item.scalarType in [yTypeBoolTrue, yTypeBoolFalse]):
-                if item.scalarType == yTypeBoolTrue:
-                    target.write("true")
+            if style == ypsJson:
+                if item.scalarTag in [yTagQuestionMark, yTagBoolean] and
+                        item.scalarType in [yTypeBoolTrue, yTypeBoolFalse]:
+                    if item.scalarType == yTypeBoolTrue:
+                        target.write("true")
+                    else:
+                        target.write("false")
+                elif item.scalarTag in [yTagQuestionMark, yTagNull] and
+                        item.scalarType == yTypeNull:
+                    target.write("null")
+                elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
+                        item.scalarType in [yTypeFloatInf, yTypeFloatNaN]:
+                    raise newException(YamlPresenterError,
+                            "Infinity and not-a-number values cannot be presented as JSON!")
                 else:
-                    target.write("false")
+                    target.write(item.scalarContent)
             elif style == ypsCanonical or item.scalarContent.needsEscaping or
                (style == ypsJson and
                 (item.scalarTag notin [yTagQuestionMark, yTagInteger, yTagFloat,
@@ -173,10 +182,8 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             else:
                 target.write(item.scalarContent)
         of yamlAlias:
-            if levels.len == 0:
-                raise newException(ValueError, "Malformed YamlStream")
-            else:
-                startItem(target, style, indentation, levels[levels.high])
+            assert levels.len > 0
+            startItem(target, style, indentation, levels[levels.high])
             target.write('*')
             target.write(cast[byte]('a') + cast[byte](item.aliasTarget))
         of yamlStartSequence:
@@ -186,8 +193,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 var length = 0
                 while true:
                     let next = s()
-                    if finished(s):
-                        raise newException(ValueError, "Malformed YamlStream")
+                    assert (not finished(s))
                     cached.enqueue(next)
                     case next.kind
                     of yamlScalar:
@@ -201,7 +207,13 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                         break
                 nextState = if length <= 60: dFlowSequenceStart else:
                             dBlockSequenceItem
-            of ypsMinimal, ypsJson, ypsCanonical:
+            of ypsJson:
+                if levels[levels.high] in
+                        [dFlowImplicitMapStart, dFlowImplicitMapValue]:
+                    raise newException(YamlPresenterError,
+                            "Cannot have sequence as map key in JSON output!")
+                nextState = dFlowSequenceStart
+            of ypsMinimal, ypsCanonical:
                 nextState = dFlowSequenceStart
             of ypsBlockOnly:
                 nextState = dBlockSequenceItem 
@@ -240,8 +252,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 var length = 0
                 while true:
                     let next = s()
-                    if finished(s):
-                        raise newException(ValueError, "Malformed YamlStream")
+                    assert (not finished(s))
                     cached.enqueue(next)
                     case next.kind
                     of yamlScalar:
@@ -262,6 +273,10 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             of ypsCanonical:
                 nextState = dFlowExplicitMapStart
             of ypsJson:
+                if levels[levels.high] in
+                        [dFlowImplicitMapStart, dFlowImplicitMapValue]:
+                    raise newException(YamlPresenterError,
+                            "Cannot have map as map key in JSON output!")
                 nextState = dFlowImplicitMapStart
             of ypsBlockOnly:
                 nextState = if item.mapMayHaveKeyObjects:
@@ -305,8 +320,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             levels.add(nextState)
             
         of yamlEndSequence:
-            if levels.len == 0:
-                raise newException(ValueError, "Malformed YamlStream")
+            assert levels.len > 0
             case levels.pop()
             of dFlowSequenceItem:
                 case style
@@ -333,11 +347,10 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             of dBlockSequenceItem:
                 discard
             else:
-                raise newException(ValueError, "Malformed YamlStream")
+                assert false
             indentation -= indentationStep
         of yamlEndMap:
-            if levels.len == 0:
-                raise newException(ValueError, "Malformed YamlStream")
+            assert levels.len > 0
             case levels.pop()
             of dFlowImplicitMapValue, dFlowExplicitMapValue:
                 case style
@@ -364,7 +377,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             of dBlockImplicitMapValue, dBlockExplicitMapValue:
                 discard
             else:
-                raise newException(ValueError, "Malformed YamlStream")
+                assert false
             indentation -= indentationStep
         of yamlEndDocument:
             let next = s()
@@ -372,8 +385,6 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 break
             target.write("...\x0A")
             cached.enqueue(next)
-        of yamlWarning:
-            discard
 
 proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
                 indentationStep: int = 2) =

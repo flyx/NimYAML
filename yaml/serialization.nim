@@ -233,7 +233,7 @@ proc safeTagUri*(id: TagId): string =
 proc construct*(s: YamlStream, result: var string) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
-        raise newException(ValueError, "Construction error!" & $item.description)
+        raise newException(ValueError, "Construction error!")
     if item.scalarTag notin [yTagQuestionMark, yTagExclamationMark, yTagString]:
         raise newException(ValueError, "Wrong tag for string.")
     result = item.scalarContent
@@ -306,15 +306,27 @@ proc construct*(s: YamlStream, result: var float) =
 proc serialize*(value: float,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        var asString = case value
-            of Inf: ".inf"
-            of NegInf: "-.inf"
-            of NaN: ".nan"
-            else: $value
+        var
+            asString: string
+            hint: YamlTypeHint
+        case value
+        of Inf:
+            asString = ".inf"
+            hint = yTypeFloatInf
+        of NegInf:
+            asString = "-.inf"
+            hint = yTypeFloatInf
+        of NaN:
+            asString = ".nan"
+            hint = yTypeFloatNaN
+        else:
+            asString = $value
+            hint = yTypeFloat
     
         yield YamlStreamEvent(kind: yamlScalar,
                 scalarTag: presentTag(float, tagStyle),
-                scalarAnchor: yAnchorNone, scalarContent: asString)
+                scalarAnchor: yAnchorNone, scalarContent: asString,
+                scalarType: hint)
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline.} = yTagBoolean
 

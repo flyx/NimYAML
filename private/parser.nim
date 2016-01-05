@@ -57,6 +57,10 @@ proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser =
     result.tagLib = tagLib
     result.anchors = initOrderedTable[string, AnchorId]()
 
+proc setWarningCallback*(parser: YamlSequentialParser,
+                         callback: YamlWarningCallback) =
+    parser.callback = callback
+
 proc anchor*(parser: YamlSequentialParser, id: AnchorId): string =
     for pair in parser.anchors.pairs:
         if pair[1] == id:
@@ -64,8 +68,8 @@ proc anchor*(parser: YamlSequentialParser, id: AnchorId): string =
     return nil
         
 template yieldWarning(d: string) {.dirty.} =
-    yield YamlStreamEvent(kind: yamlWarning, description: d,
-                          line: lex.line, column: lex.column)
+    if parser.callback != nil:
+        parser.callback(lex.line, lex.column, lex.getCurrentLine(), d)
 
 template raiseError(message: string) {.dirty.} =
     var e = newException(YamlParserError, message)

@@ -48,8 +48,6 @@ proc alias(target: AnchorId): YamlStreamEvent =
 proc printDifference(expected, actual: YamlStreamEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
-        if actual.kind == yamlWarning:
-            echo "Warning message: " & actual.description
     else:
         case expected.kind
         of yamlScalar:
@@ -117,7 +115,7 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
                 break
             i.inc()
     except YamlParserError:
-        let e = cast[YamlParserError](getCurrentException())
+        let e = cast[ref YamlParserError](getCurrentException())
         echo "Parser error:", getCurrentExceptionMsg()
         echo e.lineContent
         fail()

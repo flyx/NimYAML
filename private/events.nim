@@ -23,9 +23,6 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
                  left.scalarType == right.scalarType
     of yamlAlias:
         result = left.aliasTarget == right.aliasTarget
-    of yamlWarning:
-        result = left.description == right.description and
-                 left.line == right.line and left.column == right.column
 
 proc `$`*(event: YamlStreamEvent): string =
     result = $event.kind & '('
@@ -48,9 +45,6 @@ proc `$`*(event: YamlStreamEvent): string =
         result &= ", content=\"" & event.scalarContent & '\"'
     of yamlAlias:
         result &= "aliasTarget=" & $event.aliasTarget
-    of yamlWarning:
-        result &= "line=" & $event.line & ", column=" & $event.column
-        result &= ", description=\"" & event.description & '\"'
     result &= ")"
 
 proc startDocEvent*(): YamlStreamEvent =

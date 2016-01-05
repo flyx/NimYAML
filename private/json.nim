@@ -138,9 +138,6 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                     discard # will never happen
             else:
                 discard # wait for yamlEndDocument
-        of yamlWarning:
-            echo "YAML warning at line ", event.line, ", column ", event.column,
-                 ": ", event.description
         of yamlAlias:
             # we can savely assume that the alias exists in anchors
             # (else the parser would have already thrown an exception)

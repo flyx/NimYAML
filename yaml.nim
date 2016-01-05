@@ -50,7 +50,7 @@ type
         ## Kinds of YAML events that may occur in an ``YamlStream``. Event kinds
         ## are discussed in ``YamlStreamEvent``.
         yamlStartDocument, yamlEndDocument, yamlStartMap, yamlEndMap,
-        yamlStartSequence, yamlEndSequence, yamlScalar, yamlAlias, yamlWarning
+        yamlStartSequence, yamlEndSequence, yamlScalar, yamlAlias
     
     TagId* = distinct int ## \
         ## A ``TagId`` identifies a tag URI, like for example 
@@ -107,24 +107,13 @@ type
             discard
         of yamlAlias:
             aliasTarget* : AnchorId
-        of yamlWarning:
-            description* : string
-            line*        : int
-            column*      : int
     
     YamlStream* = iterator(): YamlStreamEvent ## \
         ## A ``YamlStream`` is an iterator that yields a well-formed stream of
         ## ``YamlStreamEvents``. Well-formed means that every ``yamlStartMap``
         ## is terminated by a ``yamlEndMap``, every ``yamlStartSequence`` is
         ## terminated by a ``yamlEndSequence`` and every ``yamlStartDocument``
-        ## is terminated by a ``yamlEndDocument``. The only exception to this
-        ## rule is a ``yamlError``, which may occur anywhere in the stream and
-        ## must be the last element in the stream, which may leave any number of
-        ## objects open.
-        ##
-        ## A ``yamlWarning`` may also occur anywhere in the stream, but will not
-        ## invalidate the structure of the event stream, and may not abruptly
-        ## end the stream as ``yamlError`` does.
+        ## is terminated by a ``yamlEndDocument``.
         ##
         ## The creator of a ``YamlStream`` is responsible for it being
         ## well-formed. A user of the stream may assume that it is well-formed
@@ -157,6 +146,15 @@ type
         nextCustomTagId*: TagId
         secondaryPrefix*: string
     
+    YamlWarningCallback* = proc(line, column: int, lineContent: string,
+                                message: string)
+        ## Callback for parser warnings. Currently, this callback may be called
+        ## on two occasions while parsing a YAML document stream:
+        ##
+        ## - If the version number in the ``%YAML`` directive does not match
+        ##   ``1.2``.
+        ## - If there is an unknown directive encountered.
+    
     YamlSequentialParser* = ref object
         ## A parser object. Retains its ``YamlTagLibrary`` across calls to
         ## `parse <#parse,YamlSequentialParser,Stream,YamlStream>`_. Can be used
@@ -165,6 +163,7 @@ type
         ## ``yamlEndDocument`` is yielded).
         tagLib: YamlTagLibrary
         anchors: OrderedTable[string, AnchorId]
+        callback: YamlWarningCallback
     
     YamlPresentationStyle* = enum
         ## Different styles for YAML character stream output.
@@ -186,7 +185,18 @@ type
         ##   flow style at all.
         ypsMinimal, ypsCanonical, ypsDefault, ypsJson, ypsBlockOnly
     
-    YamlParserError* = object of Exception
+    YamlLoadingError* = object of Exception
+        ## Base class for all exceptions that may be raised during the process
+        ## of loading a YAML character stream. 
+        line*: int ## line number (1-based) where the error was encountered
+        column*: int ## \
+            ## column number (1-based) where the error was encountered
+        lineContent*: string ## \
+            ## content of the line where the error was encountered. Includes a
+            ## second line with a marker ``^`` at the position where the error
+            ## was encountered, as returned by ``lexbase.getCurrentLine``.
+    
+    YamlParserError* = object of YamlLoadingError
         ## A parser error is raised if the character stream that is parsed is
         ## not a valid YAML character stream. This stream cannot and will not be
         ## parsed wholly nor partially and all events that have been emitted by
@@ -216,16 +226,16 @@ type
         ##
         ## Some elements in this list are vague. For a detailed description of a
         ## valid YAML character stream, see the YAML specification.
-        line*: int ## line number (1-based) where the error was encountered
-        column*: int ## \
-            ## column number (1-based) where the error was encountered
-        lineContent*: string ## \
-            ## content of the line where the error was encountered. Includes a
-            ## second line with a marker ``^`` at the position where the error
-            ## was encountered, as returned by ``lexbase.getCurrentLine``.
     
     YamlPresenterError* = object of Exception
-        ## Exception that may be raised by the YAML presenter.
+        ## Exception that may be raised by the YAML presenter. Currently, the
+        ## only ocassion this exception may be raised is when the presenter is
+        ## instructed to output JSON, but is unable to do so. This may occur if:
+        ##
+        ## - The given `YamlStream <#YamlStream>`_ contains a map which has any
+        ##   non-scalar type as key.
+        ## - Any float scalar bears a ``NaN`` or positive/negative infinity
+        ##   value 
 const
     # failsafe schema
 
@@ -349,6 +359,9 @@ proc extendedTagLibrary*(): YamlTagLibrary
 
 proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser
     ## Instanciates a parser
+
+proc setWarningCallback*(parser: YamlSequentialParser,
+                         callback: YamlWarningCallback)
 
 proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
     ## Get the anchor name which an ``AnchorId`` maps to
