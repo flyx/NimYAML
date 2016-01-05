@@ -22,7 +22,7 @@ routes:
         var
             output = newStringStream()
             resultNode = newJObject()
-        headers["Access-Control-Allow-Origin"] = "flyx.github.io"
+        headers["Access-Control-Allow-Origin"] = "https://flyx.github.io"
         try:
             try:
                 transform(newStringStream(@"input"), output, style)
