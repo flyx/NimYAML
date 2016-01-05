@@ -227,15 +227,27 @@ type
         ## Some elements in this list are vague. For a detailed description of a
         ## valid YAML character stream, see the YAML specification.
     
-    YamlPresenterError* = object of Exception
-        ## Exception that may be raised by the YAML presenter. Currently, the
-        ## only ocassion this exception may be raised is when the presenter is
+    YamlPresenterJsonError* = object of Exception
+        ## Exception that may be raised by the YAML presenter when it is
         ## instructed to output JSON, but is unable to do so. This may occur if:
         ##
         ## - The given `YamlStream <#YamlStream>`_ contains a map which has any
         ##   non-scalar type as key.
         ## - Any float scalar bears a ``NaN`` or positive/negative infinity
-        ##   value 
+        ##   value
+    
+    YamlPresenterOutputError* = object of Exception
+        ## Exception that may be raised by the YAML presenter. This occurs if
+        ## writing character data to the output stream raises any exception. The
+        ## exception that has been catched is retrievable from ``cause``.
+        cause*: ref Exception
+    
+    YamlPresenterStreamError* = object of Exception
+        ## Exception that may be raised by the YAML presenter. This occurs if
+        ## an exception is raised while retrieving the next item from a
+        ## `YamlStream <#YamlStream>`_. The exception that has been catched is
+        ## retrievable from ``cause``.
+        cause*: ref Exception
 const
     # failsafe schema
 
@@ -372,8 +384,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream):
 
 proc constructJson*(s: YamlStream): seq[JsonNode]
     ## Construct an in-memory JSON tree from a YAML event stream. The stream may
-    ## not contain any tags apart from those in  ``coreTagLibrary``. Anchors and
-    ## aliases will be resolved. Maps in the  input must not contain
+    ## not contain any tags apart from those in ``coreTagLibrary``. Anchors and
+    ## aliases will be resolved. Maps in the input must not contain
     ## non-scalars as keys. Each element of the result represents one document
     ## in the YAML stream.
     ##
@@ -383,10 +395,17 @@ proc constructJson*(s: YamlStream): seq[JsonNode]
     ## of the JSON specification. Nim's JSON implementation currently does not
     ## check for these values and will output invalid JSON when rendering one
     ## of these values into a JSON character stream.
+
+proc loadToJson*(s: Stream): seq[JsonNode]
+    ## Uses `YamlSequentialParser <#YamlSequentialParser>`_ and
+    ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
+    ## from a YAML character stream.
     
 proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
               style: YamlPresentationStyle = ypsDefault,
-              indentationStep: int = 2)
+              indentationStep: int = 2) {.raises: [YamlPresenterJsonError,
+                                                   YamlPresenterOutputError,
+                                                   YamlPresenterStreamError].}
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
     
 proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,

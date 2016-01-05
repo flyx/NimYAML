@@ -213,8 +213,6 @@ Output:
    - Add type hints for more scalar types
  * Parser:
    - Properly handle leading spaces in block scalars
-   - Add an optional warning callback instead of yielding `yamlWarning` tokens,
-     which are a pain to handle for the caller.
  * Serialization:
    - Support for more standard library types
    - Support for ref and ptr types

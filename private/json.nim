@@ -155,3 +155,9 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                     levels[levels.high].key = nil
             else:
                 discard # will never happen
+
+proc loadToJson*(s: Stream): seq[JsonNode] =
+    var
+        parser = newParser(coreTagLibrary())
+        events = parser.parse(s)
+    return constructJson(events)

@@ -79,7 +79,7 @@ type
         ythLowerOF,
         ythLowerTR, ythLowerTRU,
         ythLowerYE,
-        
+                
         ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
         
         ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus,
@@ -269,6 +269,8 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
 
 template advanceTypeHint(ch: char) {.dirty.} =
     typeHintStateMachine ch:
+    of '~':
+        ythInitial => ythNULL
     of '.':
         [yth0, ythInt]         => ythDecimal
         [ythInitial, ythMinus] => ythPoint
