@@ -213,18 +213,25 @@ Output:
    - Add type hints for more scalar types
  * Parser:
    - Properly handle leading spaces in block scalars
+   - Raise exceptions instead of yielding yamlError tokens, which are a pain to
+     handle for the caller.
+   - Add an optional warning callback instead of yielding yamlWarning tokens,
+     which are a pain to handle for the caller.
+   - Oh and did I mention `yamlError` and `yamlWarning` are evil and need to
+     die.
  * Serialization:
-   - Generate local tags and use them
-   - Support for tuples
    - Support for more standard library types
    - Support for ref and ptr types
-   - Support for anchors and aliases
-   - Support polymorphism
+   - Support for anchors and aliases (requires ref and ptr types)
+   - Support polymorphism (requires ref and ptr types)
    - Support variant objects
+   - Support transient fields (i.e. fields that will not be (de-)serialized on
+     objects and tuples)
    - Make it possible for user to define a tag URI for custom types
    - Use `concept` type class `Serializable` or something
  * General:
    - Proper error handling (do not use `ValueError` for everything)
+   - Proper error handling, seriously
    - Document exceptions with `raises` pragmas in code
 
 ## License

@@ -11,7 +11,8 @@ type
         ypBlockAfterAlias, ypBlockAfterColon, ypBlockMultilineScalar,
         ypBlockLineEnd, ypBlockScalarHeader, ypBlockScalar, ypFlow,
         ypFlowAfterObject, ypFlowAfterTag, ypFlowAfterAnchor,
-        ypFlowAfterAnchorAndTag, ypExpectingDocumentEnd, ypAfterDirectivesEnd
+        ypFlowAfterQuestionMark, ypFlowAfterAnchorAndTag,
+        ypExpectingDocumentEnd, ypAfterDirectivesEnd
     
     DocumentLevelMode = enum
         mBlockSequenceItem, mFlowSequenceItem, mExplicitBlockMapKey,
@@ -112,7 +113,8 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
              "scalar[\"", content, "\", type=", typeHint, "]"
     if objectTag.len > 0:
         if tag.len > 0:
-            yieldError("Duplicate tag for scalar")
+            yieldError("Duplicate tag for scalar (tag=" & tag & ", objectTag=" &
+                       objectTag)
         tag = objectTag
         objectTag = ""
     yield YamlStreamEvent(kind: yamlScalar,
@@ -809,6 +811,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                                           indentationColumn: -1)
                 else:
                     yieldUnexpectedToken("scalar, comma or map end")
+            of tQuestionMark:
+                state = ypFlowAfterQuestionMark
             of tComma:
                 yieldScalar("", yTypeUnknown)
                 level = ancestry.pop()
@@ -826,6 +830,10 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 if level.mode != mUnknown:
                     yieldUnexpectedToken()
                 level.mode = mFlowMapKey
+                if objectTag.len > 0:
+                    assert tag.len == 0
+                    tag = objectTag
+                    objectTag = ""
                 yieldStart(yamlStartMap)
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -834,6 +842,10 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 if level.mode != mUnknown:
                     yieldUnexpectedToken()
                 level.mode = mFlowSequenceItem
+                if objectTag.len > 0:
+                    assert tag.len == 0
+                    tag = objectTag
+                    objectTag = ""
                 yieldStart(yamlStartSequence)
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -882,6 +894,15 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                         aliasTarget: resolveAlias(parser, lex.content))
                 state = ypFlowAfterObject
                 level = ancestry.pop()
+            else:
+                yieldUnexpectedToken()
+        of ypFlowAfterQuestionMark:
+            case token
+            of tScalar, tScalarPart, tColon, tComma, tOpeningBrace, 
+               tOpeningBracket, tClosingBrace, tClosingBracket, tTagHandle,
+               tAnchor, tAlias:
+               state = ypFlow
+               continue
             else:
                 yieldUnexpectedToken()
         of ypFlowAfterTag:

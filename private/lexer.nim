@@ -25,7 +25,7 @@ type
         # from here on tokens only in content
         tLineStart,
         # control characters
-        tColon, tDash, tQuestionmark, tComma, tOpeningBrace,
+        tColon, tDash, tQuestionMark, tComma, tOpeningBrace,
         tOpeningBracket, tClosingBrace, tClosingBracket, tPipe, tGreater,
         # block scalar header
         tBlockIndentationIndicator, tPlus,
@@ -887,6 +887,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                my.content = "!"
                yield(tTagHandle)
                my.content = suffix
+               my.content.add(c)
                state = ylTagSuffix
             of ' ', '\t', EndOfFile, '\r', '\x0A':
                 let suffix = my.content[1..^1]
