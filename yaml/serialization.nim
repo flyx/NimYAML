@@ -129,7 +129,6 @@ macro make_serializable*(types: stmt): stmt =
             if finished(s):
                 raise newException(ValueError, "Construction error!")
             while event.kind != yamlEndMap:
-                if event.kind == yamlError: echo event.description
                 assert event.kind == yamlScalar
                 assert event.scalarTag in [yTagQuestionMark, yTagString]
                 case hash(event.scalarContent)
@@ -139,7 +138,7 @@ macro make_serializable*(types: stmt): stmt =
                 event = s()
                 if finished(s):
                     raise newException(ValueError, "Construction error!")
-        var keyCase = impl[5][1][3]
+        var keyCase = impl[5][1][2]
         assert keyCase.kind == nnkCaseStmt
         for field in objectFields(recList):
             let nameHash = hash($field.name.ident)
@@ -215,7 +214,6 @@ macro make_serializable*(types: stmt): stmt =
                 nnkIteratorDef)))
         serializeProc[6] = impl
         result.add(serializeProc)
-    echo result.repr
 
 proc prepend*(event: YamlStreamEvent, s: YamlStream): YamlStream =
     result = iterator(): YamlStreamEvent =

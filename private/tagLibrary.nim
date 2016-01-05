@@ -13,7 +13,6 @@ proc registerUri*(tagLib: var YamlTagLibrary, uri: string): TagId =
     tagLib.tags[uri] = tagLib.nextCustomTagId
     result = tagLib.nextCustomTagId
     tagLib.nextCustomTagId = cast[TagId](cast[int](tagLib.nextCustomTagId) + 1)
-    echo "registered ", uri, " as: ", result
     
 proc uri*(tagLib: YamlTagLibrary, id: TagId): string =
     for iUri, iId in tagLib.tags.pairs:

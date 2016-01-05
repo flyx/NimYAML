@@ -48,10 +48,7 @@ proc alias(target: AnchorId): YamlStreamEvent =
 proc printDifference(expected, actual: YamlStreamEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
-        if actual.kind == yamlError:
-            echo "Error message: (line: ", actual.line, ", column: ",
-                 actual.column, ") ", actual.description
-        elif actual.kind == yamlWarning:
+        if actual.kind == yamlWarning:
             echo "Warning message: " & actual.description
     else:
         case expected.kind
@@ -106,19 +103,24 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
         parser = newParser(tagLib)
         i = 0
         events = parser.parse(newStringStream(input))
-    
-    for token in events():
-        if i >= expected.len:
-            echo "received more tokens than expected (next token = ",
-                 token.kind, ")"
-            fail()
-            break
-        if token != expected[i]:
-            echo "at token #" & $i & ":"
-            printDifference(expected[i], token)
-            fail()
-            break
-        i.inc()
+    try:
+        for token in events():
+            if i >= expected.len:
+                echo "received more tokens than expected (next token = ",
+                     token.kind, ")"
+                fail()
+                break
+            if token != expected[i]:
+                echo "at token #" & $i & ":"
+                printDifference(expected[i], token)
+                fail()
+                break
+            i.inc()
+    except YamlParserError:
+        let e = cast[YamlParserError](getCurrentException())
+        echo "Parser error:", getCurrentExceptionMsg()
+        echo e.lineContent
+        fail()
 
 suite "Parsing":
     setup:

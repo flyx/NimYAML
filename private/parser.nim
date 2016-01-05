@@ -67,17 +67,19 @@ template yieldWarning(d: string) {.dirty.} =
     yield YamlStreamEvent(kind: yamlWarning, description: d,
                           line: lex.line, column: lex.column)
 
-template yieldError(d: string) {.dirty.} =
-    yield YamlStreamEvent(kind: yamlError, description: d,
-                          line: lex.line, column: lex.column)
-    break parserLoop
+template raiseError(message: string) {.dirty.} =
+    var e = newException(YamlParserError, message)
+    e.line = lex.line
+    e.column = lex.column
+    e.lineContent = lex.getCurrentLine()
+    raise e
 
 template yieldUnexpectedToken(expected: string = "") {.dirty.} =
     var msg = "[" & $state & "] Unexpected token"
     if expected.len > 0:
         msg.add(" (expected " & expected & ")")
     msg.add(": " & $token)
-    yieldError(msg)
+    raiseError(msg)
 
 proc resolveAnchor(parser: YamlSequentialParser, anchor: var string):
         AnchorId {.inline.} =
@@ -113,7 +115,7 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
              "scalar[\"", content, "\", type=", typeHint, "]"
     if objectTag.len > 0:
         if tag.len > 0:
-            yieldError("Duplicate tag for scalar (tag=" & tag & ", objectTag=" &
+            raiseError("Duplicate tag for scalar (tag=" & tag & ", objectTag=" &
                        objectTag)
         tag = objectTag
         objectTag = ""
@@ -222,13 +224,11 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
                     level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                           indentationColumn: -1)
                 else:
-                    yieldError("Invalid token after " & $level.mode)
+                    raiseError("Invalid token after " & $level.mode)
             else:
-                yieldError("Invalid token after " & $level.mode)
+                raiseError("Invalid token after " & $level.mode)
     elif level.mode != mUnknown:
-        yieldError("Invalid indentation")
-    elif entering == yamlError:
-        yieldUnexpectedToken()
+        raiseError("Invalid indentation")
     else:
         level.mode = next
         level.indicatorColumn = lex.column
@@ -265,16 +265,16 @@ template handleTagHandle() {.dirty.} =
     if tagShorthands.hasKey(handle):
         token = nextToken(lex)
         if finished(nextToken):
-            yieldError("Missing tag suffix")
+            raiseError("Missing tag suffix")
             continue
         if token != tTagSuffix:
-            yieldError("Missing tag suffix")
+            raiseError("Missing tag suffix")
             continue
         tag = tagShorthands[handle] & lex.content
         if level.indentationColumn == -1 and level.indicatorColumn == -1:
             level.indentationColumn = lex.column
     else:
-        yieldError("Unknown tag shorthand: " & handle)
+        raiseError("Unknown tag shorthand: " & handle)
 
 proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
   result = iterator(): YamlStreamEvent =
@@ -314,23 +314,22 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
     
     var nextToken = tokens
     var token = nextToken(lex)
-    block parserLoop:
-      while not finished(nextToken):
+    while not finished(nextToken):
         case state
         of ypInitial:
             case token
             of tYamlDirective:
                 if foundYamlDirective:
-                    yieldError("Duplicate %YAML directive")
+                    raiseError("Duplicate %YAML directive")
                 var
                     warn = false
                     actualVersion = ""
                 for version in [1, 2]:
                     token = nextToken(lex)
                     if finished(nextToken):
-                        yieldError("Missing or badly formatted YAML version")
+                        raiseError("Missing or badly formatted YAML version")
                     if token != tVersionPart:
-                        yieldError("Missing or badly formatted YAML version")
+                        raiseError("Missing or badly formatted YAML version")
                     if parseInt(lex.content) != version:
                         warn = true
                     if actualVersion.len > 0: actualVersion &= "."
@@ -342,15 +341,15 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             of tTagDirective:
                 token = nextToken(lex)
                 if finished(nextToken):
-                    yieldError("Incomplete %TAG directive")
+                    raiseError("Incomplete %TAG directive")
                 if token != tTagHandle:
-                    yieldError("Invalid token (expected tag handle)")
+                    raiseError("Invalid token (expected tag handle)")
                 let tagHandle = lex.content
                 token = nextToken(lex)
                 if finished(nextToken):
-                    yieldError("Incomplete %TAG directive")
+                    raiseError("Incomplete %TAG directive")
                 if token != tTagURI:
-                    yieldError("Invalid token (expected tag URI)")
+                    raiseError("Invalid token (expected tag URI)")
                 tagShorthands[tagHandle] = lex.content
             of tUnknownDirective:
                 yieldWarning("Unknown directive: " & lex.content)
@@ -445,7 +444,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     level.mode = mBlockMapValue
                     continue
                 else:
-                    yieldError("Unexpected scalar in " & $level.mode)
+                    raiseError("Unexpected scalar in " & $level.mode)
                 state = ypBlockAfterScalar
             of tScalar:
                 leaveMoreIndentedLevels()
@@ -457,11 +456,11 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     scalarIndentation = lex.column
                     state = ypBlockAfterScalar
                 else:
-                    yieldError("Unexpected scalar")
+                    raiseError("Unexpected scalar")
             of tAlias:
                 aliasCache = resolveAlias(parser, lex.content)
                 if aliasCache == yAnchorNone:
-                    yieldError("[alias] Unknown anchor: " & lex.content)
+                    raiseError("[alias] Unknown anchor: " & lex.content)
                 if ancestry.len > 0:
                     if level.mode == mUnknown:
                         level = ancestry.pop()
@@ -472,7 +471,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 of mUnknown, mImplicitBlockMapKey, mBlockSequenceItem:
                     state = ypBlockAfterAlias
                 else:
-                    yieldError("Unexpected alias")
+                    raiseError("Unexpected alias")
             of tStreamEnd:
                 closeAllLevels()
                 yield YamlStreamEvent(kind: yamlEndDocument)
@@ -533,7 +532,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 state = ypBlockAfterColon
             of tLineStart:
                 if level.mode == mImplicitBlockMapKey:
-                    yieldError("Missing colon after implicit map key")
+                    raiseError("Missing colon after implicit map key")
                 if level.mode != mScalar:
                     yieldScalar(scalarCache, scalarCacheType,
                                 scalarCacheIsQuoted)
@@ -570,7 +569,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 state = ypBlockAfterColon
             of tLineStart:
                 if level.mode == mImplicitBlockMapKey:
-                    yieldError("Missing colon after implicit map key")
+                    raiseError("Missing colon after implicit map key")
                 if level.mode == mUnknown:
                     assert ancestry.len > 0
                     level = ancestry.pop()
@@ -599,7 +598,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 continue
             of tLineStart:
                 if objectTag.len > 0:
-                    yieldError("Duplicate tag for object")
+                    raiseError("Duplicate tag for object")
                 else:
                     objectTag = tag
                     tag = ""
@@ -643,7 +642,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 continue
             of tLineStart:
                 if objectTag.len > 0:
-                    yieldError("Duplicate tag for object")
+                    raiseError("Duplicate tag for object")
                 else:
                     objectTag = tag
                     tag = ""
@@ -694,7 +693,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     noAnchor = true
                 if noAnchor:
                     # cannot use yield within try/except, so do it here
-                    yieldError("[alias] Unknown anchor: " & lex.content)
+                    raiseError("[alias] Unknown anchor: " & lex.content)
                 yield YamlStreamEvent(kind: yamlAlias, aliasTarget: aliasCache)
                 level = ancestry.pop()
                 state = ypBlockLineEnd
@@ -715,17 +714,17 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             case token
             of tPlus:
                 if lineStrip != lsClip:
-                    yieldError("Multiple chomping indicators!")
+                    raiseError("Multiple chomping indicators!")
                 else:
                     lineStrip = lsKeep
             of tDash:
                 if lineStrip != lsClip:
-                    yieldError("Multiple chomping indicators!")
+                    raiseError("Multiple chomping indicators!")
                 else:
                     lineStrip = lsStrip
             of tBlockIndentationIndicator:
                 if blockScalarIndentation != -1:
-                    yieldError("Multiple indentation indicators!")
+                    raiseError("Multiple indentation indicators!")
                 else:
                     blockScalarIndentation = parseInt(lex.content)
             of tLineStart:
@@ -825,7 +824,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 of mFlowSequenceItem:
                     yieldScalar("", yTypeUnknown)
                 else:
-                    yieldError("Internal error! Please report this bug.")
+                    raiseError("Internal error! Please report this bug.")
             of tOpeningBrace:
                 if level.mode != mUnknown:
                     yieldUnexpectedToken()
@@ -908,7 +907,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         of ypFlowAfterTag:
             case token
             of tTagHandle:
-                yieldError("Multiple tags on same node!")
+                raiseError("Multiple tags on same node!")
             of tAnchor:
                 anchor = lex.content
                 state = ypFlowAfterAnchorAndTag
@@ -918,7 +917,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         of ypFlowAfterAnchor:
             case token
             of tAnchor:
-                yieldError("Multiple anchors on same node!")
+                raiseError("Multiple anchors on same node!")
             of tTagHandle:
                 handleTagHandle()
                 state = ypFlowAfterAnchorAndTag
@@ -928,9 +927,9 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         of ypFlowAfterAnchorAndTag:
             case token
             of tAnchor:
-                yieldError("Multiple anchors on same node!")
+                raiseError("Multiple anchors on same node!")
             of tTagHandle:
-                yieldError("Multiple tags on same node!")
+                raiseError("Multiple tags on same node!")
             else:
                 state = ypFlow
                 continue
@@ -1007,4 +1006,4 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 yieldUnexpectedToken("document end")
         token = nextToken(lex)
         if token == tError:
-            yieldError("Lexer error: " & lex.content)
+            raiseError("Lexer error: " & lex.content)

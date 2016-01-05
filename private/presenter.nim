@@ -374,9 +374,6 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             cached.enqueue(next)
         of yamlWarning:
             discard
-        of yamlError:
-            raise newException(ValueError, "(" & $item.line & ", " &
-                               $item.column & "): " & item.description)
 
 proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
                 indentationStep: int = 2) =

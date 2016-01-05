@@ -141,9 +141,6 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
         of yamlWarning:
             echo "YAML warning at line ", event.line, ", column ", event.column,
                  ": ", event.description
-        of yamlError:
-            echo "YAML error at line ", event.line, ", column ", event.column,
-                 ": ", event.description
         of yamlAlias:
             # we can savely assume that the alias exists in anchors
             # (else the parser would have already thrown an exception)
