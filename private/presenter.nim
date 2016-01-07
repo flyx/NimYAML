@@ -253,7 +253,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                 nextState = if length <= 60: dFlowSequenceStart else:
                             dBlockSequenceItem
             of ypsJson:
-                if levels[levels.high] in
+                if levels.len > 0 and levels[levels.high] in
                         [dFlowImplicitMapStart, dFlowImplicitMapValue]:
                     raise newException(YamlPresenterJsonError,
                             "Cannot have sequence as map key in JSON output!")
