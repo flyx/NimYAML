@@ -544,6 +544,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     scalarCache = nil
                     if ancestry.len > 0:
                         level = ancestry.pop()
+                        state = ypBlockLineStart
                     else:
                         state = ypExpectingDocumentEnd
                 else:
