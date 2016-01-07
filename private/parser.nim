@@ -472,9 +472,8 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     assert level.mode == mImplicitBlockMapKey
                 leaveMoreIndentedLevels()
                 case level.mode
-                of mUnknown, mImplicitBlockMapKey, mImplicitBlockMapValue,
-                             mExplicitBlockMapKey, mExplicitBlockMapValue,
-                             mBlockSequenceItem:
+                of mUnknown, mImplicitBlockMapKey, mBlockMapValue,
+                             mExplicitBlockMapKey, mBlockSequenceItem:
                     state = ypBlockAfterAlias
                 else:
                     raiseError("Unexpected alias")
