@@ -74,6 +74,8 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
                 if style != ypsJson:
                     target.write("? ")
                 state = dFlowExplicitMapKey
+            elif isObject and style == ypsMinimal:
+                target.write(", ? ")
             else:
                 target.write(", ")
                 state = dFlowImplicitMapKey
