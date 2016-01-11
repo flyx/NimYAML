@@ -427,7 +427,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                          dBlockImplicitMapKey, dBlockSequenceItem]:
                     indentation -= indentationStep
                 safeWrite('}')
-            of dBlockMapValue:
+            of dBlockMapValue, dBlockInlineMap:
                 discard
             else:
                 assert false
