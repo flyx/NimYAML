@@ -18,7 +18,7 @@ routes:
         of "canonical": style = ypsCanonical
         of "default": style = ypsDefault
         of "json": style = ypsJson
-        of "blocks": style = ypsBlockOnly
+        of "block": style = ypsBlockOnly
         var
             output = newStringStream()
             resultNode = newJObject()
