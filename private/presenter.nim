@@ -7,9 +7,9 @@
 type
     DumperState = enum
         dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
-        dBlockSequenceItem, dFlowImplicitMapKey, dFlowMapValue,
-        dFlowExplicitMapKey, dFlowSequenceItem,
-        dFlowMapStart, dFlowSequenceStart
+        dBlockInlineMap, dBlockSequenceItem, dFlowImplicitMapKey, dFlowMapValue,
+        dFlowExplicitMapKey, dFlowSequenceItem, dFlowMapStart,
+        dFlowSequenceStart
 
 proc needsEscaping(scalar: string): bool {.raises: [].} =
     scalar.len == 0 or 
@@ -51,6 +51,8 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
                 state = dBlockExplicitMapKey
             else:
                 state = dBlockImplicitMapKey
+        of dBlockInlineMap:
+            state = dBlockImplicitMapKey
         of dBlockExplicitMapKey:
             target.write('\x0A')
             target.write(repeat(' ', indentation))
@@ -288,27 +290,30 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             var nextState: DumperState
             case style
             of ypsDefault:
-                var length = 0
-                while true:
+                type mapParseState = enum
+                    mpInitial, mpKey, mpValue, mpNeedBlock
+                var mps = mpInitial
+                while mps != mpNeedBlock:
                     try:
                         let next = s()
                         assert (not finished(s))
                         cached.enqueue(next)
                         case next.kind
-                        of yamlScalar:
-                            length += 2 + next.scalarContent.len
-                        of yamlAlias:
-                            length += 6
+                        of yamlScalar, yamlAlias:
+                            case mps
+                            of mpInitial: mps = mpKey
+                            of mpKey: mps = mpValue
+                            else: mps = mpNeedBlock
                         of yamlEndMap:
                             break
                         else:
-                            length = int.high
-                            break
+                            mps = mpNeedBlock
                     except:
                         var e = newException(YamlPresenterStreamError, "")
                         e.cause = getCurrentException()
                         raise e
-                nextState = if length <= 60: dFlowMapStart else: dBlockMapValue
+                nextState = if mps == mpNeedBlock: dBlockMapValue else:
+                        dBlockInlineMap
             of ypsMinimal:
                 nextState = dFlowMapStart
             of ypsCanonical:
