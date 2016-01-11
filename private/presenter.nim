@@ -62,8 +62,9 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
             target.write(": ")
             state = dBlockMapValue
         of dFlowExplicitMapKey:
-            target.write('\x0A')
-            target.write(repeat(' ', indentation))
+            if style != ypsMinimal:
+                target.write('\x0A')
+                target.write(repeat(' ', indentation))
             target.write(": ")
             state = dFlowMapValue
         of dFlowMapValue:
@@ -76,7 +77,8 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
                 target.write(", ")
                 state = dFlowImplicitMapKey
         of dFlowMapStart:
-            if isObject or style in [ypsJson, ypsCanonical]:
+            if (isObject and style != ypsMinimal) or
+                    style in [ypsJson, ypsCanonical]:
                 target.write("\x0A" & repeat(' ', indentation))
                 if style != ypsJson:
                     target.write("? ")
