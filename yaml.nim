@@ -82,19 +82,12 @@ type
         ## ``yTagQuestionMark`` and ``yTagExclamationMark`` respectively.
         ## Mapping is done by a `YamlTagLibrary <#YamlTagLibrary>`_.
         ##
-        ## The value ``mapMayHaveKeyObjects`` is a hint from a serializer and is
-        ## used for choosing an appropriate presentation mode for a YAML map
-        ## (flow or block, explicit or implicit) by
-        ## `present <#present,YamlStream,Stream,YamlTagLibrary,YamlDumpStyle,int>`_.
-        ## If it is set to ``false``, the map may only have scalars as keys.
-        ##
         ## The value ``scalarType`` is a hint from the lexer, see
         ## `YamlTypeHint <#YamlTypeHint>`_.
         case kind*: YamlStreamEventKind
         of yamlStartMap:
             mapAnchor* : AnchorId
             mapTag*    : TagId
-            mapMayHaveKeyObjects* : bool
         of yamlStartSequence:
             seqAnchor* : AnchorId
             seqTag*    : TagId
@@ -310,8 +303,7 @@ proc `$`*(event: YamlStreamEvent): string
 proc startDocEvent*(): YamlStreamEvent {.inline.}
 proc endDocEvent*(): YamlStreamEvent {.inline.}
 proc startMapEvent*(tag: TagId = yTagQuestionMark,
-                    anchor: AnchorId = yAnchorNone,
-                    mayHaveKeyObjects: bool = true): YamlStreamEvent {.inline.}
+                    anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline.}
 proc endMapEvent*(): YamlStreamEvent {.inline.}
 proc startSeqEvent*(tag: TagId = yTagQuestionMark,
                     anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline.}

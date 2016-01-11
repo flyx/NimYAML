@@ -54,10 +54,8 @@ proc endDocEvent*(): YamlStreamEvent =
     result = YamlStreamEvent(kind: yamlEndDocument)
     
 proc startMapEvent*(tag: TagId = yTagQuestionMark,
-                    anchor: AnchorId = yAnchorNone,
-                    mayHaveKeyObjects: bool = true): YamlStreamEvent =
-    result = YamlStreamEvent(kind: yamlStartMap, mapTag: tag, mapAnchor: anchor,
-                             mapMayHaveKeyObjects: mayHaveKeyObjects)
+                    anchor: AnchorId = yAnchorNone): YamlStreamEvent =
+    result = YamlStreamEvent(kind: yamlStartMap, mapTag: tag, mapAnchor: anchor)
                              
 proc endMapEvent*(): YamlStreamEvent =
     result = YamlStreamEvent(kind: yamlEndMap)
