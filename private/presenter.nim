@@ -76,6 +76,7 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
                 state = dFlowExplicitMapKey
             elif isObject and style == ypsMinimal:
                 target.write(", ? ")
+                state = dFlowExplicitMapKey
             else:
                 target.write(", ")
                 state = dFlowImplicitMapKey
@@ -428,11 +429,9 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                          dBlockImplicitMapKey, dBlockSequenceItem]:
                     indentation -= indentationStep
                 safeWrite('}')
-            of dBlockMapValue, dBlockInlineMap, dBlockImplicitMapKey,
-               dBlockExplicitMapKey:
+            of dBlockMapValue, dBlockInlineMap:
                 discard
             else:
-                echo "Unexpected level: ", level
                 assert false
             indentation -= indentationStep
         of yamlEndDocument:
