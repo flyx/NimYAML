@@ -401,7 +401,8 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
             indentation -= indentationStep
         of yamlEndMap:
             assert levels.len > 0
-            case levels.pop()
+            let level = levels.pop()
+            case level
             of dFlowMapValue:
                 case style
                 of ypsDefault, ypsMinimal, ypsBlockOnly:
@@ -431,6 +432,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                dBlockExplicitMapKey:
                 discard
             else:
+                echo "Unexpected level: ", level
                 assert false
             indentation -= indentationStep
         of yamlEndDocument:
