@@ -68,7 +68,8 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
             target.write(": ")
             state = dFlowMapValue
         of dFlowMapValue:
-            if isObject or style in [ypsJson, ypsCanonical]:
+            if (isObject and style != ypsMinimal) or
+                    style in [ypsJson, ypsCanonical]:
                 target.write(",\x0A" & repeat(' ', indentation))
                 if style != ypsJson:
                     target.write("? ")
