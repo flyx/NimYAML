@@ -444,5 +444,39 @@ proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
     var
         tagLib = extendedTagLibrary()
         parser = newParser(tagLib)
-    present(parser.parse(input), output, tagLib, style,
-            indentationStep)
+        events = parser.parse(input)
+    if style == ypsCanonical:
+        var specificTagEvents = iterator(): YamlStreamEvent =
+            for e in events():
+                var event = e
+                case event.kind
+                of yamlStartDocument, yamlEndDocument, yamlEndMap, yamlAlias,
+                        yamlEndSequence:
+                    discard
+                of yamlStartMap:
+                    if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
+                        event.mapTag = yTagMap
+                of yamlStartSequence:
+                    if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
+                        event.seqTag = yTagSequence
+                of yamlScalar:
+                    if event.scalarTag == yTagQuestionMark:
+                        case event.scalarType
+                        of yTypeInteger:
+                            event.scalarTag = yTagInteger
+                        of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
+                            event.scalarTag = yTagFloat
+                        of yTypeBoolTrue, yTypeBoolFalse:
+                            event.scalarTag = yTagBoolean
+                        of yTypeNull:
+                            event.scalarTag = yTagNull
+                        of yTypeString, yTypeUnknown:
+                            event.scalarTag = yTagString
+                    elif event.scalarTag == yTagExclamationMark:
+                        event.scalarTag = yTagString
+                yield event
+        present(specificTagEvents, output, tagLib, style,
+                indentationStep)
+    else:
+        present(parser.parse(input), output, tagLib, style,
+                indentationStep)
