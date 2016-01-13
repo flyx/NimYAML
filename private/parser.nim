@@ -123,11 +123,10 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
                        objectTag)
         tag = objectTag
         objectTag = ""
-    yield YamlStreamEvent(kind: yamlScalar,
-            scalarAnchor: resolveAnchor(parser, anchor),
-            scalarTag: resolveTag(parser, tag, quoted),
-            scalarContent: content,
-            scalarType: typeHint)
+    var e = scalarEvent(nil, resolveTag(parser, tag, quoted),
+        resolveAnchor(parser, anchor), typeHint)
+    shallowCopy(e.scalarContent, content)
+    yield e
 
 template yieldStartMap() {.dirty.} =
     when defined(yamlDebug):
@@ -169,12 +168,7 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
         when defined(yamlDebug):
             echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
                  "scalar[\"", scalarCache, "\", type=", scalarCacheType, "]"
-        yield YamlStreamEvent(kind: yamlScalar,
-                              scalarAnchor: resolveAnchor(parser, anchor),
-                              scalarTag: resolveTag(parser, tag),
-                              scalarContent: scalarCache,
-                              scalarType: scalarCacheType)
-        
+        yieldScalar(scalarCache, scalarCacheType)
     else:
         yieldScalar("", yTypeUnknown)
 
