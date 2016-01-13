@@ -82,6 +82,12 @@
     </div>
   </article>
     <script type="text/javascript">
+    function setTextContent(element, text) {
+      while (element.firstChild!==null) {
+        element.removeChild(element.firstChild); // remove all existing content
+      }
+      element.appendChild(document.createTextNode(text));
+    }
     function parse() {
       var r = new XMLHttpRequest();
       var params = "style=" + encodeURIComponent(document.querySelector(
@@ -96,28 +102,27 @@
             var result = JSON.parse(r.responseText);
             switch(result.code) {
             case 0:
-              output.innerText = result.output;
+              setTextContent(output, result.output);
               output.style.color = "black";
               break;
             case 1:
-              output.innerText = "Parser error at line " + result.line +
+              setTextContent(output, "Parser error at line " + result.line +
                   ", column " + result.column + ":\n" + result.message +
-                  "\n\n" + result.detail;
+                  "\n\n" + result.detail);
               output.style.color = "orange";
               break;
             case 2:
-              output.innerText = "Presenter error:\n" + result.message;
+              setTextContent(output, "Presenter error:\n" + result.message);
               output.style.color = "orange";
               break;
             }
           } else if (r.status == 0) {
-            output.innerText =
-                "YAML parser server does not seem to be available.";
+            setTextContent(output,
+              "YAML parser server does not seem to be available.");
             output.style.color = "red";
           } else {
-            output.innerText = "Status: " + r.status +
-                "\nException occurred on server:\n\n" +
-                r.responseText;
+            setTextContent(output, "Status: " + r.status +
+              "\nException occurred on server:\n\n" + r.responseText);
             output.style.color = "red";
           }
         }
