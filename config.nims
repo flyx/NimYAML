@@ -23,8 +23,13 @@ task serializationTests, "Run serialization tests":
     --verbosity:0
     setCommand "c", "test/serializing"
 
-task doc, "Generate documentation":
-    setCommand "doc2", "yaml"
+task documentation, "Generate documentation":
+    exec "mkdir -p docout"
+    exec r"nim doc2 -o:docout/yaml.html yaml"
+    exec r"nim doc2 -o:docout/serialization.html yaml/serialization.nim"
+    exec r"nim rst2html -o:docout/index.html doc/index.txt"
+    exec "cp doc/docutils.css doc/style.css doc/testing.html docout"
+    setCommand "nop"
 
 task bench, "Benchmarking":
     --d:release
@@ -32,7 +37,7 @@ task bench, "Benchmarking":
     setCommand "c", "bench/json"
 
 task clean, "Remove all generated files":
-    exec "rm -f yaml.html libyaml.* test/tests test/parsing test/lexing"
+    exec "rm -f libyaml.* test/tests test/parsing test/lexing docout"
     setCommand "nop"
 
 task server, "Compile server daemon":
