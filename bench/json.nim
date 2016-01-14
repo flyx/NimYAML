@@ -134,7 +134,7 @@ var
     json1k   = genJsonString(1, 32)
     json10k  = genJsonString(10, 32)
     json100k = genJsonString(100, 32)
-    parser = newParser(coreTagLibrary())
+    parser = newParser(coreTagLibrary)
     
     s = newStringStream(json1k)
 
