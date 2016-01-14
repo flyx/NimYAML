@@ -21,7 +21,7 @@ import streams, unicode, lexbase, tables, strutils, json, hashes, queues, macros
 export streams, tables, json
 
 type
-    YamlTypeHint* = enum
+    TypeHint* = enum
         ## A type hint is a friendly message from the YAML lexer, telling you
         ## it thinks a scalar string probably is of a certain type. You are not
         ## required to adhere to this information. The first matching RegEx will
@@ -81,9 +81,6 @@ type
         ## specification. These are by convention mapped to the ``TagId`` s
         ## ``yTagQuestionMark`` and ``yTagExclamationMark`` respectively.
         ## Mapping is done by a `YamlTagLibrary <#YamlTagLibrary>`_.
-        ##
-        ## The value ``scalarType`` is a hint from the lexer, see
-        ## `YamlTypeHint <#YamlTypeHint>`_.
         case kind*: YamlStreamEventKind
         of yamlStartMap:
             mapAnchor* : AnchorId
@@ -95,7 +92,6 @@ type
             scalarAnchor* : AnchorId
             scalarTag*    : TagId
             scalarContent*: string # may not be nil (but empty)
-            scalarType*   : YamlTypeHint
         of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
             discard
         of yamlAlias:
@@ -300,18 +296,19 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool
 proc `$`*(event: YamlStreamEvent): string
     ## outputs a human-readable string describing the given event
 
-proc startDocEvent*(): YamlStreamEvent {.inline.}
-proc endDocEvent*(): YamlStreamEvent {.inline.}
+proc startDocEvent*(): YamlStreamEvent {.inline, raises: [].}
+proc endDocEvent*(): YamlStreamEvent {.inline, raises: [].}
 proc startMapEvent*(tag: TagId = yTagQuestionMark,
-                    anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline.}
-proc endMapEvent*(): YamlStreamEvent {.inline.}
+                    anchor: AnchorId = yAnchorNone):
+                    YamlStreamEvent {.inline, raises: [].}
+proc endMapEvent*(): YamlStreamEvent {.inline, raises: [].}
 proc startSeqEvent*(tag: TagId = yTagQuestionMark,
-                    anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline.}
-proc endSeqEvent*(): YamlStreamEvent {.inline.}
+                    anchor: AnchorId = yAnchorNone):
+                    YamlStreamEvent {.inline, raises: [].}
+proc endSeqEvent*(): YamlStreamEvent {.inline, raises: [].}
 proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
-                  anchor: AnchorId = yAnchorNone, 
-                  typeHint: YamlTypeHint = yTypeUnknown):
-                  YamlStreamEvent {.inline.}
+                  anchor: AnchorId = yAnchorNone):
+                  YamlStreamEvent {.inline, raises: [].}
 
 proc `==`*(left, right: TagId): bool {.borrow.}
 proc `$`*(id: TagId): string
@@ -360,6 +357,8 @@ proc extendedTagLibrary*(): YamlTagLibrary
     ## - ``!!timestamp``
     ## - ``!!value``
     ## - ``!!yaml``
+
+proc guessType*(scalar: string): TypeHint {.raises: [].}
 
 proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser
     ## Instanciates a parser
@@ -413,3 +412,4 @@ include private.events
 include private.parser
 include private.json
 include private.presenter
+include private.hints

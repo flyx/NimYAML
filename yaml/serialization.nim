@@ -241,9 +241,7 @@ proc construct*(s: YamlStream, result: var string) =
 proc serialize*(value: string,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlScalar,
-                              scalarTag: presentTag(string, tagStyle),
-                              scalarAnchor: yAnchorNone, scalarContent: value)
+        yield scalarEvent(value, presentTag(string, tagStyle), yAnchorNone)
 
 proc yamlTag*(T: typedesc[int]): TagId {.inline.} = yTagInteger
 
@@ -252,16 +250,15 @@ proc construct*(s: YamlStream, result: var int) =
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
     if item.scalarTag != yTagInteger and not (
-       item.scalarTag == yTagQuestionMark and item.scalarType == yTypeInteger):
+       item.scalarTag == yTagQuestionMark and
+       guessType(item.scalarContent) == yTypeInteger):
         raise newException(ValueError, "Wrong scalar type for int.")
     result = parseInt(item.scalarContent)
 
 proc serialize*(value: int,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlScalar,
-                              scalarTag: presentTag(int, tagStyle),
-                              scalarAnchor: yAnchorNone, scalarContent: $value)
+        yield scalarEvent($value, presentTag(int, tagStyle), yAnchorNone)
 
 proc yamlTag*(T: typedesc[int64]): TagId {.inline.} = yTagInteger
 
@@ -270,16 +267,15 @@ proc contruct*(s: YamlStream, result: var int64) =
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
     if item.scalarTag != yTagInteger and not (
-       item.scalarTag == yTagQuestionMark and item.scalarType == yTypeInteger):
+       item.scalarTag == yTagQuestionMark and
+       guessType(item.scalarContent) == yTypeInteger):
         raise newException(ValueError, "Wrong scalar type for int64.")
     result = parseBiggestInt(item.scalarContent)
 
 proc serialize*(value: int64,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlScalar,
-                              scalarTag: presentTag(int64, tagStyle),
-                              scalarAnchor: yAnchorNone, scalarContent: $value)
+        yield scalarEvent($value, presentTag(int64, tagStyle), yAnchorNone)
 
 proc yamlTag*(T: typedesc[float]): TagId {.inline.} = yTagFloat
 
@@ -287,10 +283,12 @@ proc construct*(s: YamlStream, result: var float) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
+    let hint = guessType(item.scalarContent)
     if item.scalarTag != yTagFloat and not (
-       item.scalarTag == yTagQuestionMark and item.scalarType == yTypeFloat):
+       item.scalarTag == yTagQuestionMark and
+       hint in [yTypeFloat, yTypeFloatInf, yTypeFloatNaN]):
         raise newException(ValueError, "Wrong scalar type for float.")
-    case item.scalarType
+    case hint
     of yTypeFloat:
         result = parseFloat(item.scalarContent)
     of yTypeFloatInf:
@@ -303,30 +301,20 @@ proc construct*(s: YamlStream, result: var float) =
     else:
         raise newException(ValueError, "Wrong scalar type for float.")
 
-proc serialize*(value: float,
-                tagStyle: YamlTagStyle = ytsNone): YamlStream =
+proc serialize*(value: float, tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         var
             asString: string
-            hint: YamlTypeHint
         case value
         of Inf:
             asString = ".inf"
-            hint = yTypeFloatInf
         of NegInf:
             asString = "-.inf"
-            hint = yTypeFloatInf
         of NaN:
             asString = ".nan"
-            hint = yTypeFloatNaN
         else:
             asString = $value
-            hint = yTypeFloat
-    
-        yield YamlStreamEvent(kind: yamlScalar,
-                scalarTag: presentTag(float, tagStyle),
-                scalarAnchor: yAnchorNone, scalarContent: asString,
-                scalarType: hint)
+        yield scalarEvent(asString, presentTag(float, tagStyle), yAnchorNone)
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline.} = yTagBoolean
 
@@ -334,34 +322,25 @@ proc construct*(s: YamlStream, result: var bool) =
     let item = s()
     if finished(s) or item.kind != yamlScalar:
         raise newException(ValueError, "Construction error!")
+    let hint = guessType(item.scalarContent)
     case item.scalarTag
-    of yTagQuestionMark:
-        case item.scalarType
+    of yTagQuestionMark, yTagBoolean:
+        case hint
         of yTypeBoolTrue:
             result = true
         of yTypeBoolFalse:
             result = false
         else:
-            raise newException(ValueError, "Wrong scalar type for bool.")
-    of yTagBoolean:
-        if item.scalarContent.match(
-                re"y|Y|yes|Yes|YES|true|True|TRUE|on|On|ON"):
-            result = true
-        elif item.scalarContent.match(
-                re"n|N|no|No|NO|false|False|FALSE|off|Off|OFF"):
-            result = false
-        else:
-            raise newException(ValueError, "Wrong content for bool.")
+            raise newException(ValueError,
+                               "Not a boolean: " & item.scalarContent)
     else:
         raise newException(ValueError, "Wrong scalar type for bool")
         
 proc serialize*(value: bool,
                 tagStyle: YamlTagStyle = ytsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        yield YamlStreamEvent(kind: yamlScalar,
-                              scalarTag: presentTag(bool, tagStyle),
-                              scalarAnchor: yAnchorNone, scalarContent:
-                              if value: "y" else: "n")
+        yield scalarEvent(if value: "y" else: "n", presentTag(bool, tagStyle),
+                          yAnchorNone)
 
 proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline.} =
     let uri = "!nim:seq(" & safeTagUri(yamlTag(I)) & ")"

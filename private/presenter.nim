@@ -198,17 +198,18 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                                   item.scalarTag, tagLib, item.scalarAnchor)
             
             if style == ypsJson:
+                let hint = guessType(item.scalarContent)
                 if item.scalarTag in [yTagQuestionMark, yTagBoolean] and
-                        item.scalarType in [yTypeBoolTrue, yTypeBoolFalse]:
-                    if item.scalarType == yTypeBoolTrue:
+                        hint in [yTypeBoolTrue, yTypeBoolFalse]:
+                    if hint == yTypeBoolTrue:
                         safeWrite("true")
                     else:
                         safeWrite("false")
                 elif item.scalarTag in [yTagQuestionMark, yTagNull] and
-                        item.scalarType == yTypeNull:
+                        hint == yTypeNull:
                     safeWrite("null")
                 elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
-                        item.scalarType in [yTypeFloatInf, yTypeFloatNaN]:
+                        hint in [yTypeFloatInf, yTypeFloatNaN]:
                     raise newException(YamlPresenterJsonError,
                             "Infinity and not-a-number values cannot be presented as JSON!")
                 else:
@@ -469,7 +470,7 @@ proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
                         event.seqTag = yTagSequence
                 of yamlScalar:
                     if event.scalarTag == yTagQuestionMark:
-                        case event.scalarType
+                        case guessType(event.scalarContent)
                         of yTypeInteger:
                             event.scalarTag = yTagInteger
                         of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:

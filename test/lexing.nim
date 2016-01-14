@@ -36,12 +36,6 @@ template ensure(input: string, expected: openarray[BasicLexerToken]) =
                      expected[i].content, "\", got \"", lex.content, "\")"
                 fail()
                 break
-        if token == tScalarPart:
-            if lex.typeHint != expected[i].typeHint:
-                echo "wrong type hint (expected ", expected[i].typeHint,
-                     ", got ", lex.typeHint, ")"
-                fail()
-                break
         inc(i)
     if i < expected.len:
         echo "received less tokens than expected (first missing = ",

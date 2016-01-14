@@ -9,18 +9,17 @@ type
 
 proc initLevel(node: JsonNode): Level = (node: node, key: cast[string](nil))
 
-proc jsonFromScalar(content: string, tag: TagId,
-                    typeHint: YamlTypeHint): JsonNode =
+proc jsonFromScalar(content: string, tag: TagId): JsonNode =
     new(result)
-    var mappedType: YamlTypeHint
+    var mappedType: TypeHint
     
     case tag
     of yTagQuestionMark:
-        mappedType = typeHint
+        mappedType = guessType(content)
     of yTagExclamationMark, yTagString:
         mappedType = yTypeString
     of yTagBoolean:
-        case typeHint
+        case guessType(content)
         of yTypeBoolTrue:
             mappedType = yTypeBoolTrue
         of yTypeBoolFalse:
@@ -90,15 +89,13 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
             if levels.len == 0:
                 # parser ensures that next event will be yamlEndDocument
                 levels.add((node: jsonFromScalar(event.scalarContent,
-                                                 event.scalarTag,
-                                                 event.scalarType), key: nil))
+                                                 event.scalarTag), key: nil))
                 continue
             
             case levels[levels.high].node.kind
             of JArray:
                 let jsonScalar = jsonFromScalar(event.scalarContent,
-                                                event.scalarTag,
-                                                event.scalarType)
+                                                event.scalarTag)
                 levels[levels.high].node.elems.add(jsonScalar)
                 if event.scalarAnchor != yAnchorNone:
                     anchors[event.scalarAnchor] = jsonScalar
@@ -111,8 +108,7 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                                 "scalar keys may not have anchors in JSON")
                 else:
                     let jsonScalar = jsonFromScalar(event.scalarContent,
-                                                    event.scalarTag,
-                                                    event.scalarType)
+                                                    event.scalarTag)
                     levels[levels.high].node.fields.add(
                             (key: levels[levels.high].key, val: jsonScalar))
                     levels[levels.high].key = nil

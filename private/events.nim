@@ -19,8 +19,7 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
     of yamlScalar:
         result = left.scalarAnchor == right.scalarAnchor and
                  left.scalarTag == right.scalarTag and
-                 left.scalarContent == right.scalarContent and
-                 left.scalarType == right.scalarType
+                 left.scalarContent == right.scalarContent
     of yamlAlias:
         result = left.aliasTarget == right.aliasTarget
 
@@ -41,7 +40,6 @@ proc `$`*(event: YamlStreamEvent): string =
         result &= "tag=" & $event.scalarTag
         if event.scalarAnchor != yAnchorNone:
             result &= ", anchor=" & $event.scalarAnchor
-        result &= ", typeHint=" & $event.scalarType
         result &= ", content=\"" & event.scalarContent & '\"'
     of yamlAlias:
         result &= "aliasTarget=" & $event.aliasTarget
@@ -69,8 +67,6 @@ proc endSeqEvent*(): YamlStreamEvent =
     result = YamlStreamEvent(kind: yamlEndSequence)
     
 proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
-                  anchor: AnchorId = yAnchorNone, 
-                  typeHint: YamlTypeHint = yTypeUnknown): YamlStreamEvent =
+                  anchor: AnchorId = yAnchorNone): YamlStreamEvent =
     result = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
-                             scalarAnchor: anchor, scalarContent: content,
-                             scalarType: typeHint)
+                             scalarAnchor: anchor, scalarContent: content)

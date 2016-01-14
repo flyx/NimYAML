@@ -47,9 +47,9 @@ type
         ylDirective, ylDefineTagHandle, ylDefineTagURI, ylMajorVersion,
         ylMinorVersion, ylUnknownDirectiveParam, ylDirectiveComment,
         # scalar reading states
-        ylPlainScalar, ylPlainScalarNone, ylSingleQuotedScalar,
-        ylDoublyQuotedScalar, ylEscape, ylBlockScalar, ylBlockScalarHeader,
-        ylSpaceAfterPlainScalar, ylSpaceAfterQuotedScalar,
+        ylPlainScalar, ylSingleQuotedScalar, ylDoublyQuotedScalar, ylEscape,
+        ylBlockScalar, ylBlockScalarHeader, ylSpaceAfterPlainScalar,
+        ylSpaceAfterQuotedScalar,
         # indentation
         ylIndentation,
         # comments
@@ -61,30 +61,6 @@ type
         # anchoring
         ylAnchor, ylAlias
     
-    YamlTypeHintState = enum
-        ythInitial,
-        ythF, ythFA, ythFAL, ythFALS, ythFALSE,
-        ythN, ythNU, ythNUL, ythNULL,
-              ythNO,
-        ythO, ythON,
-              ythOF, ythOFF,
-        ythT, ythTR, ythTRU, ythTRUE,
-        ythY, ythYE, ythYES,
-        
-        ythPoint, ythPointI, ythPointIN, ythPointINF,
-                  ythPointN, ythPointNA, ythPointNAN,
-        
-        ythLowerFA, ythLowerFAL, ythLowerFALS,
-        ythLowerNU, ythLowerNUL,
-        ythLowerOF,
-        ythLowerTR, ythLowerTRU,
-        ythLowerYE,
-                
-        ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
-        
-        ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus,
-        ythExponent, ythNone
-    
     YamlLexer = object of BaseLexer
         indentations: seq[int]
         encoding: Encoding
@@ -92,7 +68,6 @@ type
         charoffset: int
         content*: string # my.content of the last returned token.
         line*, column*: int
-        typeHint*: YamlTypeHint
 
 const
     UTF8NextLine           = toUTF8(Rune(0x85))
@@ -177,24 +152,6 @@ template yieldToken(kind: YamlLexerToken) {.dirty.} =
     my.content = ""
 
 template yieldScalarPart() {.dirty.} =
-    case typeHintState
-    of ythNULL:
-        my.typeHint = yTypeNull
-    of ythTRUE, ythON, ythYES, ythY:
-        my.typeHint = yTypeBoolTrue
-    of ythFALSE, ythOFF, ythNO, ythN:
-        my.typeHint = yTypeBoolFalse
-    of ythInt, yth0:
-        my.typeHint = yTypeInteger
-    of ythDecimal, ythExponent:
-        my.typeHint = yTypeFloat
-    of ythPointINF:
-        my.typeHint = yTypeFloatInf
-    of ythPointNAN:
-        my.typeHint = yTypeFloatNaN
-    else:
-        my.typeHint = yTypeUnknown
-    
     when defined(yamlDebug):
         echo "Lexer token: tScalarPart(\"", my.content, "\".", typeHintState,
              ")"
@@ -224,135 +181,6 @@ template handleLF() {.dirty.} =
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
 
-macro typeHintStateMachine(c: untyped, content: untyped): stmt =
-    assert content.kind == nnkStmtList
-    result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
-    for branch in content.children:
-        assert branch.kind == nnkOfBranch
-        var 
-            charBranch = newNimNode(nnkOfBranch, branch)
-            i = 0
-            stateBranches = newNimNode(nnkCaseStmt, branch).add(
-                    newIdentNode("typeHintState"))
-        while branch[i].kind != nnkStmtList:
-            charBranch.add(copyNimTree(branch[i]))
-            inc(i)
-        for rule in branch[i].children:
-            assert rule.kind == nnkInfix
-            assert ($rule[0].ident == "=>")
-            var stateBranch = newNimNode(nnkOfBranch, rule)
-            case rule[1].kind
-            of nnkBracket:
-                for item in rule[1].children:
-                    stateBranch.add(item)
-            of nnkIdent:
-                stateBranch.add(rule[1])
-            else:
-                assert false
-            if rule[2].kind == nnkNilLit:
-                stateBranch.add(newStmtList(newNimNode(nnkDiscardStmt).add(
-                        newEmptyNode())))
-            else:
-                stateBranch.add(newStmtList(newAssignment(
-                        newIdentNode("typeHintState"), copyNimTree(rule[2]))))
-            stateBranches.add(stateBranch)
-        stateBranches.add(newNimNode(nnkElse).add(newStmtList(newAssignment(
-                newIdentNode("typeHintState"), newIdentNode("ythNone")),
-                newAssignment(newIdentNode("state"),
-                newIdentNode("ylPlainScalarNone")))))
-        charBranch.add(newStmtList(stateBranches))
-        result.add(charBranch)
-    result.add(newNimNode(nnkElse).add(newStmtList(newAssignment(
-                newIdentNode("typeHintState"), newIdentNode("ythNone")),
-                newAssignment(newIdentNode("state"),
-                newIdentNode("ylPlainScalarNone")))))
-
-template advanceTypeHint(ch: char) {.dirty.} =
-    typeHintStateMachine ch:
-    of '~':
-        ythInitial => ythNULL
-    of '.':
-        [yth0, ythInt]         => ythDecimal
-        [ythInitial, ythMinus] => ythPoint
-    of '+': ythNumE => ythNumEPlusMinus
-    of '-':
-        ythInitial => ythMinus
-        ythNumE    => ythNumEPlusMinus
-    of '0':
-        [ythInitial, ythMinus]      => yth0
-        [ythNumE, ythNumEPlusMinus] => ythExponent
-    of '1'..'9':
-        [ythInitial, ythMinus]            => ythInt
-        [ythNumE, ythNumEPlusMinus]       => ythExponent
-        [ythInt, ythDecimal, ythExponent] => nil
-    of 'a':
-        ythF           => ythLowerFA
-        ythPointN      => ythPointNA
-        ythPointLowerN => ythPointLowerNA
-    of 'A':
-        ythF      => ythFA
-        ythPointN => ythPointNA
-    of 'e':
-        [yth0, ythInt, ythDecimal] => ythNumE
-        ythLowerFALS => ythFALSE
-        ythLowerTRU  => ythTRUE
-        ythY         => ythLowerYE
-    of 'E':
-        [yth0, ythInt, ythDecimal] => ythNumE
-        ythFALS => ythFALSE
-        ythTRU  => ythTRUE
-        ythY    => ythYE
-    of 'f':
-        ythInitial      => ythF
-        ythO            => ythLowerOF
-        ythLowerOF      => ythOFF
-        ythPointLowerIN => ythPointINF
-    of 'F':
-        ythInitial => ythF
-        ythO       => ythOF
-        ythOF      => ythOFF
-        ythPointIN => ythPointINF
-    of 'i', 'I': ythPoint => ythPointI
-    of 'l':
-        ythLowerNU  => ythLowerNUL
-        ythLowerNUL => ythNULL
-        ythLowerFA  => ythLowerFAL
-    of 'L':
-        ythNU  => ythNUL
-        ythNUL => ythNULL
-        ythFA  => ythFAL
-    of 'n':
-        ythInitial      => ythN
-        ythO            => ythON
-        ythPoint        => ythPointLowerN
-        ythPointI       => ythPointLowerIN
-        ythPointLowerNA => ythPointNAN
-    of 'N':
-        ythInitial => ythN
-        ythO       => ythON
-        ythPoint   => ythPointN
-        ythPointI  => ythPointIN
-        ythPointNA => ythPointNAN
-    of 'o', 'O':
-        ythInitial => ythO
-        ythN       => ythNO
-    of 'r': ythT => ythLowerTR
-    of 'R': ythT => ythTR
-    of 's':
-        ythLowerFAL => ythLowerFALS
-        ythLowerYE  => ythYES
-    of 'S':
-        ythFAL => ythFALS
-        ythYE  => ythYES
-    of 't', 'T': ythInitial => ythT
-    of 'u':
-        ythN       => ythLowerNU
-        ythLowerTR => ythLowerTRU
-    of 'U':
-        ythN  => ythNU
-        ythTR => ythTRU
-    of 'y', 'Y': ythInitial => ythY
-
 iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
     var
         # the following three values are used for parsing escaped unicode chars
@@ -370,7 +198,6 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
             # Lexer must know whether it parses block or flow style. Therefore,
             # it counts the number of open flow arrays / maps here
         state: YamlLexerState = ylInitial # lexer state
-        typeHintState: YamlTypeHintState = ythInitial
             # for giving type hints of plain scalars
         lastIndentationLength = 0
             # after parsing the indentation of the line, this will hold the
@@ -444,20 +271,14 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     yieldToken(tLineStart)
                     my.content = tmp
                     my.column = curPos
-                    state = ylPlainScalarNone
-                    typeHintState = ythNone
+                    state = ylPlainScalar
                 continue
             else:
                 let tmp = my.content
                 my.content = ""
                 yieldToken(tLineStart)
                 my.content = tmp
-                if my.content.len == 1:
-                    typeHintState = ythMinus
-                    state = ylPlainScalar
-                else:
-                    typeHintState = ythNone
-                    state = ylPlainScalarNone
+                state = ylPlainScalar
                 continue
         of ylDots:
             case c
@@ -469,12 +290,10 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     yieldToken(tDocumentEnd)
                     state = ylDirectiveLineEnd
                 else:
-                    state = ylPlainScalarNone
-                    typeHintState = ythNone
+                    state = ylPlainScalar
                 continue
             else:
-                state = ylPlainScalarNone
-                typeHintState = ythNone
+                state = ylPlainScalar
                 continue
         of ylDirectiveLineEnd:
             case c
@@ -643,41 +462,14 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     state = ylSpaceAfterPlainScalar
                 else:
                     my.content.add(c)
-                    state = ylPlainScalarNone
-                    typeHintState = ythNone
-            of '[', ']', '{', '}':
-                yieldScalarPart()
-                state = ylInitialInLine
-                continue
-            else:
-                advanceTypeHint(c)
-                my.content.add(c)
-        
-        of ylPlainScalarNone:
-            case c
-            of EndOfFile, '\r', '\x0A':
-                yieldScalarPart()
-                state = ylLineEnd
-                continue
-            of ':':
-                lastSpecialChar = c
-                state = ylSpaceAfterPlainScalar
-            of ' ':
-                state = ylSpaceAfterPlainScalar
-                continue
-            of ',':
-                if flowDepth > 0:
-                    lastSpecialChar = c
-                    state = ylSpaceAfterPlainScalar
-                else:
-                    my.content.add(c)
+                    state = ylPlainScalar
             of '[', ']', '{', '}':
                 yieldScalarPart()
                 state = ylInitialInLine
                 continue
             else:
                 my.content.add(c)
-        
+                
         of ylSpaceAfterPlainScalar:
             if lastSpecialChar != '\0':
                 case c
@@ -689,8 +481,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content.add(lastSpecialChar)
                     lastSpecialChar = '\0'
                     trailingSpace = ""
-                    state = ylPlainScalarNone
-                    typeHintState = ythNone
+                    state = ylPlainScalar
                 continue
             
             case c
@@ -708,8 +499,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content.add(trailingSpace)
                     my.content.add(c)
                     trailingSpace = ""
-                    state = ylPlainScalarNone
-                    typeHintState = ythNone
+                    state = ylPlainScalar
             of ':', '#':
                 lastSpecialChar = c
             of '[', ']', '{', '}':
@@ -721,8 +511,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 my.content.add(trailingSpace)
                 my.content.add(c)
                 trailingSpace = ""
-                state = ylPlainScalarNone
-                typeHintState = ythNone
+                state = ylPlainScalar
                 
         of ylInitialInLine:
             if lastSpecialChar != '\0':
@@ -763,11 +552,9 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.column = curPos - 1
                 else:
                     my.content.add(lastSpecialChar)
-                    advanceTypeHint(lastSpecialChar)
                     lastSpecialChar = '\0'
                     my.column = curPos - 1
                     state = ylPlainScalar
-                    typeHintState = ythInitial
                 continue
             case c
             of '\r', '\x0A', EndOfFile:
@@ -780,8 +567,6 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content = "" & c
                     my.column = curPos
                     state = ylPlainScalar
-                    typeHintState = ythInitial
-                    advanceTypeHint(c)
             of '[':
                 inc(flowDepth)
                 yieldToken(tOpeningBracket)
@@ -822,8 +607,6 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     my.content = "" & c
                     my.column = curPos
                     state = ylPlainScalar
-                    typeHintState = ythInitial
-                    advanceTypeHint(c)
             of '?', ':':
                 my.column = curPos
                 lastSpecialChar = c
@@ -839,8 +622,6 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 my.content = "" & c
                 my.column = curPos
                 state = ylPlainScalar
-                typeHintState = ythInitial
-                advanceTypeHint(c)
         of ylComment, ylDirectiveComment:
             case c
             of EndOfFile, '\r', '\x0A':

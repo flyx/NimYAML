@@ -112,11 +112,10 @@ proc resolveTag(parser: YamlSequentialParser, tag: var string,
             result = parser.tagLib.registerUri(tag)
         tag = ""
 
-template yieldScalar(content: string, typeHint: YamlTypeHint,
-                     quoted: bool = false) {.dirty.} =
+template yieldScalar(content: string, quoted: bool = false) {.dirty.} =
     when defined(yamlDebug):
         echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
-             "scalar[\"", content, "\", type=", typeHint, "]"
+             "scalar[\"", content, "\"]"
     if objectTag.len > 0:
         if tag.len > 0:
             raiseError("Duplicate tag for scalar (tag=" & tag & ", objectTag=" &
@@ -124,7 +123,7 @@ template yieldScalar(content: string, typeHint: YamlTypeHint,
         tag = objectTag
         objectTag = ""
     var e = scalarEvent(nil, resolveTag(parser, tag, quoted),
-        resolveAnchor(parser, anchor), typeHint)
+        resolveAnchor(parser, anchor))
     shallowCopy(e.scalarContent, content)
     yield e
 
@@ -158,7 +157,7 @@ template yieldDocumentEnd() {.dirty.} =
 template closeLevel(lvl: DocumentLevel) {.dirty.} =
     case lvl.mode
     of mExplicitBlockMapKey, mFlowMapKey:
-        yieldScalar("", yTypeUnknown)
+        yieldScalar("")
         yield YamlStreamEvent(kind: yamlEndMap)
     of mImplicitBlockMapKey, mBlockMapValue, mFlowMapValue:
         yield YamlStreamEvent(kind: yamlEndMap)
@@ -167,10 +166,10 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     of mScalar:
         when defined(yamlDebug):
             echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
-                 "scalar[\"", scalarCache, "\", type=", scalarCacheType, "]"
-        yieldScalar(scalarCache, scalarCacheType)
+                 "scalar[\"", scalarCache, "\"]"
+        yieldScalar(scalarCache)
     else:
-        yieldScalar("", yTypeUnknown)
+        yieldScalar("")
 
 proc mustLeaveLevel(curCol: int, ancestry: seq[DocumentLevel]): bool =
     if ancestry.len == 0:
@@ -216,7 +215,7 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
             # `in` does not work if possible is [], so we have to check for that
             when possible.len > 0:
                 if level.mode in possible:
-                    yieldScalar("", yTypeUnknown)
+                    yieldScalar("")
                     level.mode = next
                     ancestry.add(level)
                     level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
@@ -241,7 +240,7 @@ template handleBlockIndicator(expected, possible: openarray[DocumentLevelMode],
             anchor = cachedAnchor
             tag = cachedTag
             objectTag = ""
-            yieldScalar("", yTypeUnknown)
+            yieldScalar("")
         else:
             tag = objectTag
             objectTag = ""
@@ -254,7 +253,6 @@ template startPlainScalar() {.dirty.} =
     level.mode = mScalar
     level.indentationColumn = lex.column
     scalarCache = lex.content
-    scalarCacheType = lex.typeHint
     scalarIndentation = lex.column
     state = ypBlockAfterScalar
 
@@ -301,7 +299,6 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         objectTag: string = ""
         anchor: string = ""
         scalarCache: string = nil
-        scalarCacheType: YamlTypeHint
         scalarIndentation: int
         scalarCacheIsQuoted: bool = false
         aliasCache = yAnchorNone
@@ -428,17 +425,15 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     level.indentationColumn = lex.column
                 of mImplicitBlockMapKey:
                     scalarCache = lex.content
-                    scalarCacheType = lex.typeHint
                     scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
                 of mBlockMapValue:
                     scalarCache = lex.content
-                    scalarCacheType = lex.typeHint
                     scalarCacheIsQuoted = false
                     scalarIndentation = lex.column
                     level.mode = mImplicitBlockMapKey
                 of mExplicitBlockMapKey:
-                    yieldScalar("", yTypeUnknown)
+                    yieldScalar("")
                     level.mode = mBlockMapValue
                     continue
                 else:
@@ -449,7 +444,6 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 case level.mode
                 of mUnknown, mImplicitBlockMapKey:
                     scalarCache = lex.content
-                    scalarCacheType = yTypeString
                     scalarCacheIsQuoted = true
                     scalarIndentation = lex.column
                     state = ypBlockAfterScalar
@@ -495,7 +489,6 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     state = ypBlockLineStart
                     continue
                 scalarCache &= " " & lex.content
-                scalarCacheType = yTypeUnknown
                 state = ypBlockLineEnd
             of tLineStart:
                 discard
@@ -526,15 +519,14 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 ancestry.add(level)
                 level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                       indentationColumn: -1)
-                yieldScalar(scalarCache, scalarCacheType, scalarCacheIsQuoted)
+                yieldScalar(scalarCache, scalarCacheIsQuoted)
                 scalarCache = nil
                 state = ypBlockAfterColon
             of tLineStart:
                 if level.mode == mImplicitBlockMapKey:
                     raiseError("Missing colon after implicit map key")
                 if level.mode != mScalar:
-                    yieldScalar(scalarCache, scalarCacheType,
-                                scalarCacheIsQuoted)
+                    yieldScalar(scalarCache, scalarCacheIsQuoted)
                     scalarCache = nil
                     if ancestry.len > 0:
                         level = ancestry.pop()
@@ -544,7 +536,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                 else:
                     state = ypBlockMultilineScalar
             of tStreamEnd:
-                yieldScalar(scalarCache, scalarCacheType, scalarCacheIsQuoted)
+                yieldScalar(scalarCache, scalarCacheIsQuoted)
                 scalarCache = nil
                 if ancestry.len > 0:
                     level = ancestry.pop()
@@ -655,7 +647,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
         of ypBlockAfterColon:
             case token
             of tScalar:
-                yieldScalar(lex.content, yTypeUnknown, true)
+                yieldScalar(lex.content, true)
                 level = ancestry.pop()
                 assert level.mode == mBlockMapValue
                 level.mode = mImplicitBlockMapKey
@@ -793,15 +785,15 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             of tLineStart:
                 discard
             of tScalar:
-                yieldScalar(lex.content, yTypeUnknown, true)
+                yieldScalar(lex.content, true)
                 level = ancestry.pop()
                 state = ypFlowAfterObject
             of tScalarPart:
-                yieldScalar(lex.content, lex.typeHint)
+                yieldScalar(lex.content)
                 level = ancestry.pop()
                 state = ypFlowAfterObject
             of tColon:
-                yieldScalar("", yTypeUnknown)
+                yieldScalar("")
                 level = ancestry.pop()
                 if level.mode == mFlowMapKey:
                     level.mode = mFlowMapValue
@@ -813,7 +805,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
             of tQuestionMark:
                 state = ypFlowAfterQuestionMark
             of tComma:
-                yieldScalar("", yTypeUnknown)
+                yieldScalar("")
                 level = ancestry.pop()
                 case level.mode
                 of mFlowMapValue:
@@ -822,7 +814,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     level = DocumentLevel(mode: mUnknown, indicatorColumn: -1,
                                           indentationColumn: -1)
                 of mFlowSequenceItem:
-                    yieldScalar("", yTypeUnknown)
+                    yieldScalar("")
                 else:
                     raiseError("Internal error! Please report this bug.")
             of tOpeningBrace:
@@ -851,7 +843,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                                       indentationColumn: -1)
             of tClosingBrace:
                 if level.mode == mUnknown:
-                    yieldScalar("", yTypeUnknown)
+                    yieldScalar("")
                     level = ancestry.pop()
                 if level.mode != mFlowMapKey:
                     yieldUnexpectedToken($level.mode)
@@ -867,7 +859,7 @@ proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
                     state = ypExpectingDocumentEnd
             of tClosingBracket:
                 if level.mode == mUnknown:
-                    yieldScalar("", yTypeUnknown)
+                    yieldScalar("")
                     level = ancestry.pop()
                 if level.mode != mFlowSequenceItem:
                     yieldUnexpectedToken()

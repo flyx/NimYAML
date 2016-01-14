@@ -8,19 +8,9 @@ proc startDoc(): YamlStreamEvent =
 proc endDoc(): YamlStreamEvent =
     result.kind = yamlEndDocument
 
-proc scalar(content: string, typeHint: YamlTypeHint,
-            tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
-           YamlStreamEvent =
-    result.kind = yamlScalar
-    result.scalarAnchor = anchor
-    result.scalarTag = tag
-    result.scalarContent = content
-    result.scalarType = typeHint
-
 proc scalar(content: string,
             tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
-           YamlStreamEvent =
-    result = scalar(content, yTypeUnknown, tag, anchor)
+           YamlStreamEvent = scalarEvent(content, tag, anchor)
 
 proc startSequence(tag: TagId = yTagQuestionMark,
                    anchor: AnchorId = yAnchorNone):
@@ -72,9 +62,6 @@ proc printDifference(expected, actual: YamlStreamEvent) =
                                     ", got ",
                                     cast[int](actual.scalarContent[i]), ")"
                             break
-            elif expected.scalarType != actual.scalarType:
-                echo "[scalar] expected type hint ", expected.scalarType,
-                     ", got ", actual.scalarType
             else:
                 echo "[scalar] Unknown difference"
         of yamlStartMap:
@@ -130,23 +117,23 @@ suite "Parsing":
         ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())
     test "Parsing: Simple Sequence":
         ensure("- off", startDoc(), startSequence(),
-               scalar("off", yTypeBoolFalse), endSequence(), endDoc())
+               scalar("off"), endSequence(), endDoc())
     test "Parsing: Simple Map":
         ensure("42: value\nkey2: -7.5", startDoc(), startMap(),
-               scalar("42", yTypeInteger), scalar("value"), scalar("key2"),
-               scalar("-7.5", yTypeFloat), endMap(), endDoc())
+               scalar("42"), scalar("value"), scalar("key2"),
+               scalar("-7.5"), endMap(), endDoc())
     test "Parsing: Explicit Map":
         ensure("? null\n: value\n? ON\n: value2", startDoc(), startMap(),
-               scalar("null", yTypeNull), scalar("value"),
-               scalar("ON", yTypeBoolTrue), scalar("value2"),
+               scalar("null"), scalar("value"),
+               scalar("ON"), scalar("value2"),
                endMap(), endDoc())
     test "Parsing: Mixed Map (explicit to implicit)":
         ensure("? a\n: 13\n1.5: d", startDoc(), startMap(), scalar("a"),
-               scalar("13", yTypeInteger), scalar("1.5", yTypeFloat),
+               scalar("13"), scalar("1.5"),
                scalar("d"), endMap(), endDoc())
     test "Parsing: Mixed Map (implicit to explicit)":
         ensure("a: 4.2\n? 23\n: d", startDoc(), startMap(), scalar("a"),
-               scalar("4.2", yTypeFloat), scalar("23", yTypeInteger),
+               scalar("4.2"), scalar("23"),
                scalar("d"), endMap(), endDoc())
     test "Parsing: Missing values in map":
         ensure("? a\n? b\nc:", startDoc(), startMap(), scalar("a"), scalar(""),
@@ -174,11 +161,11 @@ suite "Parsing":
                startSequence(), scalar("l1_i1"), scalar("l1_i2"), endSequence(),
                scalar("l2_i1"), endSequence(), endDoc())
     test "Parsing: Flow Sequence":
-        ensure("[2, b]", startDoc(), startSequence(), scalar("2", yTypeInteger),
+        ensure("[2, b]", startDoc(), startSequence(), scalar("2"),
                scalar("b"), endSequence(), endDoc())
     test "Parsing: Flow Map":
         ensure("{a: Y, 1.337: d}", startDoc(), startMap(), scalar("a"),
-               scalar("Y", yTypeBoolTrue), scalar("1.337", yTypeFloat),
+               scalar("Y"), scalar("1.337"),
                scalar("d"), endMap(), endDoc())
     test "Parsing: Flow Sequence in Flow Sequence":
         ensure("[a, [b, c]]", startDoc(), startSequence(), scalar("a"),
@@ -217,7 +204,7 @@ suite "Parsing":
                scalar("a"), scalar("ab"), endMap(), endDoc())
     test "Parsing: non-specific tags of quoted strings":
         ensure("\"a\"", startDoc(),
-               scalar("a", yTypeString, yTagExclamationMark), endDoc())
+               scalar("a", yTagExclamationMark), endDoc())
     test "Parsing: explicit non-specific tag":
         ensure("! a", startDoc(), scalar("a", yTagExclamationMark), endDoc())
     test "Parsing: secondary tag handle resolution":
