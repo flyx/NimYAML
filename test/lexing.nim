@@ -77,8 +77,8 @@ suite "Lexing":
                  t(tVersionPart, "1"),
                  t(tVersionPart, "2"),
                  t(tComment, " version"),
-                 t(tComment, " at line start"),
-                 t(tComment, " indented"),
+                 t(tComment, "# at line start"),
+                 t(tComment, "# indented"),
                  t(tUnknownDirective, "%FOO"),
                  t(tStreamEnd, nil)])
     

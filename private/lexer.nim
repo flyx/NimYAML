@@ -40,16 +40,15 @@ type
             
     YamlLexerState = enum
         # initial states (not started reading any token)
-        ylInitial, ylInitialSpaces, ylInitialUnknown, ylInitialContent,
+        ylInitial, ylInitialUnknown, ylInitialContent,
         ylDefineTagHandleInitial, ylDefineTagURIInitial, ylInitialInLine,
         ylLineEnd, ylDirectiveLineEnd,
         # directive reading states
         ylDirective, ylDefineTagHandle, ylDefineTagURI, ylMajorVersion,
         ylMinorVersion, ylUnknownDirectiveParam, ylDirectiveComment,
         # scalar reading states
-        ylPlainScalar, ylSingleQuotedScalar, ylDoublyQuotedScalar, ylEscape,
-        ylBlockScalar, ylBlockScalarHeader, ylSpaceAfterPlainScalar,
-        ylSpaceAfterQuotedScalar,
+        ylPlainScalar, ylBlockScalar, ylBlockScalarHeader,
+        ylSpaceAfterPlainScalar, ylSpaceAfterQuotedScalar,
         # indentation
         ylIndentation,
         # comments
@@ -57,7 +56,7 @@ type
         # tags
         ylTagHandle, ylTagSuffix, ylVerbatimTag,
         # document separation
-        ylDashes, ylDots,
+        ylDots,
         # anchoring
         ylAnchor, ylAlias
     
@@ -68,6 +67,7 @@ type
         charoffset: int
         content*: string # my.content of the last returned token.
         line*, column*: int
+        curPos: int
 
 const
     UTF8NextLine           = toUTF8(Rune(0x85))
@@ -162,7 +162,7 @@ template yieldLexerError(message: string) {.dirty.} =
     when defined(yamlDebug):
         echo "Lexer error: " & message
     my.content = message
-    my.column = curPos
+    my.column = my.curPos
     yield tError
     my.content = ""
 
@@ -170,25 +170,148 @@ template handleCR() {.dirty.} =
     my.bufpos = lexbase.handleCR(my, my.bufpos + my.charoffset) + my.charlen -
             my.charoffset - 1
     my.line.inc()
-    curPos = 1
+    my.curPos = 1
+    c = my.buf[my.bufpos + my.charoffset]
 
 template handleLF() {.dirty.} =
     my.bufpos = lexbase.handleLF(my, my.bufpos + my.charoffset) +
             my.charlen - my.charoffset - 1
     my.line.inc()
-    curPos = 1
+    my.curPos = 1
+    c = my.buf[my.bufpos + my.charoffset]
 
 template `or`(r: Rune, i: int): Rune =
     cast[Rune](cast[int](r) or i)
 
+template advance() {.dirty.} =
+    my.bufpos += my.charlen
+    my.curPos.inc
+    c = my.buf[my.bufpos + my.charoffset]
+
+proc lexComment(my: var YamlLexer, c: var char) =
+    while c notin ['\r', '\x0A', EndOfFile]:
+        my.content.add(c)
+        advance()
+
+proc lexInitialSpaces(my: var YamlLexer, c: var char): YamlLexerState =
+    while true:
+        case c
+        of ' ', '\t':
+            my.content.add(c)
+        of '#':
+            my.content = ""
+            result = ylInitial
+            break
+        of '\r', '\x0A', EndOfFile:
+            result = ylDirectiveLineEnd
+            break
+        else:
+            result = ylIndentation
+            break
+        advance()
+
+proc lexDashes(my: var YamlLexer, c: var char) =
+    while c == '-':
+        my.content.add(c)
+        advance()
+
+proc lexSingleQuotedScalar(my: var YamlLexer, c: var char): bool =
+    while true:
+        advance()
+        case c
+        of '\'':
+            advance()
+            if c == '\'':
+                my.content.add(c)
+            else:
+                result = true
+                break
+        of EndOfFile:
+            result = false
+            break
+        else:
+            my.content.add(c)
+
+proc lexDoublyQuotedScalar(my: var YamlLexer, c: var char): bool =
+    while true:
+        advance()
+        case c
+        of '"':
+            result = true
+            break
+        of EndOfFile:
+            result = false
+            break
+        of '\\':
+            advance()
+            var expectedEscapeLength = 0
+            case c
+            of EndOfFile:
+                result = false
+                break
+            of '0':       my.content.add('\0')
+            of 'a':       my.content.add('\x07')
+            of 'b':       my.content.add('\x08')
+            of '\t', 't': my.content.add('\t')
+            of 'n':       my.content.add('\x0A')
+            of 'v':       my.content.add('\v')
+            of 'f':       my.content.add('\f')
+            of 'r':       my.content.add('\r')
+            of 'e':       my.content.add('\e')
+            of ' ':       my.content.add(' ')
+            of '"':       my.content.add('"')
+            of '/':       my.content.add('/')
+            of '\\':      my.content.add('\\')
+            of 'N':       my.content.add(UTF8NextLine)
+            of '_':       my.content.add(UTF8NonBreakingSpace)
+            of 'L':       my.content.add(UTF8LineSeparator)
+            of 'P':       my.content.add(UTF8ParagraphSeparator)
+            of 'x': expectedEscapeLength = 3
+            of 'u': expectedEscapeLength = 5
+            of 'U': expectedEscapeLength = 9
+            else:
+                # TODO: how to transport this error?
+                # yieldLexerError("Unsupported escape sequence: \\" & c)
+                result = false
+                break
+            if expectedEscapeLength == 0: continue
+            
+            var
+                escapeLength = 1
+                unicodeChar: Rune = cast[Rune](0)
+            while escapeLength < expectedEscapeLength:
+                advance()
+                let digitPosition = expectedEscapeLength - escapeLength - 1
+                case c
+                of EndOFFile:
+                    return false
+                of '0' .. '9':
+                    unicodeChar = unicodechar or
+                            (cast[int](c) - 0x30) shl (digitPosition * 4)
+                of 'A' .. 'F':
+                    unicodeChar = unicodechar or
+                            (cast[int](c) - 0x37) shl (digitPosition * 4)
+                of 'a' .. 'f':
+                    unicodeChar = unicodechar or
+                            (cast[int](c) - 0x57) shl (digitPosition * 4)
+                else:
+                    # TODO: how to transport this error?
+                    #yieldLexerError("unsupported char in unicode escape sequence: " & c)
+                    return false
+                inc(escapeLength)
+            
+            my.content.add(toUTF8(unicodeChar))
+        of '\r':
+            my.content.add("\x0A")
+            handleCR()
+        of '\x0A':
+            my.content.add(c)
+            handleLF()
+        else:
+            my.content.add(c)
+
 iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
-    var
-        # the following three values are used for parsing escaped unicode chars
-        
-        unicodeChar: Rune = cast[Rune](0)
-        escapeLength = 0
-        expectedEscapeLength = 0
-        
+    var        
         trailingSpace = ""
             # used to temporarily store whitespace after a plain scalar
         lastSpecialChar: char = '\0'
@@ -206,10 +329,11 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
         blockScalarIndentation = -1
             # when parsing a block scalar, this will be set to the indentation
             # of the line that starts the flow scalar.
-        curPos = 1
     
+    my.curPos = 1
+    
+    var c = my.buf[my.bufpos + my.charoffset]
     while true:
-        let c = my.buf[my.bufpos + my.charoffset]
         case state
         of ylInitial:
             case c
@@ -217,68 +341,62 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 state = ylDirective
                 continue
             of ' ', '\t':
-                state = ylInitialSpaces
+                state = my.lexInitialSpaces(c)
                 continue
             of '#':
-                state = ylDirectiveComment
-            else:
-                state = ylInitialContent
-                continue
-        of ylInitialSpaces:
-            case c
-            of ' ', '\t':
-                my.content.add(c)
-            of '#':
-                my.content = ""
-                state = ylDirectiveComment
-            of EndOfFile, '\r', '\x0A':
+                my.lexComment(c)
+                yieldToken(tComment)
                 state = ylDirectiveLineEnd
                 continue
+            of '\r':
+                handleCR()
+                continue
+            of '\x0A':
+                handleLF()
+                continue
+            of EndOfFile:
+                yieldToken(tStreamEnd)
+                break
             else:
-                state = ylIndentation
+                state = ylInitialContent
                 continue
         of ylInitialContent:
             case c
             of '-':
-                my.column = curPos
-                state = ylDashes
-                continue
-            of '.':
-                yieldToken(tLineStart)
-                my.column = curPos
-                state = ylDots
-                continue
-            else:
-                state = ylIndentation
-                continue
-        of ylDashes:
-            case c
-            of '-':
-                my.content.add(c)
-            of ' ', '\t', '\r', '\x0A', EndOfFile:
-                case my.content.len
-                of 3:
-                    yieldToken(tDirectivesEnd)
-                    state = ylInitialInLine
-                of 1:
-                    my.content = ""
-                    yieldToken(tLineStart)
-                    lastSpecialChar = '-'
-                    state = ylInitialInLine
+                my.column = my.curPos
+                my.lexDashes(c)
+                case c
+                of ' ', '\t', '\r', '\x0A', EndOfFile:
+                    case my.content.len
+                    of 3:
+                        yieldToken(tDirectivesEnd)
+                        state = ylInitialInLine
+                    of 1:
+                        my.content = ""
+                        yieldToken(tLineStart)
+                        lastSpecialChar = '-'
+                        state = ylInitialInLine
+                    else:
+                        let tmp = my.content
+                        my.content = ""
+                        yieldToken(tLineStart)
+                        my.content = tmp
+                        my.column = my.curPos
+                        state = ylPlainScalar
                 else:
                     let tmp = my.content
                     my.content = ""
                     yieldToken(tLineStart)
                     my.content = tmp
-                    my.column = curPos
                     state = ylPlainScalar
                 continue
-            else:
-                let tmp = my.content
-                my.content = ""
+            of '.':
                 yieldToken(tLineStart)
-                my.content = tmp
-                state = ylPlainScalar
+                my.column = my.curPos
+                state = ylDots
+                continue
+            else:
+                state = ylIndentation
                 continue
         of ylDots:
             case c
@@ -308,6 +426,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
             of EndOfFile:
                 yieldToken(tStreamEnd)
                 break
+                {.linearScanEnd.}
             of ' ', '\t':
                 discard
             of '#':
@@ -327,109 +446,6 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 yieldLexerError("Internal error: Unexpected char at line end: " & c)
             state = ylInitialContent
             continue
-        of ylSingleQuotedScalar:
-            if lastSpecialChar != '\0':
-                # ' is the only special char
-                case c
-                of '\'':
-                    my.content.add(c)
-                    lastSpecialChar = '\0'
-                of EndOfFile, '\r', '\x0A':
-                    yieldToken(tScalar)
-                    lastSpecialChar = '\0'
-                    state = ylLineEnd
-                    continue
-                else:
-                    yieldToken(tScalar)
-                    lastSpecialChar = '\0'
-                    state = ylSpaceAfterQuotedScalar
-                    continue
-            else:
-                case c
-                of '\'':
-                    lastSpecialChar = c
-                of EndOfFile:
-                    yieldLexerError("Unterminated single quoted string")
-                    yieldToken(tStreamEnd)
-                    break
-                else:
-                    my.content.add(c)
-        of ylDoublyQuotedScalar:
-            case c
-            of '"':
-                yieldToken(tScalar)
-                state = ylSpaceAfterQuotedScalar
-            of EndOfFile:
-                yieldLexerError("Unterminated doubly quoted string")
-                yieldToken(tStreamEnd)
-                break
-            of '\\':
-                state = ylEscape
-                escapeLength = 0
-            of '\r':
-                my.content.add("\x0A")
-                handleCR()
-            of '\x0A':
-                my.content.add(c)
-                handleLF()
-            else:
-                my.content.add(c)
-        of ylEscape:
-            if escapeLength == 0:
-                expectedEscapeLength = 0
-                case c
-                of EndOfFile:
-                    yieldLexerError("Unterminated doubly quoted string")
-                of '0':       my.content.add('\0')
-                of 'a':       my.content.add('\x07')
-                of 'b':       my.content.add('\x08')
-                of '\t', 't': my.content.add('\t')
-                of 'n':       my.content.add('\x0A')
-                of 'v':       my.content.add('\v')
-                of 'f':       my.content.add('\f')
-                of 'r':       my.content.add('\r')
-                of 'e':       my.content.add('\e')
-                of ' ':       my.content.add(' ')
-                of '"':       my.content.add('"')
-                of '/':       my.content.add('/')
-                of '\\':      my.content.add('\\')
-                of 'N':       my.content.add(UTF8NextLine)
-                of '_':       my.content.add(UTF8NonBreakingSpace)
-                of 'L':       my.content.add(UTF8LineSeparator)
-                of 'P':       my.content.add(UTF8ParagraphSeparator)
-                of 'x': unicodeChar = cast[Rune](0); expectedEscapeLength = 3
-                of 'u': unicodeChar = cast[Rune](0); expectedEscapeLength = 5
-                of 'U': unicodeChar = cast[Rune](0); expectedEscapeLength = 9
-                else:
-                    yieldLexerError("Unsupported escape sequence: \\" & c)
-                if expectedEscapeLength == 0: state = ylDoublyQuotedScalar
-            else:
-                let digitPosition = expectedEscapeLength - escapeLength - 1
-                case c
-                of EndOFFile:
-                    yieldLexerError("Unterminated escape sequence")
-                    state = ylLineEnd
-                    continue
-                of '0' .. '9':
-                    unicodeChar = unicodechar or
-                            (cast[int](c) - 0x30) shl (digitPosition * 4)
-                of 'A' .. 'F':
-                    unicodeChar = unicodechar or
-                            (cast[int](c) - 0x37) shl (digitPosition * 4)
-                of 'a' .. 'f':
-                    unicodeChar = unicodechar or
-                            (cast[int](c) - 0x57) shl (digitPosition * 4)
-                else:
-                    yieldLexerError("unsupported char in unicode escape sequence: " &
-                               c)
-                    escapeLength = 0
-                    state = ylDoublyQuotedScalar
-                    continue
-            inc(escapeLength)
-            if escapeLength == expectedEscapeLength and escapeLength > 0:
-                my.content.add(toUTF8(unicodeChar))
-                state = ylDoublyQuotedScalar
-        
         of ylSpaceAfterQuotedScalar:
             case c
             of ' ', '\t':
@@ -515,7 +531,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 
         of ylInitialInLine:
             if lastSpecialChar != '\0':
-                my.column = curPos - 1
+                my.column = my.curPos - 1
                 case c
                 of ' ', '\t', '\r', '\x0A', EndOfFile:
                     case lastSpecialChar
@@ -544,16 +560,16 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     of '<':
                         state = ylVerbatimTag
                         lastSpecialChar = '\0'
-                        my.bufpos += my.charlen
+                        advance()
                     else:
                         state = ylTagHandle
                         my.content = "!"
                         lastSpecialChar = '\0'
-                    my.column = curPos - 1
+                    my.column = my.curPos - 1
                 else:
                     my.content.add(lastSpecialChar)
                     lastSpecialChar = '\0'
-                    my.column = curPos - 1
+                    my.column = my.curPos - 1
                     state = ylPlainScalar
                 continue
             case c
@@ -565,7 +581,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     yieldToken(tComma)
                 else:
                     my.content = "" & c
-                    my.column = curPos
+                    my.column = my.curPos
                     state = ylPlainScalar
             of '[':
                 inc(flowDepth)
@@ -584,19 +600,30 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
             of '#':
                 lastSpecialChar = '#'
             of '"':
-                my.column = curPos
-                state = ylDoublyQuotedScalar
+                my.column = my.curPos
+                if not my.lexDoublyQuotedScalar(c):
+                    yieldLexerError("Unterminated doubly quoted string")
+                else:
+                    advance()
+                yieldToken(tScalar)
+                state = ylSpaceAfterQuotedScalar
+                continue
             of '\'':
-                my.column = curPos
-                state = ylSingleQuotedScalar
+                my.column = my.curPos
+                if not my.lexSingleQuotedScalar(c):
+                    yieldLexerError("Unterminated single quoted string")
+                yieldToken(tScalar)
+                lastSpecialChar = '\0'
+                state = ylSpaceAfterQuotedScalar
+                continue
             of '!':
-                my.column = curPos
+                my.column = my.curPos
                 lastSpecialChar = '!'
             of '&':
-                my.column = curPos
+                my.column = my.curPos
                 state = ylAnchor
             of '*':
-                my.column = curPos
+                my.column = my.curPos
                 state = ylAlias
             of ' ':
                 discard
@@ -605,10 +632,10 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                     lastSpecialChar = '-'
                 else:
                     my.content = "" & c
-                    my.column = curPos
+                    my.column = my.curPos
                     state = ylPlainScalar
             of '?', ':':
-                my.column = curPos
+                my.column = my.curPos
                 lastSpecialChar = c
             of '|':
                 yieldToken(tPipe)
@@ -620,7 +647,7 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
                 discard
             else:
                 my.content = "" & c
-                my.column = curPos
+                my.column = my.curPos
                 state = ylPlainScalar
         of ylComment, ylDirectiveComment:
             case c
@@ -887,5 +914,4 @@ iterator tokens(my: var YamlLexer): YamlLexerToken {.closure.} =
             else:
                 my.content.add(c)
         
-        my.bufpos += my.charlen
-        curPos.inc
+        advance()
