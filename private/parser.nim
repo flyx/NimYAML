@@ -52,16 +52,15 @@ proc `$`*(id: TagId): string =
     else:
         "<" & $cast[int](id) & ">"
 
-proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser =
+proc newParser*(tagLib: TagLibrary): YamlParser =
     new(result)
     result.tagLib = tagLib
     result.anchors = initOrderedTable[string, AnchorId]()
 
-proc setWarningCallback*(parser: YamlSequentialParser,
-                         callback: YamlWarningCallback) =
+proc setWarningCallback*(parser: YamlParser, callback: WarningCallback) =
     parser.callback = callback
 
-proc anchor*(parser: YamlSequentialParser, id: AnchorId): string =
+proc anchor*(parser: YamlParser, id: AnchorId): string =
     for pair in parser.anchors.pairs:
         if pair[1] == id:
             return pair[0]
@@ -85,7 +84,7 @@ template yieldUnexpectedToken(expected: string = "") {.dirty.} =
     msg.add(": " & $token)
     raiseError(msg)
 
-proc resolveAnchor(parser: YamlSequentialParser, anchor: var string):
+proc resolveAnchor(parser: YamlParser, anchor: var string):
         AnchorId {.inline.} =
     result = yAnchorNone
     if anchor.len > 0:
@@ -94,13 +93,13 @@ proc resolveAnchor(parser: YamlSequentialParser, anchor: var string):
             result = parser.anchors[anchor]
     anchor = ""
 
-proc resolveAlias(parser: YamlSequentialParser, name: string): AnchorId =
+proc resolveAlias(parser: YamlParser, name: string): AnchorId =
     try:
         result = parser.anchors[name]
     except KeyError:
         result = yAnchorNone
 
-proc resolveTag(parser: YamlSequentialParser, tag: var string,
+proc resolveTag(parser: YamlParser, tag: var string,
                 quotedString: bool = false): TagId {.inline.} =
     if tag.len == 0:
         result = if quotedString: parser.tagLib.tags["!"] else:
@@ -130,16 +129,12 @@ template yieldScalar(content: string, quoted: bool = false) {.dirty.} =
 template yieldStartMap() {.dirty.} =
     when defined(yamlDebug):
         echo "Parser token [mode=", level.mode, ", state=", state, "]: yamlStartMap"
-    yield YamlStreamEvent(kind: yamlStartMap,
-                          mapAnchor: resolveAnchor(parser, anchor),
-                          mapTag: resolveTag(parser, tag))
+    yield startMapEvent(resolveTag(parser, tag), resolveAnchor(parser, anchor))
 
 template yieldStartSequence() {.dirty.} =
     when defined(yamlDebug):
         echo "Parser token [mode=", level.mode, ", state=", state, "]: yamlStartSequence"
-    yield YamlStreamEvent(kind: yamlStartSequence,
-                          seqAnchor: resolveAnchor(parser, anchor),
-                          seqTag: resolveTag(parser, tag))
+    yield startSeqEvent(resolveTag(parser, tag), resolveAnchor(parser, anchor))
 
 template yieldStart(t: YamlStreamEventKind) {.dirty.} =
     when t == yamlStartMap:
@@ -148,7 +143,7 @@ template yieldStart(t: YamlStreamEventKind) {.dirty.} =
         yieldStartSequence()
 
 template yieldDocumentEnd() {.dirty.} =
-    yield YamlStreamEvent(kind: yamlEndDocument)
+    yield endDocEvent()
     tagShorthands = initTable[string, string]()
     tagShorthands["!"] = "!"
     tagShorthands["!!"] = yamlTagRepositoryPrefix
@@ -158,11 +153,11 @@ template closeLevel(lvl: DocumentLevel) {.dirty.} =
     case lvl.mode
     of mExplicitBlockMapKey, mFlowMapKey:
         yieldScalar("")
-        yield YamlStreamEvent(kind: yamlEndMap)
+        yield endMapEvent()
     of mImplicitBlockMapKey, mBlockMapValue, mFlowMapValue:
-        yield YamlStreamEvent(kind: yamlEndMap)
+        yield endMapEvent()
     of mBlockSequenceItem, mFlowSequenceItem:
-        yield YamlStreamEvent(kind: yamlEndSequence)
+        yield endSeqEvent()
     of mScalar:
         when defined(yamlDebug):
             echo "Parser token [mode=", level.mode, ", state=", state, "]: ",
@@ -272,7 +267,7 @@ template handleTagHandle() {.dirty.} =
     else:
         raiseError("Unknown tag shorthand: " & handle)
 
-proc parse*(parser: YamlSequentialParser, s: Stream): YamlStream =
+proc parse*(parser: YamlParser, s: Stream): YamlStream =
   result = iterator(): YamlStreamEvent =
     var
         # parsing state

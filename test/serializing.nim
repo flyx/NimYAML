@@ -26,7 +26,7 @@ suite "Serialization":
     test "Serialization: Serialize string sequence":
         var input = @["a", "b"]
         var output = newStringStream()
-        dump(input, output, ypsBlockOnly, ytsNone)
+        dump(input, output, psBlockOnly, tsNone)
         assert output.data == "%YAML 1.2\n--- \n- a\n- b"
     
     test "Serialization: Load Table[int, string]":
@@ -46,7 +46,7 @@ suite "Serialization":
         input[23] = "dreiundzwanzig"
         input[42] = "zweiundvierzig"
         var output = newStringStream()
-        dump(input, output, ypsBlockOnly, ytsNone)
+        dump(input, output, psBlockOnly, tsNone)
         assert output.data == "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig"
     
     test "Serialization: Load Sequences in Sequence":
@@ -65,7 +65,7 @@ suite "Serialization":
     test "Serialization: Serialize Sequences in Sequence":
         let input = @[@[1, 2, 3], @[4, 5], @[6]]
         var output = newStringStream()
-        dump(input, output, ypsDefault, ytsNone)
+        dump(input, output, psDefault, tsNone)
         assert output.data == "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]"
     
     test "Serialization: Load custom object":
@@ -83,7 +83,7 @@ suite "Serialization":
     test "Serialization: Serialize custom object":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
-        dump(input, output, ypsBlockOnly, ytsNone)
+        dump(input, output, psBlockOnly, tsNone)
         assert output.data == "%YAML 1.2\n--- \nfirstname: Peter\nsurname: Pan\nage: 12"
     
     test "Serialization: Load sequence with explicit tags":
@@ -101,7 +101,7 @@ suite "Serialization":
     test "Serialization: Serialize sequence with explicit tags":
         let input = @["one", "two"]
         var output = newStringStream()
-        dump(input, output, ypsBlockOnly, ytsAll)
+        dump(input, output, psBlockOnly, tsAll)
         assert output.data == "%YAML 1.2\n--- !nim:seq(tag:yaml.org,2002:str) \n- !!str one\n- !!str two"
     
     test "Serialization: Load custom object with explicit root tag":
@@ -120,5 +120,5 @@ suite "Serialization":
     test "Serialization: Serialize custom object with explicit root tag":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
-        dump(input, output, ypsBlockOnly, ytsRootOnly)
+        dump(input, output, psBlockOnly, tsRootOnly)
         assert output.data == "%YAML 1.2\n--- !nim:Person \nfirstname: Peter\nsurname: Pan\nage: 12"

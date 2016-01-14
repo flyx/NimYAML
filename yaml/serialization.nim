@@ -3,12 +3,10 @@ import macros, strutils, streams, tables, json, hashes, re
 export yaml, streams, tables, json
 
 type
-    YamlTagStyle* = enum
-        ytsNone,
-        ytsRootOnly,
-        ytsAll
+    TagStyle* = enum
+        tsNone, tsRootOnly, tsAll
 
-proc initSerializationTagLibrary(): YamlTagLibrary =
+proc initSerializationTagLibrary(): TagLibrary =
     result = initTagLibrary()
     result.tags["!"] = yTagExclamationMark
     result.tags["?"] = yTagQuestionMark
@@ -41,8 +39,8 @@ static:
     
     var existingTuples = newSeq[NimNode]()
 
-template presentTag(t: typedesc, tagStyle: YamlTagStyle): TagId =
-     if tagStyle == ytsNone: yTagQuestionMark else: yamlTag(t)
+template presentTag(t: typedesc, tagStyle: TagStyle): TagId =
+     if tagStyle == tsNone: yTagQuestionMark else: yamlTag(t)
 
 proc lazyLoadTag*(uri: string): TagId {.inline.} =
     try:
@@ -158,14 +156,14 @@ macro make_serializable*(types: stmt): stmt =
                 newIdentNode("YamlStream"),
                 newIdentDefs(newIdentNode("value"), tIdent),
                 newIdentDefs(newIdentNode("tagStyle"),
-                             newIdentNode("YamlTagStyle"),
-                             newIdentNode("ytsNone"))])
+                             newIdentNode("TagStyle"),
+                             newIdentNode("tsNone"))])
         var iterBody = newStmtList(
             newLetStmt(newIdentNode("childTagStyle"), newNimNode(nnkIfExpr).add(
                 newNimNode(nnkElifExpr).add(
                     newNimNode(nnkInfix).add(newIdentNode("=="),
-                        newIdentNode("tagStyle"), newIdentNode("ytsRootOnly")),
-                    newIdentNode("ytsNone")
+                        newIdentNode("tagStyle"), newIdentNode("tsRootOnly")),
+                    newIdentNode("tsNone")
                 ), newNimNode(nnkElseExpr).add(newIdentNode("tagStyle")))),
             newNimNode(nnkYieldStmt).add(
                 newNimNode(nnkObjConstr).add(newIdentNode("YamlStreamEvent"),
@@ -175,7 +173,7 @@ macro make_serializable*(types: stmt): stmt =
                         newNimNode(nnkIfExpr).add(newNimNode(nnkElifExpr).add(
                             newNimNode(nnkInfix).add(newIdentNode("=="),
                                 newIdentNode("tagStyle"),
-                                newIdentNode("ytsNone")),
+                                newIdentNode("tsNone")),
                             newIdentNode("yTagQuestionMark")
                         ), newNimNode(nnkElseExpr).add(
                             newCall("yamlTag", newCall("type", tIdent))
@@ -239,7 +237,7 @@ proc construct*(s: YamlStream, result: var string) =
     result = item.scalarContent
 
 proc serialize*(value: string,
-                tagStyle: YamlTagStyle = ytsNone): YamlStream =
+                tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, tagStyle), yAnchorNone)
 
@@ -255,8 +253,7 @@ proc construct*(s: YamlStream, result: var int) =
         raise newException(ValueError, "Wrong scalar type for int.")
     result = parseInt(item.scalarContent)
 
-proc serialize*(value: int,
-                tagStyle: YamlTagStyle = ytsNone): YamlStream =
+proc serialize*(value: int, tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(int, tagStyle), yAnchorNone)
 
@@ -272,8 +269,7 @@ proc contruct*(s: YamlStream, result: var int64) =
         raise newException(ValueError, "Wrong scalar type for int64.")
     result = parseBiggestInt(item.scalarContent)
 
-proc serialize*(value: int64,
-                tagStyle: YamlTagStyle = ytsNone): YamlStream =
+proc serialize*(value: int64, tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(int64, tagStyle), yAnchorNone)
 
@@ -301,7 +297,7 @@ proc construct*(s: YamlStream, result: var float) =
     else:
         raise newException(ValueError, "Wrong scalar type for float.")
 
-proc serialize*(value: float, tagStyle: YamlTagStyle = ytsNone): YamlStream =
+proc serialize*(value: float, tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         var
             asString: string
@@ -336,8 +332,7 @@ proc construct*(s: YamlStream, result: var bool) =
     else:
         raise newException(ValueError, "Wrong scalar type for bool")
         
-proc serialize*(value: bool,
-                tagStyle: YamlTagStyle = ytsNone): YamlStream =
+proc serialize*(value: bool, tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, tagStyle),
                           yAnchorNone)
@@ -367,10 +362,9 @@ proc construct*[T](s: YamlStream, result: var seq[T]) =
         if finished(s):
             raise newException(ValueError, "Construction error!3")
 
-proc serialize*[T](value: seq[T],
-                   tagStyle: YamlTagStyle = ytsNone): YamlStream =
+proc serialize*[T](value: seq[T], tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        let childTagStyle = if tagStyle == ytsRootOnly: ytsNone else: tagStyle
+        let childTagStyle = if tagStyle == tsRootOnly: tsNone else: tagStyle
         yield YamlStreamEvent(kind: yamlStartSequence,
                               seqTag: presentTag(seq[T], tagStyle),
                               seqAnchor: yAnchorNone)
@@ -414,9 +408,9 @@ proc construct*[K, V](s: YamlStream, result: var Table[K, V]) =
             raise newException(ValueError, "Construction error!")
 
 proc serialize*[K, V](value: Table[K, V],
-                      tagStyle: YamlTagStyle = ytsNone): YamlStream =
+                      tagStyle: TagStyle = tsNone): YamlStream =
     result = iterator(): YamlStreamEvent =
-        let childTagStyle = if tagStyle == ytsRootOnly: ytsNone else: tagStyle
+        let childTagStyle = if tagStyle == tsRootOnly: tsNone else: tagStyle
         yield YamlStreamEvent(kind: yamlStartMap,
                               mapTag: presentTag(Table[K, V], tagStyle),
                               mapAnchor: yAnchorNone)
@@ -437,11 +431,10 @@ proc load*[K](input: Stream, target: var K) =
     construct(events, target)
     assert events().kind == yamlEndDocument
 
-proc dump*[K](value: K, target: Stream,
-              style: YamlPresentationStyle = ypsDefault,
-              tagStyle: YamlTagStyle = ytsRootOnly, indentationStep: int = 2) =
+proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
+              tagStyle: TagStyle = tsRootOnly, indentationStep: int = 2) =
     var serialized = serialize(value,
-            if style == ypsCanonical: ytsAll else: tagStyle)
+            if style == psCanonical: tsAll else: tagStyle)
     var events = iterator(): YamlStreamEvent =
         yield YamlStreamEvent(kind: yamlStartDocument)
         for event in serialized():

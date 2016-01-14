@@ -109,7 +109,7 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
 
 suite "Parsing":
     setup:
-        var tagLib = coreTagLibrary()
+        var tagLib = coreTagLibrary
     teardown:
         discard
     

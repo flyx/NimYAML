@@ -110,7 +110,7 @@ type
         ## always yield a well-formed ``YamlStream`` and expect it to be
         ## well-formed if it's an input.
     
-    YamlTagLibrary* = object
+    TagLibrary* = object
         ## A ``YamlTagLibrary`` maps tag URIs to ``TagId`` s. YAML tag URIs
         ## that are defined in the YAML specification or in the
         ## `YAML tag repository <http://yaml.org/type/>`_ should be mapped to
@@ -135,7 +135,7 @@ type
         nextCustomTagId*: TagId
         secondaryPrefix*: string
     
-    YamlWarningCallback* = proc(line, column: int, lineContent: string,
+    WarningCallback* = proc(line, column: int, lineContent: string,
                                 message: string)
         ## Callback for parser warnings. Currently, this callback may be called
         ## on two occasions while parsing a YAML document stream:
@@ -144,17 +144,17 @@ type
         ##   ``1.2``.
         ## - If there is an unknown directive encountered.
     
-    YamlSequentialParser* = ref object
+    YamlParser* = ref object
         ## A parser object. Retains its ``YamlTagLibrary`` across calls to
         ## `parse <#parse,YamlSequentialParser,Stream,YamlStream>`_. Can be used
         ## to access anchor names while parsing a YAML character stream, but
         ## only until the document goes out of scope (i.e. until
         ## ``yamlEndDocument`` is yielded).
-        tagLib: YamlTagLibrary
+        tagLib: TagLibrary
         anchors: OrderedTable[string, AnchorId]
-        callback: YamlWarningCallback
+        callback: WarningCallback
     
-    YamlPresentationStyle* = enum
+    PresentationStyle* = enum
         ## Different styles for YAML character stream output.
         ##
         ## - ``ypsMinimal``: Single-line flow-only output which tries to
@@ -172,7 +172,7 @@ type
         ##   contain one document.
         ## - ``ypsBlockOnly``: Formats all output in block style, does not use
         ##   flow style at all.
-        ypsMinimal, ypsCanonical, ypsDefault, ypsJson, ypsBlockOnly
+        psMinimal, psCanonical, psDefault, psJson, psBlockOnly
     
     YamlLoadingError* = object of Exception
         ## Base class for all exceptions that may be raised during the process
@@ -318,58 +318,60 @@ proc `==`*(left, right: AnchorId): bool {.borrow.}
 proc `$`*(id: AnchorId): string {.borrow.}
 proc hash*(id: AnchorId): Hash {.borrow.}
 
-proc initTagLibrary*(): YamlTagLibrary
+proc initTagLibrary*(): TagLibrary
     ## initializes the ``tags`` table and sets ``nextCustomTagId`` to
     ## ``yFirstCustomTagId``.
 
-proc registerUri*(tagLib: var YamlTagLibrary, uri: string): TagId
+proc registerUri*(tagLib: var TagLibrary, uri: string): TagId
     ## registers a custom tag URI with a ``YamlTagLibrary``. The URI will get
     ## the ``TagId`` ``nextCustomTagId``, which will be incremented.
     
-proc uri*(tagLib: YamlTagLibrary, id: TagId): string
+proc uri*(tagLib: TagLibrary, id: TagId): string
     ## retrieve the URI a ``TagId`` maps to.
 
 # these should be consts, but the Nim VM still has problems handling tables
-# properly, so we use constructor procs instead.
+# properly, so we use let instead.
 
-proc failsafeTagLibrary*(): YamlTagLibrary
-    ## Contains only:
-    ## - ``!``
-    ## - ``?``
-    ## - ``!!str``
-    ## - ``!!map``
-    ## - ``!!seq``
-    
-proc coreTagLibrary*(): YamlTagLibrary
-    ## Contains everything in ``failsafeTagLibrary`` plus:
-    ## - ``!!null``
-    ## - ``!!bool``
-    ## - ``!!int``
-    ## - ``!!float``
-    
-proc extendedTagLibrary*(): YamlTagLibrary
-    ## Contains everything in ``coreTagLibrary`` plus:
-    ## - ``!!omap``
-    ## - ``!!pairs``
-    ## - ``!!set``
-    ## - ``!!binary``
-    ## - ``!!merge``
-    ## - ``!!timestamp``
-    ## - ``!!value``
-    ## - ``!!yaml``
+proc initFailsafeTagLibrary(): TagLibrary
+proc initCoreTagLibrary(): TagLibrary
+proc initExtendedTagLibrary(): TagLibrary
+
+let
+    failsafeTagLibrary*: TagLibrary = initFailsafeTagLibrary() ## \
+        ## Contains only:
+        ## - ``!``
+        ## - ``?``
+        ## - ``!!str``
+        ## - ``!!map``
+        ## - ``!!seq``
+    coreTagLibrary*: TagLibrary = initCoreTagLibrary() ## \
+        ## Contains everything in ``failsafeTagLibrary`` plus:
+        ## - ``!!null``
+        ## - ``!!bool``
+        ## - ``!!int``
+        ## - ``!!float``
+    extendedTagLibrary*: TagLibrary = initExtendedTagLibrary() ## \
+        ## Contains everything in ``coreTagLibrary`` plus:
+        ## - ``!!omap``
+        ## - ``!!pairs``
+        ## - ``!!set``
+        ## - ``!!binary``
+        ## - ``!!merge``
+        ## - ``!!timestamp``
+        ## - ``!!value``
+        ## - ``!!yaml``
 
 proc guessType*(scalar: string): TypeHint {.raises: [].}
 
-proc newParser*(tagLib: YamlTagLibrary): YamlSequentialParser
+proc newParser*(tagLib: TagLibrary): YamlParser
     ## Instanciates a parser
 
-proc setWarningCallback*(parser: YamlSequentialParser,
-                         callback: YamlWarningCallback)
+proc setWarningCallback*(parser: YamlParser, callback: WarningCallback)
 
-proc anchor*(parser: YamlSequentialParser, id: AnchorId): string
+proc anchor*(parser: YamlParser, id: AnchorId): string
     ## Get the anchor name which an ``AnchorId`` maps to
 
-proc parse*(parser: YamlSequentialParser, s: Stream):
+proc parse*(parser: YamlParser, s: Stream):
             YamlStream {.raises: [IOError, YamlParserError].}
     ## Parse a YAML character stream. ``s`` must be readable.
 
@@ -392,14 +394,14 @@ proc loadToJson*(s: Stream): seq[JsonNode]
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
     
-proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
-              style: YamlPresentationStyle = ypsDefault,
+proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
+              style: PresentationStyle = psDefault,
               indentationStep: int = 2) {.raises: [YamlPresenterJsonError,
                                                    YamlPresenterOutputError,
                                                    YamlPresenterStreamError].}
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
     
-proc transform*(input: Stream, output: Stream, style: YamlPresentationStyle,
+proc transform*(input: Stream, output: Stream, style: PresentationStyle,
                 indentationStep: int = 2)
     ## Parser ``input`` as YAML character stream and then dump it to ``output``
     ## without resolving any tags, anchors and aliases.
