@@ -13,8 +13,8 @@ type
 
 proc needsEscaping(scalar: string): bool {.raises: [].} =
     scalar.len == 0 or 
-            scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%',
-                         '\x0A', '\c'}) != -1
+            scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"',
+                         '\'', '\x0A', '\c'}) != -1
 
 proc writeDoubleQuoted(scalar: string, s: Stream)
             {.raises: [YamlPresenterOutputError].} =
@@ -24,7 +24,7 @@ proc writeDoubleQuoted(scalar: string, s: Stream)
             if c == '"':
                 s.write('\\')
             s.write(c)
-        s.write('"')  
+        s.write('"')
     except:
         var e = newException(YamlPresenterOutputError, "")
         e.cause = getCurrentException()
@@ -71,9 +71,11 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
             if (isObject and style != ypsMinimal) or
                     style in [ypsJson, ypsCanonical]:
                 target.write(",\x0A" & repeat(' ', indentation))
-                if style != ypsJson:
+                if style == ypsJson:
+                    state = dFlowImplicitMapKey
+                else:
                     target.write("? ")
-                state = dFlowExplicitMapKey
+                    state = dFlowExplicitMapKey
             elif isObject and style == ypsMinimal:
                 target.write(", ? ")
                 state = dFlowExplicitMapKey
@@ -84,9 +86,11 @@ proc startItem(target: Stream, style: YamlPresentationStyle, indentation: int,
             if (isObject and style != ypsMinimal) or
                     style in [ypsJson, ypsCanonical]:
                 target.write("\x0A" & repeat(' ', indentation))
-                if style != ypsJson:
+                if style == ypsJson:
+                    state = dFlowImplicitMapKey
+                else:
                     target.write("? ")
-                state = dFlowExplicitMapKey
+                    state = dFlowExplicitMapKey
             else:
                 state = dFlowImplicitMapKey
         of dFlowImplicitMapKey:
@@ -208,18 +212,15 @@ proc present*(s: YamlStream, target: Stream, tagLib: YamlTagLibrary,
                     raise newException(YamlPresenterJsonError,
                             "Infinity and not-a-number values cannot be presented as JSON!")
                 else:
-                    safeWrite(item.scalarContent)
-            elif style == ypsCanonical or item.scalarContent.needsEscaping or
-               (style == ypsJson and
-                (item.scalarTag notin [yTagQuestionMark, yTagInteger, yTagFloat,
-                                       yTagBoolean, yTagNull] or
-                 (item.scalarTag == yTagQuestionMark and item.scalarType notin
-                  [yTypeBoolFalse, yTypeBoolTrue, yTypeInteger, yTypeFloat,
-                   yTypeNull]))):
+                    writeDoubleQuoted(item.scalarContent, target)
+            elif style == ypsCanonical or item.scalarContent.needsEscaping:
                 writeDoubleQuoted(item.scalarContent, target)
             else:
                 safeWrite(item.scalarContent)
         of yamlAlias:
+            if style == ypsJson:
+                raise newException(YamlPresenterJsonError,
+                                   "Alias not allowed in JSON output")
             assert levels.len > 0
             startItem(target, style, indentation, levels[levels.high], false)
             try:
