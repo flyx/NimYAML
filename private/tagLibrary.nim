@@ -5,11 +5,12 @@
 #    distribution, for details about the copyright.
 
 proc initTagLibrary*(): TagLibrary =
+    new(result)
     result.tags = initTable[string, TagId]()
     result.nextCustomTagId = yFirstCustomTagId
     result.secondaryPrefix = yamlTagRepositoryPrefix
 
-proc registerUri*(tagLib: var TagLibrary, uri: string): TagId =
+proc registerUri*(tagLib: TagLibrary, uri: string): TagId =
     tagLib.tags[uri] = tagLib.nextCustomTagId
     result = tagLib.nextCustomTagId
     tagLib.nextCustomTagId = cast[TagId](cast[int](tagLib.nextCustomTagId) + 1)

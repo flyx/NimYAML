@@ -70,3 +70,6 @@ proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
                   anchor: AnchorId = yAnchorNone): YamlStreamEvent =
     result = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
                              scalarAnchor: anchor, scalarContent: content)
+
+proc aliasEvent*(anchor: AnchorId): YamlStreamEvent =
+  result = YamlStreamEvent(kind: yamlAlias, aliasTarget: anchor)

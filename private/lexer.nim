@@ -153,8 +153,7 @@ template yieldToken(kind: YamlLexerToken) {.dirty.} =
 
 template yieldScalarPart() {.dirty.} =
     when defined(yamlDebug):
-        echo "Lexer token: tScalarPart(\"", my.content, "\".", typeHintState,
-             ")"
+        echo "Lexer token: tScalarPart(\"", my.content, "\")"
     yield tScalarPart
     my.content = ""
 

@@ -20,6 +20,9 @@
 import streams, unicode, lexbase, tables, strutils, json, hashes, queues, macros
 export streams, tables, json
 
+when defined(yamlDebug):
+  import terminal
+
 type
     TypeHint* = enum
         ## A type hint is a friendly message from the YAML lexer, telling you
@@ -55,9 +58,9 @@ type
     TagId* = distinct int ## \
         ## A ``TagId`` identifies a tag URI, like for example 
         ## ``"tag:yaml.org,2002:str"``. The URI corresponding to a ``TagId`` can
-        ## be queried from the `YamlTagLibrary <#YamlTagLibrary>`_ which was
+        ## be queried from the `TagLibrary <#TagLibrary>`_ which was
         ## used to create this ``TagId`` with
-        ## `uri <#uri,YamlTagLibrary,TagId>`_. URI strings are
+        ## `uri <#uri,TagLibrary,TagId>`_. URI strings are
         ## mapped to ``TagId`` s for efficiency  reasons (you do not need to
         ## compare strings every time) and to be able to discover unknown tag
         ## URIs early in the parsing process.
@@ -68,7 +71,7 @@ type
         ## (for example, because the parser yielded a ``yamlEndDocument``
         ## event). ``AnchorId`` s exists because of efficiency, much like
         ## ``TagId`` s. The actual anchor name can be queried with
-        ## `anchor <#anchor,YamlSequentialParser,AnchorId>`_.
+        ## `anchor <#anchor,YamlParser,AnchorId>`_.
     
     YamlStreamEvent* = object
         ## An element from a `YamlStream <#YamlStream>`_. Events that start an
@@ -80,7 +83,7 @@ type
         ## the non-specific tags ``?`` or ``!`` according to the YAML
         ## specification. These are by convention mapped to the ``TagId`` s
         ## ``yTagQuestionMark`` and ``yTagExclamationMark`` respectively.
-        ## Mapping is done by a `YamlTagLibrary <#YamlTagLibrary>`_.
+        ## Mapping is done by a `TagLibrary <#TagLibrary>`_.
         case kind*: YamlStreamEventKind
         of yamlStartMap:
             mapAnchor* : AnchorId
@@ -110,7 +113,7 @@ type
         ## always yield a well-formed ``YamlStream`` and expect it to be
         ## well-formed if it's an input.
     
-    TagLibrary* = object
+    TagLibrary* = ref object
         ## A ``YamlTagLibrary`` maps tag URIs to ``TagId`` s. YAML tag URIs
         ## that are defined in the YAML specification or in the
         ## `YAML tag repository <http://yaml.org/type/>`_ should be mapped to
@@ -121,8 +124,8 @@ type
         ## `coreTagLibrary <#coreTagLibrary>`_, and 
         ## `extendedTagLibrary <#extendedTagLibrary>`_.
         ##
-        ## If the ``YamlSequentialParser`` encounters a tag which is not part of
-        ## the ``YamlTagLibrary``, it will create a new ``TagId`` equal to
+        ## If the ``YamlParser`` encounters a tag which is not part of
+        ## the ``TagLibrary``, it will create a new ``TagId`` equal to
         ## ``nextCustomTagId`` and increase that variable. It will be
         ## initialized to `yFirstCustomTagId <#yFirstCustomTagId>`_. If you do
         ## not want to allow unknown tag URIs to be processed, just abort
@@ -309,6 +312,7 @@ proc endSeqEvent*(): YamlStreamEvent {.inline, raises: [].}
 proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
                   anchor: AnchorId = yAnchorNone):
                   YamlStreamEvent {.inline, raises: [].}
+proc aliasEvent*(anchor: AnchorId): YamlStreamEvent {.inline, raises: [].}
 
 proc `==`*(left, right: TagId): bool {.borrow.}
 proc `$`*(id: TagId): string
@@ -322,7 +326,7 @@ proc initTagLibrary*(): TagLibrary
     ## initializes the ``tags`` table and sets ``nextCustomTagId`` to
     ## ``yFirstCustomTagId``.
 
-proc registerUri*(tagLib: var TagLibrary, uri: string): TagId
+proc registerUri*(tagLib: TagLibrary, uri: string): TagId
     ## registers a custom tag URI with a ``YamlTagLibrary``. The URI will get
     ## the ``TagId`` ``nextCustomTagId``, which will be incremented.
     
@@ -375,6 +379,9 @@ proc parse*(parser: YamlParser, s: Stream):
             YamlStream {.raises: [IOError, YamlParserError].}
     ## Parse a YAML character stream. ``s`` must be readable.
 
+proc fastparse*(tagLib: TagLibrary, s: Stream):
+        YamlStream {.raises: [IOError, YamlParserError].}
+
 proc constructJson*(s: YamlStream): seq[JsonNode]
     ## Construct an in-memory JSON tree from a YAML event stream. The stream may
     ## not contain any tags apart from those in ``coreTagLibrary``. Anchors and
@@ -415,3 +422,4 @@ include private.parser
 include private.json
 include private.presenter
 include private.hints
+include private.fastparse
