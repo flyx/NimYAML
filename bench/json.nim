@@ -134,27 +134,27 @@ var
     json1k   = genJsonString(1, 32)
     json10k  = genJsonString(10, 32)
     json100k = genJsonString(100, 32)
-    parser = newParser(coreTagLibrary)
+    tagLib   = coreTagLibrary
     
     s = newStringStream(json1k)
 
 block:
     bench(cYaml1k):
-        let res = constructJson(parser.parse(s))
+        let res = constructJson(fastparse(coreTagLibrary, s))
         assert res[0].kind == JObject
 
 s = newStringStream(json10k)
 
 block:
     bench(cYaml10k):
-        let res = constructJson(parser.parse(s))
+        let res = constructJson(fastparse(coreTagLibrary, s))
         assert res[0].kind == JObject
 
 s = newStringStream(json100k)
 
 block:
     bench(cYaml100k):
-        let res = constructJson(parser.parse(s))
+        let res = constructJson(fastparse(coreTagLibrary, s))
         assert res[0].kind == JObject
 
 block:

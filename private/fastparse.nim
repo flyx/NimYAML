@@ -1109,12 +1109,35 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             lexer.bufpos.inc()
           else:
             handleFlowPlainScalar()
+        of '\'':
+          content = ""
+          lexer.singleQuotedScalar(content)
+          if tag == yTagQuestionMark:
+            tag = yTagExclamationMark
+          yield scalarEvent(content, tag, anchor)
+          tag = yTagQuestionmark
+          anchor = yAnchorNone
+          level = ancestry.pop()
+          state = fpFlowAfterObject
+        of '"':
+          content = ""
+          lexer.doublyQuotedScalar(content)
+          if tag == yTagQuestionmark:
+            tag = yTagExclamationmark
+          yield scalarEvent(content, tag, anchor)
+          tag = yTagQuestionmark
+          anchor = yAnchorNone
+          level = ancestry.pop()
+          state = fpFlowAfterObject
         of '!':
           handleTagHandle()
         of '&':
           handleAnchor()
         of '*':
           handleAlias()
+          level = ancestry.pop()
+          yield cachedScalar
+          state = fpFlowAfterObject
         else:
           handleFlowPlainScalar()
       of fpFlowAfterObject:
