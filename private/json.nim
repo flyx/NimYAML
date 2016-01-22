@@ -124,6 +124,7 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                     levels[levels.high].node.elems.add(level.node)
                 of JObject:
                     if isNil(levels[levels.high].key):
+                        echo level.node.pretty()
                         raise newException(ValueError,
                                 "non-scalar as key not allowed in JSON")
                     else:

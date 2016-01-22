@@ -1076,7 +1076,11 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             anchor = yAnchorNone
             level.kind = fplMapKey
           of fplMapKey:
-            discard
+            if tag != yTagQuestionmark or anchor != yAnchorNone:
+              yield scalarEvent("", tag, anchor)
+              tag = yTagQuestionmark
+              anchor = yAnchorNone
+              yield scalarEvent("", tag, anchor)
           of fplSequence:
             raiseError("Unexpected token (expected ']')", lexer.bufpos)
           of fplUnknown, fplScalar:
@@ -1088,7 +1092,10 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           level = ancestry.pop()
           case level.kind
           of fplSequence:
-            yield endSeqEvent()
+            if tag != yTagQuestionmark or anchor != yAnchorNone:
+              yield scalarEvent("", tag, anchor)
+              tag = yTagQuestionmark
+              anchor = yAnchorNone
           of fplMapKey, fplMapValue:
             raiseError("Unexpected token (expected '}')", lexer.bufpos)
           of fplUnknown, fplScalar:
