@@ -110,9 +110,9 @@ template handleObjectStart(k: YamlStreamEventKind, isFlow: bool) {.dirty.} =
     level.kind = fplMapKey
   else:
     when isFlow:
-      yield startMapEvent(tag, anchor)
+      yield startSeqEvent(tag, anchor)
     else:
-      yield startMapEvent(objectTag, objectAnchor)
+      yield startSeqEvent(objectTag, objectAnchor)
     debug("started sequence at " & $indentation)
     level.kind = fplSequence
   when isFlow:
