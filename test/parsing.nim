@@ -2,39 +2,6 @@ import "../yaml"
 
 import unittest
 
-proc startDoc(): YamlStreamEvent =
-    result.kind = yamlStartDocument
-
-proc endDoc(): YamlStreamEvent =
-    result.kind = yamlEndDocument
-
-proc scalar(content: string,
-            tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
-           YamlStreamEvent = scalarEvent(content, tag, anchor)
-
-proc startSequence(tag: TagId = yTagQuestionMark,
-                   anchor: AnchorId = yAnchorNone):
-        YamlStreamEvent =
-    result.kind = yamlStartSequence
-    result.seqAnchor = anchor
-    result.seqTag = tag
-
-proc endSequence(): YamlStreamEvent =
-    result.kind = yamlEndSequence
-
-proc startMap(tag: TagId = yTagQuestionMark, anchor: AnchorId = yAnchorNone):
-        YamlStreamEvent =
-    result.kind = yamlStartMap
-    result.mapAnchor = anchor
-    result.mapTag = tag
-
-proc endMap(): YamlStreamEvent =
-    result.kind = yamlEndMap
-
-proc alias(target: AnchorId): YamlStreamEvent =
-    result.kind = yamlAlias
-    result.aliasTarget = target
-
 proc printDifference(expected, actual: YamlStreamEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
@@ -45,10 +12,10 @@ proc printDifference(expected, actual: YamlStreamEvent) =
                 echo "[\"", actual.scalarContent, "\".tag] expected tag ",
                      expected.scalarTag, ", got ", actual.scalarTag
             elif expected.scalarAnchor != actual.scalarAnchor:
-                echo "[scalar] expected anchor ", expected.scalarAnchor,
+                echo "[scalarEvent] expected anchor ", expected.scalarAnchor,
                      ", got ", actual.scalarAnchor
             elif expected.scalarContent != actual.scalarContent:
-                let msg = "[scalar] expected content \"" &
+                let msg = "[scalarEvent] expected content \"" &
                         expected.scalarContent & "\", got \"" &
                         actual.scalarContent & "\" "
                 if expected.scalarContent.len != actual.scalarContent.len:
@@ -63,7 +30,7 @@ proc printDifference(expected, actual: YamlStreamEvent) =
                                     cast[int](actual.scalarContent[i]), ")"
                             break
             else:
-                echo "[scalar] Unknown difference"
+                echo "[scalarEvent] Unknown difference"
         of yamlStartMap:
             if expected.mapTag != actual.mapTag:
                 echo "[map.tag] expected ", expected.mapTag, ", got ",
@@ -85,9 +52,8 @@ proc printDifference(expected, actual: YamlStreamEvent) =
 
 template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
     var
-        parser = newParser(tagLib)
         i = 0
-        events = parser.parse(newStringStream(input))
+        events = fastparse(tagLib, newStringStream(input))
     try:
         for token in events():
             if i >= expected.len:
@@ -113,183 +79,183 @@ suite "Parsing":
     teardown:
         discard
     
-    test "Parsing: Simple Scalar":
-        ensure("Scalar", startDoc(), scalar("Scalar"), endDoc())
+    test "Parsing: Simple scalarEvent":
+        ensure("scalarEvent", startDocEvent(), scalarEvent("scalarEvent"), endDocEvent())
     test "Parsing: Simple Sequence":
-        ensure("- off", startDoc(), startSequence(),
-               scalar("off"), endSequence(), endDoc())
+        ensure("- off", startDocEvent(), startSeqEvent(),
+               scalarEvent("off"), endSeqEvent(), endDocEvent())
     test "Parsing: Simple Map":
-        ensure("42: value\nkey2: -7.5", startDoc(), startMap(),
-               scalar("42"), scalar("value"), scalar("key2"),
-               scalar("-7.5"), endMap(), endDoc())
+        ensure("42: value\nkey2: -7.5", startDocEvent(), startMapEvent(),
+               scalarEvent("42"), scalarEvent("value"), scalarEvent("key2"),
+               scalarEvent("-7.5"), endMapEvent(), endDocEvent())
     test "Parsing: Explicit Map":
-        ensure("? null\n: value\n? ON\n: value2", startDoc(), startMap(),
-               scalar("null"), scalar("value"),
-               scalar("ON"), scalar("value2"),
-               endMap(), endDoc())
+        ensure("? null\n: value\n? ON\n: value2", startDocEvent(), startMapEvent(),
+               scalarEvent("null"), scalarEvent("value"),
+               scalarEvent("ON"), scalarEvent("value2"),
+               endMapEvent(), endDocEvent())
     test "Parsing: Mixed Map (explicit to implicit)":
-        ensure("? a\n: 13\n1.5: d", startDoc(), startMap(), scalar("a"),
-               scalar("13"), scalar("1.5"),
-               scalar("d"), endMap(), endDoc())
+        ensure("? a\n: 13\n1.5: d", startDocEvent(), startMapEvent(), scalarEvent("a"),
+               scalarEvent("13"), scalarEvent("1.5"),
+               scalarEvent("d"), endMapEvent(), endDocEvent())
     test "Parsing: Mixed Map (implicit to explicit)":
-        ensure("a: 4.2\n? 23\n: d", startDoc(), startMap(), scalar("a"),
-               scalar("4.2"), scalar("23"),
-               scalar("d"), endMap(), endDoc())
+        ensure("a: 4.2\n? 23\n: d", startDocEvent(), startMapEvent(), scalarEvent("a"),
+               scalarEvent("4.2"), scalarEvent("23"),
+               scalarEvent("d"), endMapEvent(), endDocEvent())
     test "Parsing: Missing values in map":
-        ensure("? a\n? b\nc:", startDoc(), startMap(), scalar("a"), scalar(""),
-               scalar("b"), scalar(""), scalar("c"), scalar(""), endMap(),
-               endDoc())
+        ensure("? a\n? b\nc:", startDocEvent(), startMapEvent(), scalarEvent("a"), scalarEvent(""),
+               scalarEvent("b"), scalarEvent(""), scalarEvent("c"), scalarEvent(""), endMapEvent(),
+               endDocEvent())
     test "Parsing: Missing keys in map":
-        ensure(": a\n: b", startDoc(), startMap(), scalar(""), scalar("a"),
-               scalar(""), scalar("b"), endMap(), endDoc())
-    test "Parsing: Multiline scalars in explicit map":
-        ensure("? a\n  true\n: null\n  d\n? e\n  42", startDoc(), startMap(),
-               scalar("a true"), scalar("null d"), scalar("e 42"), scalar(""),
-               endMap(), endDoc())
+        ensure(": a\n: b", startDocEvent(), startMapEvent(), scalarEvent(""), scalarEvent("a"),
+               scalarEvent(""), scalarEvent("b"), endMapEvent(), endDocEvent())
+    test "Parsing: Multiline scalarEvents in explicit map":
+        ensure("? a\n  true\n: null\n  d\n? e\n  42", startDocEvent(), startMapEvent(),
+               scalarEvent("a true"), scalarEvent("null d"), scalarEvent("e 42"), scalarEvent(""),
+               endMapEvent(), endDocEvent())
     test "Parsing: Map in Sequence":
         ensure(" - key: value\n   key2: value2\n -\n   key3: value3",
-               startDoc(), startSequence(), startMap(), scalar("key"),
-               scalar("value"), scalar("key2"), scalar("value2"), endMap(),
-               startMap(), scalar("key3"), scalar("value3"), endMap(),
-               endSequence(), endDoc())
+               startDocEvent(), startSeqEvent(), startMapEvent(), scalarEvent("key"),
+               scalarEvent("value"), scalarEvent("key2"), scalarEvent("value2"), endMapEvent(),
+               startMapEvent(), scalarEvent("key3"), scalarEvent("value3"), endMapEvent(),
+               endSeqEvent(), endDocEvent())
     test "Parsing: Sequence in Map":
-        ensure("key:\n - item1\n - item2", startDoc(), startMap(),
-               scalar("key"), startSequence(), scalar("item1"), scalar("item2"),
-               endSequence(), endMap(), endDoc())
+        ensure("key:\n - item1\n - item2", startDocEvent(), startMapEvent(),
+               scalarEvent("key"), startSeqEvent(), scalarEvent("item1"), scalarEvent("item2"),
+               endSeqEvent(), endMapEvent(), endDocEvent())
     test "Parsing: Sequence in Sequence":
-        ensure("- - l1_i1\n  - l1_i2\n- l2_i1", startDoc(), startSequence(),
-               startSequence(), scalar("l1_i1"), scalar("l1_i2"), endSequence(),
-               scalar("l2_i1"), endSequence(), endDoc())
+        ensure("- - l1_i1\n  - l1_i2\n- l2_i1", startDocEvent(), startSeqEvent(),
+               startSeqEvent(), scalarEvent("l1_i1"), scalarEvent("l1_i2"), endSeqEvent(),
+               scalarEvent("l2_i1"), endSeqEvent(), endDocEvent())
     test "Parsing: Flow Sequence":
-        ensure("[2, b]", startDoc(), startSequence(), scalar("2"),
-               scalar("b"), endSequence(), endDoc())
+        ensure("[2, b]", startDocEvent(), startSeqEvent(), scalarEvent("2"),
+               scalarEvent("b"), endSeqEvent(), endDocEvent())
     test "Parsing: Flow Map":
-        ensure("{a: Y, 1.337: d}", startDoc(), startMap(), scalar("a"),
-               scalar("Y"), scalar("1.337"),
-               scalar("d"), endMap(), endDoc())
+        ensure("{a: Y, 1.337: d}", startDocEvent(), startMapEvent(), scalarEvent("a"),
+               scalarEvent("Y"), scalarEvent("1.337"),
+               scalarEvent("d"), endMapEvent(), endDocEvent())
     test "Parsing: Flow Sequence in Flow Sequence":
-        ensure("[a, [b, c]]", startDoc(), startSequence(), scalar("a"),
-               startSequence(), scalar("b"), scalar("c"), endSequence(),
-               endSequence(), endDoc())
+        ensure("[a, [b, c]]", startDocEvent(), startSeqEvent(), scalarEvent("a"),
+               startSeqEvent(), scalarEvent("b"), scalarEvent("c"), endSeqEvent(),
+               endSeqEvent(), endDocEvent())
     test "Parsing: Flow Sequence in Flow Map":
-        ensure("{a: [b, c], [d, e]: f}", startDoc(), startMap(), scalar("a"),
-               startSequence(), scalar("b"), scalar("c"), endSequence(),
-               startSequence(), scalar("d"), scalar("e"), endSequence(),
-               scalar("f"), endMap(), endDoc())
+        ensure("{a: [b, c], [d, e]: f}", startDocEvent(), startMapEvent(), scalarEvent("a"),
+               startSeqEvent(), scalarEvent("b"), scalarEvent("c"), endSeqEvent(),
+               startSeqEvent(), scalarEvent("d"), scalarEvent("e"), endSeqEvent(),
+               scalarEvent("f"), endMapEvent(), endDocEvent())
     test "Parsing: Flow Sequence in Map":
-        ensure("a: [b, c]", startDoc(), startMap(), scalar("a"),
-               startSequence(), scalar("b"), scalar("c"), endSequence(),
-               endMap(), endDoc())
+        ensure("a: [b, c]", startDocEvent(), startMapEvent(), scalarEvent("a"),
+               startSeqEvent(), scalarEvent("b"), scalarEvent("c"), endSeqEvent(),
+               endMapEvent(), endDocEvent())
     test "Parsing: Flow Map in Sequence":
-        ensure("- {a: b}", startDoc(), startSequence(), startMap(), scalar("a"),
-               scalar("b"), endMap(), endSequence(), endDoc())
+        ensure("- {a: b}", startDocEvent(), startSeqEvent(), startMapEvent(), scalarEvent("a"),
+               scalarEvent("b"), endMapEvent(), endSeqEvent(), endDocEvent())
     test "Parsing: Multiline scalar (top level)":
-        ensure("a\nb  \n  c\nd", startDoc(), scalar("a b c d"), endDoc())
+        ensure("a\nb  \n  c\nd", startDocEvent(), scalarEvent("a b c d"), endDocEvent())
     test "Parsing: Multiline scalar (in map)":
-        ensure("a: b\n c\nd:\n e\n  f", startDoc(), startMap(), scalar("a"),
-               scalar("b c"), scalar("d"), scalar("e f"), endMap(), endDoc())
+        ensure("a: b\n c\nd:\n e\n  f", startDocEvent(), startMapEvent(), scalarEvent("a"),
+               scalarEvent("b c"), scalarEvent("d"), scalarEvent("e f"), endMapEvent(), endDocEvent())
     test "Parsing: Block scalar (literal)":
-        ensure("a: |\x0A ab\x0A \x0A cd\x0A ef\x0A \x0A", startDoc(),
-               startMap(), scalar("a"), scalar("ab\x0A\x0Acd\x0Aef\x0A"),
-               endMap(), endDoc())
+        ensure("a: |\x0A ab\x0A \x0A cd\x0A ef\x0A \x0A", startDocEvent(),
+               startMapEvent(), scalarEvent("a"), scalarEvent("ab\x0A\x0Acd\x0Aef\x0A", yTagExclamationmark),
+               endMapEvent(), endDocEvent())
     test "Parsing: Block scalar (folded)":
-        ensure("a: >\x0A ab\x0A cd\x0A \x0Aef\x0A\x0A\x0Agh\x0A", startDoc(),
-               startMap(), scalar("a"), scalar("ab cd\x0Aef\x0Agh\x0A"),
-               endMap(), endDoc())
+        ensure("a: >\x0A ab\x0A cd\x0A \x0A ef\x0A\x0A\x0A gh\x0A", startDocEvent(),
+               startMapEvent(), scalarEvent("a"), scalarEvent("ab cd\x0Aef\x0A\x0Agh\x0A", yTagExclamationmark),
+               endMapEvent(), endDocEvent())
     test "Parsing: Block scalar (keep)":
-        ensure("a: |+\x0A ab\x0A \x0A  \x0A", startDoc(), startMap(),
-               scalar("a"), scalar("ab\x0A\x0A \x0A"), endMap(), endDoc())
+        ensure("a: |+\x0A ab\x0A \x0A  \x0A", startDocEvent(), startMapEvent(),
+               scalarEvent("a"), scalarEvent("ab\x0A\x0A \x0A", yTagExclamationmark), endMapEvent(), endDocEvent())
     test "Parsing: Block scalar (strip)":
-        ensure("a: |-\x0A ab\x0A \x0A \x0A", startDoc(), startMap(),
-               scalar("a"), scalar("ab"), endMap(), endDoc())
+        ensure("a: |-\x0A ab\x0A \x0A \x0A", startDocEvent(), startMapEvent(),
+               scalarEvent("a"), scalarEvent("ab", yTagExclamationmark), endMapEvent(), endDocEvent())
     test "Parsing: non-specific tags of quoted strings":
-        ensure("\"a\"", startDoc(),
-               scalar("a", yTagExclamationMark), endDoc())
+        ensure("\"a\"", startDocEvent(),
+               scalarEvent("a", yTagExclamationMark), endDocEvent())
     test "Parsing: explicit non-specific tag":
-        ensure("! a", startDoc(), scalar("a", yTagExclamationMark), endDoc())
+        ensure("! a", startDocEvent(), scalarEvent("a", yTagExclamationMark), endDocEvent())
     test "Parsing: secondary tag handle resolution":
-        ensure("!!str a", startDoc(), scalar("a", yTagString), endDoc())
+        ensure("!!str a", startDocEvent(), scalarEvent("a", yTagString), endDocEvent())
     test "Parsing: resolving custom tag handles":
         let fooId = tagLib.registerUri("tag:example.com,2015:foo")
-        ensure("%TAG !t! tag:example.com,2015:\n---\n!t!foo a", startDoc(),
-               scalar("a", fooId), endDoc())
+        ensure("%TAG !t! tag:example.com,2015:\n---\n!t!foo a", startDocEvent(),
+               scalarEvent("a", fooId), endDocEvent())
     test "Parsing: tags in sequence":
-        ensure(" - !!str a\n - b\n - !!int c\n - d", startDoc(),
-               startSequence(), scalar("a", yTagString), scalar("b"),
-               scalar("c", yTagInteger), scalar("d"), endSequence(), endDoc())
+        ensure(" - !!str a\n - b\n - !!int c\n - d", startDocEvent(),
+               startSeqEvent(), scalarEvent("a", yTagString), scalarEvent("b"),
+               scalarEvent("c", yTagInteger), scalarEvent("d"), endSeqEvent(), endDocEvent())
     test "Parsing: tags in implicit map":
-        ensure("!!str a: b\nc: !!int d\ne: !!str f\ng: h", startDoc(), startMap(),
-               scalar("a", yTagString), scalar("b"), scalar("c"),
-               scalar("d", yTagInteger), scalar("e"), scalar("f", yTagString),
-               scalar("g"), scalar("h"), endMap(), endDoc())
+        ensure("!!str a: b\nc: !!int d\ne: !!str f\ng: h", startDocEvent(), startMapEvent(),
+               scalarEvent("a", yTagString), scalarEvent("b"), scalarEvent("c"),
+               scalarEvent("d", yTagInteger), scalarEvent("e"), scalarEvent("f", yTagString),
+               scalarEvent("g"), scalarEvent("h"), endMapEvent(), endDocEvent())
     test "Parsing: tags in explicit map":
-        ensure("? !!str a\n: !!int b\n? c\n: !!str d", startDoc(), startMap(),
-               scalar("a", yTagString), scalar("b", yTagInteger), scalar("c"),
-               scalar("d", yTagString), endMap(), endDoc())
+        ensure("? !!str a\n: !!int b\n? c\n: !!str d", startDocEvent(), startMapEvent(),
+               scalarEvent("a", yTagString), scalarEvent("b", yTagInteger), scalarEvent("c"),
+               scalarEvent("d", yTagString), endMapEvent(), endDocEvent())
     test "Parsing: tags for block objects":
         ensure("--- !!map\nfoo: !!seq\n  - a\n  - !!str b\n!!str bar: !!str baz",
-               startDoc(), startMap(yTagMap), scalar("foo"),
-               startSequence(yTagSequence), scalar("a"), scalar("b", yTagString),
-               endSequence(), scalar("bar", yTagString),
-               scalar("baz", yTagString), endMap(), endDoc())
+               startDocEvent(), startMapEvent(yTagMap), scalarEvent("foo"),
+               startSeqEvent(yTagSequence), scalarEvent("a"), scalarEvent("b", yTagString),
+               endSeqEvent(), scalarEvent("bar", yTagString),
+               scalarEvent("baz", yTagString), endMapEvent(), endDocEvent())
     test "Parsing: root tag for block sequence":
-        ensure("--- !!seq\n- a", startDoc(), startSequence(yTagSequence),
-                scalar("a"), endSequence(), endDoc())
+        ensure("--- !!seq\n- a", startDocEvent(), startSeqEvent(yTagSequence),
+                scalarEvent("a"), endSeqEvent(), endDocEvent())
     test "Parsing: root tag for explicit block map":
-        ensure("--- !!map\n? a\n: b", startDoc(), startMap(yTagMap),
-                scalar("a"), scalar("b"), endMap(), endDoc())
+        ensure("--- !!map\n? a\n: b", startDocEvent(), startMapEvent(yTagMap),
+                scalarEvent("a"), scalarEvent("b"), endMapEvent(), endDocEvent())
     test "Parsing: tags for flow objects":
-        ensure("!!map { k: !!seq [ a, !!str b] }", startDoc(), startMap(yTagMap),
-               scalar("k"), startSequence(yTagSequence), scalar("a"),
-               scalar("b", yTagString), endSequence(), endMap(), endDoc())
+        ensure("!!map { k: !!seq [ a, !!str b] }", startDocEvent(), startMapEvent(yTagMap),
+               scalarEvent("k"), startSeqEvent(yTagSequence), scalarEvent("a"),
+               scalarEvent("b", yTagString), endSeqEvent(), endMapEvent(), endDocEvent())
     test "Parsing: Tag after directives end":
-        ensure("--- !!str\nfoo", startDoc(), scalar("foo", yTagString), endDoc())
+        ensure("--- !!str\nfoo", startDocEvent(), scalarEvent("foo", yTagString), endDocEvent())
     test "Parsing: Simple Anchor":
-        ensure("&a str", startDoc(), scalar("str", yTagQuestionMark,
-                                            0.AnchorId), endDoc())
+        ensure("&a str", startDocEvent(), scalarEvent("str", yTagQuestionMark,
+                                            0.AnchorId), endDocEvent())
     test "Parsing: Anchors in sequence":
-        ensure(" - &a a\n - b\n - &c c\n - &a d", startDoc(), startSequence(),
-               scalar("a", yTagQuestionMark, 0.AnchorId), scalar("b"),
-               scalar("c", yTagQuestionMark, 1.AnchorId),
-               scalar("d", yTagQuestionMark, 0.AnchorId), endSequence(),
-               endDoc())
+        ensure(" - &a a\n - b\n - &c c\n - &a d", startDocEvent(), startSeqEvent(),
+               scalarEvent("a", yTagQuestionMark, 0.AnchorId), scalarEvent("b"),
+               scalarEvent("c", yTagQuestionMark, 1.AnchorId),
+               scalarEvent("d", yTagQuestionMark, 2.AnchorId), endSeqEvent(),
+               endDocEvent())
     test "Parsing: Anchors in map":
-        ensure("&a a: b\nc: &d d", startDoc(), startMap(),
-               scalar("a", yTagQuestionMark, 0.AnchorId),
-               scalar("b"), scalar("c"),
-               scalar("d", yTagQuestionMark, 1.AnchorId),
-               endMap(), endDoc())
+        ensure("&a a: b\nc: &d d", startDocEvent(), startMapEvent(),
+               scalarEvent("a", yTagQuestionMark, 0.AnchorId),
+               scalarEvent("b"), scalarEvent("c"),
+               scalarEvent("d", yTagQuestionMark, 1.AnchorId),
+               endMapEvent(), endDocEvent())
     test "Parsing: Anchors and tags":
-        ensure(" - &a !!str a\n - !!int b\n - &c !!int c\n - &d d", startDoc(),
-               startSequence(), scalar("a", yTagString, 0.AnchorId),
-               scalar("b", yTagInteger), scalar("c", yTagInteger, 1.AnchorId),
-               scalar("d", yTagQuestionMark, 2.AnchorId), endSequence(),
-               endDoc())
+        ensure(" - &a !!str a\n - !!int b\n - &c !!int c\n - &d d", startDocEvent(),
+               startSeqEvent(), scalarEvent("a", yTagString, 0.AnchorId),
+               scalarEvent("b", yTagInteger), scalarEvent("c", yTagInteger, 1.AnchorId),
+               scalarEvent("d", yTagQuestionMark, 2.AnchorId), endSeqEvent(),
+               endDocEvent())
     test "Parsing: Aliases in sequence":
-        ensure(" - &a a\n - &b b\n - *a\n - *b", startDoc(), startSequence(),
-               scalar("a", yTagQuestionMark, 0.AnchorId),
-               scalar("b", yTagQuestionMark, 1.AnchorId), alias(0.AnchorId),
-               alias(1.AnchorId), endSequence(), endDoc())
+        ensure(" - &a a\n - &b b\n - *a\n - *b", startDocEvent(), startSeqEvent(),
+               scalarEvent("a", yTagQuestionMark, 0.AnchorId),
+               scalarEvent("b", yTagQuestionMark, 1.AnchorId), aliasEvent(0.AnchorId),
+               aliasEvent(1.AnchorId), endSeqEvent(), endDocEvent())
     test "Parsing: Aliases in map":
-        ensure("&a a: &b b\n*a: *b", startDoc(), startMap(),
-               scalar("a", yTagQuestionMark, 0.AnchorId),
-               scalar("b", yTagQuestionMark, 1.AnchorId), alias(0.AnchorId),
-               alias(1.AnchorId), endMap(), endDoc())
+        ensure("&a a: &b b\n*a : *b", startDocEvent(), startMapEvent(),
+               scalarEvent("a", yTagQuestionMark, 0.AnchorId),
+               scalarEvent("b", yTagQuestionMark, 1.AnchorId), aliasEvent(0.AnchorId),
+               aliasEvent(1.AnchorId), endMapEvent(), endDocEvent())
     test "Parsing: Aliases in flow":
-        ensure("{ &a [a, &b b]: *b, *a: [c, *b, d]}", startDoc(), startMap(),
-               startSequence(yTagQuestionMark, 0.AnchorId), scalar("a"),
-               scalar("b", yTagQuestionMark, 1.AnchorId), endSequence(),
-               alias(1.AnchorId), alias(0.AnchorId), startSequence(),
-               scalar("c"), alias(1.AnchorId), scalar("d"), endSequence(),
-               endMap(), endDoc())
+        ensure("{ &a [a, &b b]: *b, *a : [c, *b, d]}", startDocEvent(), startMapEvent(),
+               startSeqEvent(yTagQuestionMark, 0.AnchorId), scalarEvent("a"),
+               scalarEvent("b", yTagQuestionMark, 1.AnchorId), endSeqEvent(),
+               aliasEvent(1.AnchorId), aliasEvent(0.AnchorId), startSeqEvent(),
+               scalarEvent("c"), aliasEvent(1.AnchorId), scalarEvent("d"), endSeqEvent(),
+               endMapEvent(), endDocEvent())
     test "Parsing: Tags on empty scalars":
-        ensure("!!str : a\nb: !!int\n!!str : !!str", startDoc(), startMap(),
-               scalar("", yTagString), scalar("a"), scalar("b"),
-               scalar("", yTagInteger), scalar("", yTagString),
-               scalar("", yTagString), endMap(), endDoc())
+        ensure("!!str : a\nb: !!int\n!!str : !!str", startDocEvent(), startMapEvent(),
+               scalarEvent("", yTagString), scalarEvent("a"), scalarEvent("b"),
+               scalarEvent("", yTagInteger), scalarEvent("", yTagString),
+               scalarEvent("", yTagString), endMapEvent(), endDocEvent())
     test "Parsing: Anchors on empty scalars":
-        ensure("&a : a\nb: &b\n&c : &a", startDoc(), startMap(),
-               scalar("", yTagQuestionMark, 0.AnchorId), scalar("a"),
-               scalar("b"), scalar("", yTagQuestionMark, 1.AnchorId),
-               scalar("", yTagQuestionMark, 2.AnchorId),
-               scalar("", yTagQuestionMark, 0.AnchorId), endMap(), endDoc())
+        ensure("&a : a\nb: &b\n&c : &a", startDocEvent(), startMapEvent(),
+               scalarEvent("", yTagQuestionMark, 0.AnchorId), scalarEvent("a"),
+               scalarEvent("b"), scalarEvent("", yTagQuestionMark, 1.AnchorId),
+               scalarEvent("", yTagQuestionMark, 2.AnchorId),
+               scalarEvent("", yTagQuestionMark, 3.AnchorId), endMapEvent(), endDocEvent())

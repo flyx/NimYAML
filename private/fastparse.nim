@@ -63,10 +63,13 @@ template yieldLevelEnd() {.dirty.} =
     anchor = yAnchorNone
     yield endMapEvent()
   of fplScalar:
-    applyObjectProperties()
     yield scalarEvent(content, tag, anchor)
+    tag = yTagQuestionMark
+    anchor = yAnchorNone
   of fplUnknown:
-    yield scalarEvent("")
+    yield scalarEvent("", tag, anchor)
+    tag = yTagQuestionMark
+    anchor = yAnchorNone
 
 template handleLineEnd(insideDocument: bool) {.dirty.} =
   case lexer.buf[lexer.bufpos]
@@ -99,31 +102,24 @@ template handleObjectEnd(nextState: FastParseState) {.dirty.} =
     of fplUnknown, fplScalar:
       assert(false)
 
-template handleObjectStart(k: YamlStreamEventKind, isFlow: bool) {.dirty.} =
+template handleObjectStart(k: YamlStreamEventKind) {.dirty.} =
   assert(level.kind == fplUnknown)
   when k == yamlStartMap:
-    when isFlow:
-      yield startMapEvent(tag, anchor)
-    else:
-      yield startMapEvent(objectTag, objectAnchor)
-    debug("started map at " & $indentation)
+    yield startMapEvent(tag, anchor)
+    debug("started map at " & (if level.indentation == -1: $indentation else:
+          $level.indentation))
     level.kind = fplMapKey
   else:
-    when isFlow:
-      yield startSeqEvent(tag, anchor)
-    else:
-      yield startSeqEvent(objectTag, objectAnchor)
-    debug("started sequence at " & $indentation)
+    yield startSeqEvent(tag, anchor)
+    debug("started sequence at " & (if level.indentation == -1: $indentation else:
+          $level.indentation))
     level.kind = fplSequence
-  when isFlow:
-    tag = yTagQuestionmark
-    anchor = yAnchorNone
-  else:
-    objectTag = yTagQuestionmark
-    objectAnchor = yAnchorNone
-  level.indentation = indentation
+  tag = yTagQuestionmark
+  anchor = yAnchorNone
+  if level.indentation == -1:
+    level.indentation = indentation
   ancestry.add(level)
-  level.kind = fplUnknown
+  level = FastParseLevel(kind: fplUnknown, indentation: -1)
   
 template closeMoreIndentedLevels() {.dirty.} =
   while ancestry.len > 0:
@@ -145,23 +141,22 @@ template closeEverything() {.dirty.} =
 template handleBlockSequenceIndicator() {.dirty.} =
   case level.kind
   of fplUnknown:
-    handleObjectStart(yamlStartSequence, false)
+    handleObjectStart(yamlStartSequence)
   of fplSequence:
     if level.indentation != indentation:
       raiseError("Invalid indentation of block sequence indicator",
                  lexer.bufpos)
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: -1)
   else:
       raiseError("Illegal sequence item in map")
   lexer.skipWhitespace()
   indentation = lexer.getColNumber(lexer.bufpos)
-  level.indentation = indentation
 
 template handleMapKeyIndicator() {.dirty.} =
   case level.kind
   of fplUnknown:
-    handleObjectStart(yamlStartMap, false)
+    handleObjectStart(yamlStartMap)
   of fplMapValue:
     if level.indentation != indentation:
       raiseError("Invalid indentation of map key indicator",
@@ -169,26 +164,31 @@ template handleMapKeyIndicator() {.dirty.} =
     yield scalarEvent("", yTagQuestionmark, yAnchorNone)
     level.kind = fplMapKey
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: -1)
   of fplMapKey:
     if level.indentation != indentation:
       raiseError("Invalid indentation of map key indicator",
                  lexer.bufpos)
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: -1)
   of fplSequence:
     raiseError("Unexpected map key indicator (expected '- ')")
   of fplScalar:
     raiseError("Unexpected map key indicator (expected multiline scalar end)")
   lexer.skipWhitespace()
   indentation = lexer.getColNumber(lexer.bufpos)
-  level.indentation = indentation
 
 template handleMapValueIndicator() {.dirty.} =
   case level.kind
   of fplUnknown:
-    handleObjectStart(yamlStartMap, false)
-    yield scalarEvent("", yTagQuestionmark, yAnchorNone)
+    if level.indentation == -1:
+      handleObjectStart(yamlStartMap)
+      yield scalarEvent("", yTagQuestionmark, yAnchorNone)
+    else:
+      yield scalarEvent("", tag, anchor)
+      tag = yTagQuestionmark
+      anchor = yAnchorNone
+    ancestry[ancestry.high].kind = fplMapValue
   of fplMapKey:
     if level.indentation != indentation:
       raiseError("Invalid indentation of map key indicator",
@@ -196,32 +196,19 @@ template handleMapValueIndicator() {.dirty.} =
     yield scalarEvent("", yTagQuestionmark, yAnchorNone)
     level.kind = fplMapValue
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: -1)
   of fplMapValue:
     if level.indentation != indentation:
       raiseError("Invalid indentation of map key indicator",
                  lexer.bufpos)
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: -1)
   of fplSequence:
     raiseError("Unexpected map value indicator (expected '- ')")
   of fplScalar:
     raiseError("Unexpected map value indicator (expected multiline scalar end)")
   lexer.skipWhitespace()
   indentation = lexer.getColNumber(lexer.bufpos)
-  level.indentation = indentation
-  
-template propsToObjectProps() {.dirty.} =
-  if objectTag == yTagQuestionmark:
-    objectTag = tag
-    tag = yTagQuestionmark
-  elif tag != yTagQuestionMark:
-    raiseError("Only one tag is allowed per node")
-  if objectAnchor == yAnchorNone:
-    objectAnchor = anchor
-    anchor = yAnchorNone
-  elif anchor != yAnchorNone:
-    raiseError("Only one anchor is allowed per node")
 
 template initDocValues() {.dirty.} =
   shorthands = initTable[string, string]()
@@ -229,26 +216,9 @@ template initDocValues() {.dirty.} =
   shorthands["!"] = "!"
   shorthands["!!"] = "tag:yaml.org,2002:"
   nextAnchorId = 0.AnchorId
-  level = FastParseLevel(kind: fplUnknown, indentation: 0)
+  level = FastParseLevel(kind: fplUnknown, indentation: -1)
   tag = yTagQuestionmark
-  objectTag = yTagQuestionmark
   anchor = yAnchorNone
-  objectAnchor = yAnchorNone
-
-template applyObjectProperties() {.dirty.} =
-  if objectTag != yTagQuestionmark:
-    if tag != yTagQuestionmark:
-      debug("tag = " & $tag & ", object = " & $objectTag)
-      raiseError("Only one tag is allowed per node")
-    else:
-      tag = objectTag
-      objectTag = yTagQuestionmark
-  if objectAnchor != yAnchorNone:
-    if anchor != yAnchorNone:
-      raiseError("Only one anchor is allowed per node")
-    else:
-      anchor = objectAnchor
-      objectAnchor = yAnchorNone
 
 template handleTagHandle() {.dirty.} =
   if level.kind != fplUnknown:
@@ -309,43 +279,47 @@ template leaveFlowLevel() {.dirty.} =
     handleObjectEnd(fpFlowAfterObject)
   
 template handlePossibleMapStart() {.dirty.} =
-  var flowDepth = 0
-  for p in countup(lexer.bufpos, lexer.bufpos + 1024):
-    case lexer.buf[p]
-    of ':':
-      if flowDepth == 0 and lexer.buf[p + 1] in spaceOrLineEnd:
-        handleObjectStart(yamlStartMap, false)
+  if level.indentation == -1:
+    var flowDepth = 0
+    for p in countup(lexer.bufpos, lexer.bufpos + 1024):
+      case lexer.buf[p]
+      of ':':
+        if flowDepth == 0 and lexer.buf[p + 1] in spaceOrLineEnd:
+          handleObjectStart(yamlStartMap)
+          break
+      of lineEnd:
         break
-    of lineEnd:
-      break
-    of '[', '{':
-      flowDepth.inc()
-    of '}', ']':
-      flowDepth.inc(-1)
-    of '?':
-      if flowDepth == 0: break
-    of '#':
-      if lexer.buf[p - 1] in space: break
-    else:
-      discard
+      of '[', '{':
+        flowDepth.inc()
+      of '}', ']':
+        flowDepth.inc(-1)
+      of '?':
+        if flowDepth == 0: break
+      of '#':
+        if lexer.buf[p - 1] in space:
+          break
+      else:
+        discard
+    if level.indentation == -1:
+      level.indentation = indentation
 
 template handleBlockItemStart() {.dirty.} =
   case level.kind
   of fplUnknown:
-    discard
+    handlePossibleMapStart()
   of fplSequence:
     raiseError("Unexpected token (expected block sequence indicator)",
                lexer.bufpos)
   of fplMapKey:
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: indentation)
   of fplMapValue:
     yield scalarEvent("", tag, anchor)
     tag = yTagQuestionmark
     anchor = yAnchorNone
     level.kind = fplMapKey
     ancestry.add(level)
-    level.kind = fplUnknown
+    level = FastParseLevel(kind: fplUnknown, indentation: indentation)
   of fplScalar:
     assert(false)
 
@@ -815,10 +789,8 @@ template anchorName(lexer: FastLexer, content: var string) =
     lexer.bufpos.inc()
     let c = lexer.buf[lexer.bufpos]
     case c
-    of spaceOrLineEnd:
+    of spaceOrLineEnd, '[', ']', '{', '}', ',':
       break
-    of '[', ']', '{', '}', ',':
-      raiseError("Illegal character in anchor", lexer.bufpos)
     else:
       content.add(c)
 
@@ -998,8 +970,8 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
       anchors: Table[string, AnchorId]
       nextAnchorId: AnchorId
       content: string
-      tag, objectTag: TagId
-      anchor, objectAnchor: AnchorId
+      tag: TagId
+      anchor: AnchorId
       ancestry = newSeq[FastParseLevel]()
       level: FastParseLevel
       indentation: int
@@ -1040,12 +1012,30 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             lexer.finishLine()
             handleLineEnd(false)
         of ' ', '\t':
-          lexer.bufpos.inc()
+          while true:
+            lexer.bufpos.inc()
+            case lexer.buf[lexer.bufpos]
+            of ' ', '\t':
+              discard
+            of '\x0A':
+              lexer.bufpos = lexer.handleLF(lexer.bufpos)
+              break
+            of '\c':
+              lexer.bufpos = lexer.handleCR(lexer.bufpos)
+              break
+            of '#', EndOfFile:
+              lexer.lineEnding()
+              handleLineEnd(false)
+              break
+            else:
+              indentation = lexer.getColNumber(lexer.bufpos)
+              yield startDocEvent()
+              state = fpBlockObjectStart
+              break
         of '\x0A':
           lexer.bufpos = lexer.handleLF(lexer.bufpos)
         of '\c':
           lexer.bufpos = lexer.handleCR(lexer.bufpos)
-          lexer.bufpos.inc()
         of EndOfFile:
           return
         of '#':
@@ -1099,7 +1089,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             else:
               ensureCorrectIndentation()
               ancestry.add(level)
-              level.kind = fplUnknown
+              level = FastParseLevel(kind: fplUnknown, indentation: -1)
               content = ""
               lexer.plainScalar(content, cBlockOut)
               state = fpBlockAfterPlainScalar
@@ -1124,7 +1114,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             else:
               ensureCorrectIndentation()
               ancestry.add(level)
-              level.kind = fplUnknown
+              level = FastParseLevel(kind: fplUnknown, indentation: -1)
               content = ""
               lexer.plainScalar(content, cBlockOut)
               state = fpBlockAfterPlainScalar
@@ -1140,9 +1130,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             of fplScalar:
               state = fpBlockContinueScalar
             of fplUnknown:
-              handlePossibleMapStart()
               state = fpBlockObjectStart
-              level.indentation = indentation
             else:
               ensureCorrectIndentation()
               state = fpBlockObjectStart
@@ -1153,9 +1141,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           of fplScalar:
             state = fpBlockContinueScalar
           of fplUnknown:
-            handlePossibleMapStart()
             state = fpBlockObjectStart
-            level.indentation = indentation
           else:
             ensureCorrectIndentation()
             state = fpBlockObjectStart
@@ -1219,16 +1205,16 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
         of ':':
           case level.kind
           of fplUnknown:
-            handleObjectStart(yamlStartMap, false)
+            handleObjectStart(yamlStartMap)
           of fplMapKey:
             yield scalarEvent("", yTagQuestionMark, yAnchorNone)
             level.kind = fplMapValue
             ancestry.add(level)
-            level.kind = fplUnknown
+            level = FastParseLevel(kind: fplUnknown, indentation: -1)
           of fplMapValue:
             level.kind = fplMapValue
             ancestry.add(level)
-            level.kind = fplUnknown
+            level = FastParseLevel(kind: fplUnknown, indentation: -1)
           of fplSequence:
             raiseError("Illegal token (expected sequence item)")
           of fplScalar:
@@ -1236,10 +1222,8 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           lexer.bufpos.inc()
           lexer.skipWhitespace()
           indentation = lexer.getColNumber(lexer.bufpos)
-          level.indentation = indentation
           state = fpBlockObjectStart
         of '#':
-          applyObjectProperties()
           lexer.lineEnding()
           handleLineEnd(true)
           handleObjectEnd(fpBlockLineStart)
@@ -1253,13 +1237,13 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
         let objectStart = lexer.getColNumber(lexer.bufpos)
         case lexer.buf[lexer.bufpos]
         of '\x0A':
-          propsToObjectProps()
           lexer.bufpos = lexer.handleLF(lexer.bufpos)
           state = fpBlockLineStart
+          level.indentation = -1
         of '\c':
-          propsToObjectProps()
           lexer.bufpos = lexer.handleCR(lexer.bufpos)
           state = fpBlockLineStart
+          level.indentation = -1
         of EndOfFile:
           closeEverything()
           return
@@ -1283,8 +1267,11 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(fpBlockAfterObject)
         of '|', '>':
+          # TODO: this will scan for possible map start, which is not
+          # neccessary in this case
           handleBlockItemStart()
           var stateAfter: FastParseState
+          content = ""
           lexer.blockScalar(content, stateAfter)
           if tag == yTagQuestionmark:
             tag = yTagExclamationmark
@@ -1293,6 +1280,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
         of '-':
           if lexer.isPlainSafe(lexer.bufpos + 1, cBlockOut):
             handleBlockItemStart()
+            content = ""
             lexer.tokenstart = lexer.getColNumber(lexer.bufpos)
             lexer.plainScalar(content, cBlockOut)
             state = fpBlockAfterPlainScalar
@@ -1310,11 +1298,11 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           handleAlias()
         of '[', '{':
           handleBlockItemStart()
-          applyObjectProperties()
           state = fpFlow
         of '?':
           if lexer.isPlainSafe(lexer.bufpos + 1, cBlockOut):
             handleBlockItemStart()
+            content = ""
             lexer.tokenstart = lexer.getColNumber(lexer.bufpos)
             lexer.plainScalar(content, cBlockOut)
             state = fpBlockAfterPlainScalar
@@ -1324,12 +1312,16 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
         of ':':
           if lexer.isPlainSafe(lexer.bufpos + 1, cBlockOut):
             handleBlockItemStart()
+            content = ""
             lexer.tokenstart = lexer.getColNumber(lexer.bufpos)
             lexer.plainScalar(content, cBlockOut)
             state = fpBlockAfterPlainScalar
           else:
             lexer.bufpos.inc()
             handleMapValueIndicator()
+        of '@', '`':
+          raiseError("Reserved characters cannot start a plain scalar",
+                     lexer.bufpos)
         else:
           handleBlockItemStart()
           content = ""
@@ -1376,12 +1368,12 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
         lexer.skipWhitespaceAndNewlines()
         case lexer.buf[lexer.bufpos]
         of '{':
-          handleObjectStart(yamlStartMap, true)
+          handleObjectStart(yamlStartMap)
           flowdepth.inc()
           lexer.bufpos.inc()
           explicitFlowKey = false
         of '[':
-          handleObjectStart(yamlStartSequence, true)
+          handleObjectStart(yamlStartSequence)
           flowdepth.inc()
           lexer.bufpos.inc()
         of '}':
@@ -1444,7 +1436,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           of fplUnknown, fplScalar:
             assert(false)
           ancestry.add(level)
-          level = FastParseLevel(kind: fplUnknown)
+          level = FastParseLevel(kind: fplUnknown, indentation: -1)
           lexer.bufpos.inc()
         of ':':
           assert(level.kind == fplUnknown)
@@ -1461,7 +1453,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             of fplUnknown, fplScalar:
               assert(false)
             ancestry.add(level)
-            level = FastParseLevel(kind: fplUnknown)
+            level = FastParseLevel(kind: fplUnknown, indentation: -1)
             lexer.bufpos.inc()
           else:
             handleFlowPlainScalar()
@@ -1533,7 +1525,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           of fplUnknown, fplScalar:
             assert(false)
           ancestry.add(level)
-          level = FastParseLevel(kind: fplUnknown)
+          level = FastParseLevel(kind: fplUnknown, indentation: -1)
           state = fpFlow
           lexer.bufpos.inc()
         of ':':
@@ -1545,7 +1537,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           of fplUnknown, fplScalar:
             assert(false)
           ancestry.add(level)
-          level = FastParseLevel(kind: fplUnknown)
+          level = FastParseLevel(kind: fplUnknown, indentation: -1)
           state = fpFlow
           lexer.bufpos.inc()
         of '#':
