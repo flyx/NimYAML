@@ -316,8 +316,6 @@ template handlePossibleMapStart() {.dirty.} =
       if flowDepth == 0 and lexer.buf[p + 1] in spaceOrLineEnd:
         handleObjectStart(yamlStartMap, false)
         break
-      else:
-        echo "found : but ignoring (flowDepth=", flowDepth, ", next=", lexer.buf[p + 1]
     of lineEnd:
       break
     of '[', '{':
@@ -777,6 +775,173 @@ template anchorName(lexer: FastLexer, content: var string) =
     else:
       content.add(c)
 
+template blockScalar(lexer: FastLexer, content: var string,
+                     stateAfter: var FastParseState) =
+  type ChompType = enum
+    ctKeep, ctClip, ctStrip
+  var
+    literal: bool
+    blockIndent = 0
+    chomp: ChompType = ctClip
+    detectedIndent = false
+    
+  case lexer.buf[lexer.bufpos]
+  of '|':
+    literal = true
+  of '>':
+    literal = false
+  else:
+    assert(false)
+  
+  while true:
+    lexer.bufpos.inc()
+    case lexer.buf[lexer.bufpos]
+    of '+':
+      if chomp != ctClip:
+        raiseError("Only one chomping indicator is allowed", lexer.bufpos)
+      chomp = ctKeep
+    of '-':
+      if chomp != ctClip:
+        raiseError("Only one chomping indicator is allowed", lexer.bufpos)
+      chomp = ctStrip
+    of '1'..'9':
+      if detectedIndent:
+        raiseError("Only one indentation indicator is allowed", lexer.bufpos)
+      blockIndent = int(lexer.buf[lexer.bufpos]) - int('\x30')
+      detectedIndent = true
+    of spaceOrLineEnd:
+      break
+    else:
+      raiseError("Illegal character in block scalar header", lexer.bufpos)
+  lexer.lineEnding()
+  case lexer.buf[lexer.bufpos]
+  of '\x0A':
+    lexer.bufpos = lexer.handleLF(lexer.bufpos)
+  of '\c':
+    lexer.bufpos = lexer.handleCR(lexer.bufpos)
+  of EndOfFile:
+    raiseError("Missing content of block scalar") # TODO: is this correct?
+  else:
+    assert(false)
+  var newlines = 0
+  let parentIndent = ancestry[ancestry.high].indentation
+  content = ""
+  block outer:
+    while true:
+      block inner:
+        for i in countup(1, parentIndent):
+          case lexer.buf[lexer.bufpos]
+          of ' ':
+            discard
+          of '\x0A':
+            lexer.bufpos = lexer.handleLF(lexer.bufpos)
+            newlines.inc()
+            break inner
+          of '\c':
+            lexer.bufpos = lexer.handleCR(lexer.bufpos)
+            newlines.inc()
+            break inner
+          else:
+            stateAfter = if i == 1: fpBlockLineStart else: fpBlockObjectStart
+            break outer
+          lexer.bufpos.inc()
+        if detectedIndent:
+          for i in countup(1, blockIndent):
+            case lexer.buf[lexer.bufpos]
+            of ' ':
+              discard
+            of '\x0A':
+              lexer.bufpos = lexer.handleLF(lexer.bufpos)
+              newlines.inc()
+              break inner
+            of '\c':
+              lexer.bufpos = lexer.handleCR(lexer.bufpos)
+              newlines.inc()
+              break inner
+            of EndOfFile:
+              stateAfter = fpBlockLineStart
+              break outer
+            of '#':
+              lexer.lineEnding()
+              case lexer.buf[lexer.bufpos]
+              of '\x0A':
+                lexer.bufpos = lexer.handleLF(lexer.bufpos)
+              of '\c':
+                lexer.bufpos = lexer.handleCR(lexer.bufpos)
+              else: discard
+              stateAfter = fpBlockLineStart
+              break outer
+            else:
+              raiseError("The text is less indented than expected")
+            lexer.bufpos.inc()
+        else:
+          while true:
+            case lexer.buf[lexer.bufpos]
+            of ' ':
+              discard
+            of '\x0A':
+              lexer.bufpos = lexer.handleLF(lexer.bufpos)
+              newlines.inc()
+              break inner
+            of '\c':
+              lexer.bufpos = lexer.handleCR(lexer.bufpos)
+              newlines.inc()
+              break inner
+            of EndOfFile:
+              stateAfter = fpBlockLineStart
+              break outer
+            else:
+              blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
+              detectedIndent = true
+              break
+            lexer.bufpos.inc()
+        case lexer.buf[lexer.bufpos]
+        of '\x0A':
+          lexer.bufpos = lexer.handleLF(lexer.bufpos)
+          newlines.inc()
+          break inner
+        of '\c':
+          lexer.bufpos = lexer.handleCR(lexer.bufpos)
+          newlines.inc()
+          break inner
+        of EndOfFile:
+          stateAfter = fpBlockLineStart
+          break outer
+        else:
+          discard
+        if newlines > 0:
+          if literal:
+            content.add(repeat('\x0A', newlines))
+          elif newlines == 1:
+            content.add(' ')
+          else:
+            content.add(repeat('\x0A', newlines - 1))
+          newlines = 0
+        while true:
+          let c = lexer.buf[lexer.bufpos]
+          case c
+          of '\x0A':
+            lexer.bufpos = lexer.handleLF(lexer.bufpos)
+            newlines.inc()
+            break
+          of '\c':
+            lexer.bufpos = lexer.handleCR(lexer.bufpos)
+            newlines.inc()
+            break inner
+          of EndOfFile:
+            stateAfter = fpBlockLineStart
+            break outer
+          else:
+            content.add(c)
+          lexer.bufpos.inc()
+  case chomp
+  of ctClip:
+    content.add('\x0A')
+  of ctKeep:
+    content.add(repeat('\x0A', newlines))
+  of ctStrip:
+    discard
+
 proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
   result = iterator(): YamlStreamEvent =
     var
@@ -918,18 +1083,22 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
               state = fpBlockAfterPlainScalar
         of ' ':
           lexer.skipIndentation()
-          indentation = lexer.getColNumber(lexer.bufpos)
-          closeMoreIndentedLevels()
-          case level.kind
-          of fplScalar:
-            state = fpBlockContinueScalar
-          of fplUnknown:
-            handlePossibleMapStart()
-            state = fpBlockObjectStart
-            level.indentation = indentation
+          if lexer.buf[lexer.bufpos] in ['\t', '\x0A', '\c', '#']:
+            lexer.lineEnding()
+            handleLineEnd(true)
           else:
-            ensureCorrectIndentation()
-            state = fpBlockObjectStart
+            indentation = lexer.getColNumber(lexer.bufpos)
+            closeMoreIndentedLevels()
+            case level.kind
+            of fplScalar:
+              state = fpBlockContinueScalar
+            of fplUnknown:
+              handlePossibleMapStart()
+              state = fpBlockObjectStart
+              level.indentation = indentation
+            else:
+              ensureCorrectIndentation()
+              state = fpBlockObjectStart
         else:
           indentation = 0
           closeMoreIndentedLevels()
@@ -1066,6 +1235,14 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
             tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(fpBlockAfterObject)
+        of '|', '>':
+          handleBlockItemStart()
+          var stateAfter: FastParseState
+          lexer.blockScalar(content, stateAfter)
+          if tag == yTagQuestionmark:
+            tag = yTagExclamationmark
+          yield scalarEvent(content, tag, anchor)
+          handleObjectEnd(stateAfter)
         of '-':
           if lexer.isPlainSafe(lexer.bufpos + 1, cBlockOut):
             handleBlockItemStart()
