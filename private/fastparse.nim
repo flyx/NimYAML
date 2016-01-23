@@ -564,15 +564,53 @@ proc unicodeSequence(lexer: var FastLexer, length: int):
       raiseError("Invalid character in unicode escape sequence", lexer.bufpos)
   return toUTF8(unicodeChar)
 
-template doublyQuotedScalar(lexer: FastLexer, content: var string) =
-  debug("lex: doublyQuotedScalar")
+template processDoubleQuotedWhitespace(newlines: var int) {.dirty.} =
+  var
+    after = ""
+  block outer:
+    while true:
+      case lexer.buf[lexer.bufpos]
+      of ' ', '\t':
+        after.add(lexer.buf[lexer.bufpos])
+      of '\x0A':
+        lexer.bufpos = lexer.handleLF(lexer.bufpos)
+        break
+      of '\c':
+        lexer.bufpos = lexer.handleLF(lexer.bufpos)
+        break
+      else:
+        content.add(after)
+        break outer
+      lexer.bufpos.inc()
+    while true:
+      case lexer.buf[lexer.bufpos]
+      of ' ', '\t':
+        discard
+      of '\x0A':
+        lexer.bufpos = lexer.handleLF(lexer.bufpos)
+        newlines.inc()
+      of '\c':
+        lexer.bufpos = lexer.handleCR(lexer.bufpos)
+        newlines.inc()
+      else:
+        if newlines == 0:
+          discard
+        elif newlines == 1:
+          content.add(' ')
+        else:
+          content.add(repeat('\x0A', newlines - 1))
+        break
+      lexer.bufpos.inc()
+
+template doubleQuotedScalar(lexer: FastLexer, content: var string) =
+  debug("lex: doubleQuotedScalar")
   lexer.tokenstart = lexer.getColNumber(lexer.bufpos)
+  lexer.bufpos.inc()
   while true:
-    lexer.bufpos.inc()
-    let c = lexer.buf[lexer.bufpos]
+    var c = lexer.buf[lexer.bufpos]
     case c
     of EndOfFile:
-      raiseError("Unfinished doubly quoted string")
+      raiseError("Unfinished double quoted string")
     of '\\':
       lexer.bufpos.inc()
       case lexer.buf[lexer.bufpos]
@@ -598,13 +636,22 @@ template doublyQuotedScalar(lexer: FastLexer, content: var string) =
       of 'x':       content.add(lexer.unicodeSequence(2))
       of 'u':       content.add(lexer.unicodeSequence(4))
       of 'U':       content.add(lexer.unicodeSequence(8))
+      of '\x0A', '\c':
+        var newlines = 0
+        processDoubleQuotedWhitespace(newlines)
+        continue
       else:
         raiseError("Illegal character in escape sequence")
     of '"':
       lexer.bufpos.inc()
       break
+    of '\x0A', '\c', '\t', ' ':
+      var newlines = 1
+      processdoubleQuotedWhitespace(newlines)
+      continue
     else:
       content.add(c)
+    lexer.bufpos.inc()
 
 proc isPlainSafe(lexer: FastLexer, index: int, context: YamlContext): bool =
   case lexer.buf[lexer.bufpos + 1]
@@ -1230,7 +1277,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
         of '"':
           handleBlockItemStart()
           content = ""
-          lexer.doublyQuotedScalar(content)
+          lexer.doubleQuotedScalar(content)
           if tag == yTagQuestionMark:
             tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
@@ -1427,7 +1474,7 @@ proc fastparse*(tagLib: TagLibrary, s: Stream): YamlStream =
           handleObjectEnd(fpFlowAfterObject)
         of '"':
           content = ""
-          lexer.doublyQuotedScalar(content)
+          lexer.doubleQuotedScalar(content)
           if tag == yTagQuestionmark:
             tag = yTagExclamationmark
           yield scalarEvent(content, tag, anchor)
