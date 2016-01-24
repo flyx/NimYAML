@@ -484,9 +484,9 @@ proc load*[K](input: Stream, target: var K)
         raise
     except YamlConstructionStreamError:
         let e = cast[ref YamlConstructionError](getCurrentException())
-        if e.parent is IOError:
+        if e.parent of IOError:
             raise cast[ref IOError](e.parent)
-        elif e.parent is YamlParserError:
+        elif e.parent of YamlParserError:
             raise cast[ref YamlParserError](e.parent)
         else:
             assert(false)

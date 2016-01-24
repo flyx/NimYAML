@@ -4,6 +4,8 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import typetraits
+
 type
     DumperState = enum
         dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
@@ -499,9 +501,9 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
             present(events, output, tagLib, style, indentationStep)
     except YamlPresenterStreamError:
         let e = getCurrentException()
-        if e.parent is IOError:
+        if e.parent of IOError:
             raise cast[ref IOError](e.parent)
-        elif e.parent is YamlParserError:
+        elif e.parent of YamlParserError:
             raise cast[ref YamlParserError](e.parent)
         else:
             # never happens

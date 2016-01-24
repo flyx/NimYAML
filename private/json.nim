@@ -206,9 +206,9 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
         raise e
     except YamlConstructionStreamError:
         let e = getCurrentException()
-        if e.parent is IOError:
+        if e.parent of IOError:
             raise cast[ref IOError](e.parent)
-        elif e.parent is YamlParserError:
+        elif e.parent of YamlParserError:
             raise cast[ref YamlParserError](e.parent)
         else:
             # can never happen
