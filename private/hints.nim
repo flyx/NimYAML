@@ -62,11 +62,11 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
                         newIdentNode("typeHintState"), copyNimTree(rule[2]))))
             stateBranches.add(stateBranch)
         stateBranches.add(newNimNode(nnkElse).add(newStmtList(
-                newNimNode(nnkReturnStmt).add(newIdentNode("yTypeString")))))
+                newNimNode(nnkReturnStmt).add(newIdentNode("yTypeUnknown")))))
         charBranch.add(newStmtList(stateBranches))
         result.add(charBranch)
     result.add(newNimNode(nnkElse).add(newStmtList(
-            newNimNode(nnkReturnStmt).add(newIdentNode("yTypeString")))))
+            newNimNode(nnkReturnStmt).add(newIdentNode("yTypeUnknown")))))
 
 template advanceTypeHint(ch: char) {.dirty.} =
     typeHintStateMachine ch:

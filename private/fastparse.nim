@@ -44,6 +44,15 @@ proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
     result.tagLib = tagLib
     result.callback = callback
 
+proc getLineNumber*(p: YamlParser): int = p.lexer.lineNumber
+    
+proc getColNumber*(p: YamlParser): int = p.tokenstart + 1 # column is 1-based
+
+proc getLineContent*(p: YamlParser, marker: bool = true): string =
+    result = p.lexer.getCurrentLine(false)
+    if marker:
+        result.add(repeat(' ', p.tokenstart) & "^\n")
+
 template debug(message: string) {.dirty.} =
   when defined(yamlDebug):
     try: styledWriteLine(stdout, fgBlue, message)
@@ -52,15 +61,14 @@ template debug(message: string) {.dirty.} =
 template parserError(message: string) {.dirty.} =
   var e = newException(YamlParserError, message)
   e.line = p.lexer.lineNumber
-  e.column = p.tokenstart
-  e.lineContent = p.lexer.getCurrentLine(false) &
-      repeat(' ', p.tokenstart) & "^\n"
+  e.column = p.tokenstart + 1
+  e.lineContent = p.getLineContent(true)
   raise e
 
 template lexerError(lx: BaseLexer, message: string) {.dirty.} =
   var e = newException(YamlParserError, message)
   e.line = lx.lineNumber
-  e.column = lx.bufpos
+  e.column = lx.bufpos + 1
   e.lineContent = lx.getCurrentLine(false) &
       repeat(' ', lx.getColNumber(lx.bufpos)) & "^\n"
   raise e
@@ -408,12 +416,18 @@ template yamlVersion(lexer: BaseLexer, o: var string) =
     c = lexer.buf[lexer.bufpos]
   if lexer.buf[lexer.bufpos] != '.':
     lexerError(lexer, "Invalid YAML version number")
+  o.add('.')
   lexer.bufpos.inc()
-  if lexer.buf[lexer.bufpos] notin digits:
+  c = lexer.buf[lexer.bufpos]
+  if c notin digits:
     lexerError(lexer, "Invalid YAML version number")
+  o.add(c)
   lexer.bufpos.inc()
-  while lexer.buf[lexer.bufpos] in digits:
+  c = lexer.buf[lexer.bufpos]
+  while c in digits:
+    o.add(c)
     lexer.bufpos.inc()
+    c = lexer.buf[lexer.bufpos]
   if lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
     lexerError(lexer, "Invalid YAML version number")
 
@@ -1006,8 +1020,10 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             startToken()
             p.lexer.yamlVersion(version)
             if version != "1.2":
-              echo "version is not 1.2!"
-              # TODO: warning (unknown version)
+              if p.callback != nil:
+                  p.callback(p.lexer.lineNumber, p.getColNumber(),
+                             p.getLineContent(),
+                             "Version is not 1.2, but " & version)
               discard
             p.lexer.lineEnding()
             handleLineEnd(false)
@@ -1020,7 +1036,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             p.lexer.lineEnding()
             handleLineEnd(false)
           of ldUnknown:
-            # TODO: warning (unknown directive)
+            if p.callback != nil:
+                p.callback(p.lexer.lineNumber, p.getColNumber(),
+                           p.getLineContent(), "Unknown directive")
             p.lexer.finishLine()
             handleLineEnd(false)
         of ' ', '\t':

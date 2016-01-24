@@ -7,9 +7,11 @@
 type
     Level = tuple[node: JsonNode, key: string]
 
-proc initLevel(node: JsonNode): Level = (node: node, key: cast[string](nil))
+proc initLevel(node: JsonNode): Level {.raises: [].} =
+    (node: node, key: cast[string](nil))
 
-proc jsonFromScalar(content: string, tag: TagId): JsonNode =
+proc jsonFromScalar(content: string, tag: TagId): JsonNode
+       {.raises: [YamlConstructionError].}=
     new(result)
     var mappedType: TypeHint
     
@@ -17,7 +19,7 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode =
     of yTagQuestionMark:
         mappedType = guessType(content)
     of yTagExclamationMark, yTagString:
-        mappedType = yTypeString
+        mappedType = yTypeUnknown
     of yTagBoolean:
         case guessType(content)
         of yTypeBoolTrue:
@@ -25,41 +27,56 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode =
         of yTypeBoolFalse:
             mappedType = yTypeBoolFalse
         else:
-            raise newException(ValueError, "Invalid boolean value: " & content)
+            raise newException(YamlConstructionError,
+                               "Invalid boolean value: " & content)
     of yTagInteger:
         mappedType = yTypeInteger
     of yTagNull:
         mappedType = yTypeNull
     of yTagFloat:
-        mappedType = yTypeFloat
-        ## TODO: NaN, inf
+        case guessType(content)
+        of yTypeFloat:
+            mappedType = yTypeFloat
+        of yTypeFloatInf:
+            mappedType = yTypeFloatInf
+        of yTypeFloatNaN:
+            mappedType = yTypeFloatNaN
+        else:
+            raise newException(YamlConstructionError,
+                               "Invalid float value: " & content)
     else:
         mappedType = yTypeUnknown
     
-    case mappedType
-    of yTypeInteger:
-        result.kind = JInt
-        result.num = parseBiggestInt(content)
-    of yTypeFloat:
-        result.kind = JFloat
-        result.fnum = parseFloat(content)
-    of yTypeFloatInf:
-        result.kind = JFloat
-        result.fnum = if content[0] == '-': NegInf else: Inf
-    of yTypeFloatNaN:
-        result.kind = JFloat
-        result.fnum = NaN
-    of yTypeBoolTrue:
-        result.kind = JBool
-        result.bval = true
-    of yTypeBoolFalse:
-        result.kind = JBool
-        result.bval = false
-    of yTypeNull:
-        result.kind = JNull
-    else:
-        result.kind = JString
-        result.str = content
+    try:
+        case mappedType
+        of yTypeInteger:
+            result.kind = JInt
+            result.num = parseBiggestInt(content)
+        of yTypeFloat:
+            result.kind = JFloat
+            result.fnum = parseFloat(content)
+        of yTypeFloatInf:
+            result.kind = JFloat
+            result.fnum = if content[0] == '-': NegInf else: Inf
+        of yTypeFloatNaN:
+            result.kind = JFloat
+            result.fnum = NaN
+        of yTypeBoolTrue:
+            result.kind = JBool
+            result.bval = true
+        of yTypeBoolFalse:
+            result.kind = JBool
+            result.bval = false
+        of yTypeNull:
+            result.kind = JNull
+        else:
+            result.kind = JString
+            result.str = content
+    except ValueError:
+        var e = newException(YamlConstructionError,
+                             "Cannot parse numeric value")
+        e.parent = getCurrentException()
+        raise e
 
 proc constructJson*(s: YamlStream): seq[JsonNode] =
     newSeq(result, 0)
@@ -67,8 +84,19 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
     var
         levels  = newSeq[Level]()
         anchors = initTable[AnchorId, JsonNode]()
-    
-    for event in s():
+        safeIter = iterator(): YamlStreamEvent
+                {.raises: [YamlConstructionStreamError].} =
+            while true:
+                var item: YamlStreamEvent
+                try:
+                    item = s()
+                    if finished(s): break
+                except Exception:
+                    var e = newException(YamlConstructionStreamError, "")
+                    e.parent = getCurrentException()
+                    raise e
+                yield item
+    for event in safeIter():
         case event.kind
         of yamlStartDocument:
             # we don't need to do anything here; root node will be created
@@ -104,7 +132,7 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                     # JSON only allows strings as keys
                     levels[levels.high].key = event.scalarContent
                     if event.scalarAnchor != yAnchorNone:
-                        raise newException(ValueError,
+                        raise newException(YamlConstructionError,
                                 "scalar keys may not have anchors in JSON")
                 else:
                     let jsonScalar = jsonFromScalar(event.scalarContent,
@@ -125,7 +153,7 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                 of JObject:
                     if isNil(levels[levels.high].key):
                         echo level.node.pretty()
-                        raise newException(ValueError,
+                        raise newException(YamlConstructionError,
                                 "non-scalar as key not allowed in JSON")
                     else:
                         levels[levels.high].node.fields.add(
@@ -140,15 +168,26 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
             # (else the parser would have already thrown an exception)
             case levels[levels.high].node.kind
             of JArray:
-                levels[levels.high].node.elems.add(anchors[event.aliasTarget])
+                try:
+                    levels[levels.high].node.elems.add(
+                            anchors[event.aliasTarget])
+                except KeyError:
+                    # we can safely assume that this doesn't happen. It would
+                    # have resulted in a parser error earlier.
+                    assert(false)
             of JObject:
                 if isNil(levels[levels.high].key):
-                    raise newException(ValueError,
+                    raise newException(YamlConstructionError,
                             "cannot use alias node as key in JSON")
                 else:
-                    levels[levels.high].node.fields.add(
-                            (key: levels[levels.high].key,
-                             val: anchors[event.aliasTarget]))
+                    try:
+                        levels[levels.high].node.fields.add(
+                                (key: levels[levels.high].key,
+                                 val: anchors[event.aliasTarget]))
+                    except KeyError:
+                        # we can safely assume that this doesn't happen. It would
+                        # have resulted in a parser error earlier.
+                        assert(false)
                     levels[levels.high].key = nil
             else:
                 discard # will never happen
@@ -157,4 +196,23 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
     var
         parser = newYamlParser(initCoreTagLibrary())
         events = parser.parse(s)
-    return constructJson(events)
+    try:
+        return constructJson(events)
+    except YamlConstructionError:
+        var e = cast[ref YamlConstructionError](getCurrentException())
+        e.line = parser.getLineNumber()
+        e.column = parser.getColNumber()
+        e.lineContent = parser.getLineContent()
+        raise e
+    except YamlConstructionStreamError:
+        let e = getCurrentException()
+        if e.parent is IOError:
+            raise cast[ref IOError](e.parent)
+        elif e.parent is YamlParserError:
+            raise cast[ref YamlParserError](e.parent)
+        else:
+            # can never happen
+            assert(false)
+    except Exception:
+        # compiler bug: https://github.com/nim-lang/Nim/issues/3772
+        assert(false)

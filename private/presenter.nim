@@ -27,7 +27,7 @@ proc writeDoubleQuoted(scalar: string, s: Stream)
         s.write('"')
     except:
         var e = newException(YamlPresenterOutputError, "")
-        e.cause = getCurrentException()
+        e.parent = getCurrentException()
         raise e
 
 template safeWrite(s: string or char) {.dirty.} =
@@ -35,7 +35,7 @@ template safeWrite(s: string or char) {.dirty.} =
         target.write(s)
     except:
         var e = newException(YamlPresenterOutputError, "")
-        e.cause = getCurrentException()
+        e.parent = getCurrentException()
         raise e
 
 proc startItem(target: Stream, style: PresentationStyle, indentation: int,
@@ -121,7 +121,7 @@ proc startItem(target: Stream, style: PresentationStyle, indentation: int,
                 discard # can never happen
     except:
         var e = newException(YamlPresenterOutputError, "")
-        e.cause = getCurrentException()
+        e.parent = getCurrentException()
         raise e
     
 proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
@@ -147,7 +147,7 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
             target.write(' ')
     except:
         var e = newException(YamlPresenterOutputError, "")
-        e.cause = getCurrentException()
+        e.parent = getCurrentException()
         raise e
 
 proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
@@ -166,7 +166,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                     cached.enqueue(item)
                 except:
                     var e = newException(YamlPresenterStreamError, "")
-                    e.cause = getCurrentException()
+                    e.parent = getCurrentException()
                     raise e
         indentation = 0
         levels = newSeq[DumperState]()
@@ -184,7 +184,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                     target.write("--- ")
                 except:
                     var e = newException(YamlPresenterOutputError, "")
-                    e.cause = getCurrentException()
+                    e.parent = getCurrentException()
                     raise e
         of yamlScalar:
             if levels.len == 0:
@@ -229,7 +229,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 target.write(cast[byte]('a') + cast[byte](item.aliasTarget))
             except:
                 var e = newException(YamlPresenterOutputError, "")
-                e.cause = getCurrentException()
+                e.parent = getCurrentException()
                 raise e
         of yamlStartSequence:
             var nextState: DumperState
@@ -253,7 +253,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                             break
                     except:
                         var e = newException(YamlPresenterStreamError, "")
-                        e.cause = getCurrentException()
+                        e.parent = getCurrentException()
                         raise e
                 nextState = if length <= 60: dFlowSequenceStart else:
                             dBlockSequenceItem
@@ -318,7 +318,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                             mps = mpNeedBlock
                     except:
                         var e = newException(YamlPresenterStreamError, "")
-                        e.cause = getCurrentException()
+                        e.parent = getCurrentException()
                         raise e
                 nextState = if mps == mpNeedBlock: dBlockMapValue else:
                         dBlockInlineMap
@@ -384,7 +384,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                         target.write(']')
                     except:
                         var e = newException(YamlPresenterOutputError, "")
-                        e.cause = getCurrentException()
+                        e.parent = getCurrentException()
                         raise e
                     if levels.len == 0 or levels[levels.high] notin
                             [dBlockExplicitMapKey, dBlockMapValue,
@@ -418,7 +418,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                         target.write('}')
                     except:
                         var e = newException(YamlPresenterOutputError, "")
-                        e.cause = getCurrentException()
+                        e.parent = getCurrentException()
                         raise e
                     if levels.len == 0 or levels[levels.high] notin
                             [dBlockExplicitMapKey, dBlockMapValue,
@@ -444,7 +444,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 cached.enqueue(next)
             except:
                 var e = newException(YamlPresenterStreamError, "")
-                e.cause = getCurrentException()
+                e.parent = getCurrentException()
                 raise e
             safeWrite("...\x0A")
 
@@ -454,37 +454,52 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
         taglib = initExtendedTagLibrary()
         parser = newYamlParser(tagLib)
         events = parser.parse(input)
-    if style == psCanonical:
-        var specificTagEvents = iterator(): YamlStreamEvent =
-            for e in events():
-                var event = e
-                case event.kind
-                of yamlStartDocument, yamlEndDocument, yamlEndMap, yamlAlias,
-                        yamlEndSequence:
-                    discard
-                of yamlStartMap:
-                    if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
-                        event.mapTag = yTagMap
-                of yamlStartSequence:
-                    if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
-                        event.seqTag = yTagSequence
-                of yamlScalar:
-                    if event.scalarTag == yTagQuestionMark:
-                        case guessType(event.scalarContent)
-                        of yTypeInteger:
-                            event.scalarTag = yTagInteger
-                        of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
-                            event.scalarTag = yTagFloat
-                        of yTypeBoolTrue, yTypeBoolFalse:
-                            event.scalarTag = yTagBoolean
-                        of yTypeNull:
-                            event.scalarTag = yTagNull
-                        of yTypeString, yTypeUnknown:
+    try:
+        if style == psCanonical:
+            var specificTagEvents = iterator(): YamlStreamEvent =
+                for e in events():
+                    var event = e
+                    case event.kind
+                    of yamlStartDocument, yamlEndDocument, yamlEndMap,
+                            yamlAlias, yamlEndSequence:
+                        discard
+                    of yamlStartMap:
+                        if event.mapTag in [yTagQuestionMark,
+                                            yTagExclamationMark]:
+                            event.mapTag = yTagMap
+                    of yamlStartSequence:
+                        if event.seqTag in [yTagQuestionMark,
+                                            yTagExclamationMark]:
+                            event.seqTag = yTagSequence
+                    of yamlScalar:
+                        if event.scalarTag == yTagQuestionMark:
+                            case guessType(event.scalarContent)
+                            of yTypeInteger:
+                                event.scalarTag = yTagInteger
+                            of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
+                                event.scalarTag = yTagFloat
+                            of yTypeBoolTrue, yTypeBoolFalse:
+                                event.scalarTag = yTagBoolean
+                            of yTypeNull:
+                                event.scalarTag = yTagNull
+                            of yTypeUnknown:
+                                event.scalarTag = yTagString
+                        elif event.scalarTag == yTagExclamationMark:
                             event.scalarTag = yTagString
-                    elif event.scalarTag == yTagExclamationMark:
-                        event.scalarTag = yTagString
-                yield event
-        present(specificTagEvents, output, tagLib, style,
-                indentationStep)
-    else:
-        present(events, output, tagLib, style, indentationStep)
+                    yield event
+            present(specificTagEvents, output, tagLib, style,
+                    indentationStep)
+        else:
+            present(events, output, tagLib, style, indentationStep)
+    except YamlPresenterStreamError:
+        let e = getCurrentException()
+        if e.parent is IOError:
+            raise cast[ref IOError](e.parent)
+        elif e.parent is YamlParserError:
+            raise cast[ref YamlParserError](e.parent)
+        else:
+            # never happens
+            assert(false)
+    except Exception:
+        # compiler bug: https://github.com/nim-lang/Nim/issues/3772
+        assert(false)

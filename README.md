@@ -208,11 +208,8 @@ Output:
 
  * Documentation:
    - Document yaml.serialization
-   - Setup github pages site with proper API documentation
  * Lexer:
    - Add type hints for more scalar types
- * Parser:
-   - Properly handle leading spaces in block scalars
  * Serialization:
    - Support for more standard library types
    - Support for ref and ptr types
