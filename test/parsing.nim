@@ -53,7 +53,8 @@ proc printDifference(expected, actual: YamlStreamEvent) =
 template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
     var
         i = 0
-        events = fastparse(tagLib, newStringStream(input))
+        parser = newYamlParser(tagLib)
+        events = parser.parse(newStringStream(input))
     try:
         for token in events():
             if i >= expected.len:
@@ -75,7 +76,7 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
 
 suite "Parsing":
     setup:
-        var tagLib = coreTagLibrary
+        var tagLib = initCoreTagLibrary()
     teardown:
         discard
     

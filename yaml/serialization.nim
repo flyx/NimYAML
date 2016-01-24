@@ -1,5 +1,5 @@
 import "../yaml"
-import macros, strutils, streams, tables, json, hashes, re
+import macros, strutils, streams, tables, json, hashes
 export yaml, streams, tables, json
 
 type
@@ -425,8 +425,8 @@ proc serialize*[K, V](value: Table[K, V],
 
 proc load*[K](input: Stream, target: var K) =
     var
-        parser = newParser(serializationTagLibrary)
-        events = parser.parse(input)
+        tagLib = serializationTagLibrary
+        events = parse(tagLib, input)
     assert events().kind == yamlStartDocument
     construct(events, target)
     assert events().kind == yamlEndDocument

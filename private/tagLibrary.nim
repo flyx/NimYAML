@@ -4,13 +4,35 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+proc `$`*(id: TagId): string =
+    case id
+    of yTagQuestionMark: "?"
+    of yTagExclamationMark: "!"
+    of yTagString: "!!str"
+    of yTagSequence: "!!seq"
+    of yTagMap: "!!map"
+    of yTagNull: "!!null"
+    of yTagBoolean: "!!bool"
+    of yTagInteger: "!!int"
+    of yTagFloat: "!!float"
+    of yTagOrderedMap: "!!omap"
+    of yTagPairs: "!!pairs"
+    of yTagSet: "!!set"
+    of yTagBinary: "!!binary"
+    of yTagMerge: "!!merge"
+    of yTagTimestamp: "!!timestamp"
+    of yTagValue: "!!value"
+    of yTagYaml: "!!yaml"
+    else:
+        "<" & $cast[int](id) & ">"
+
 proc initTagLibrary*(): TagLibrary =
     new(result)
     result.tags = initTable[string, TagId]()
-    result.nextCustomTagId = yFirstCustomTagId
     result.secondaryPrefix = yamlTagRepositoryPrefix
+    result.nextCustomTagId = yFirstCustomTagId
 
-proc registerUri*(tagLib: TagLibrary, uri: string): TagId =
+proc registerUri*(tagLib: TagLibrary, uri: string): TagId =  
     tagLib.tags[uri] = tagLib.nextCustomTagId
     result = tagLib.nextCustomTagId
     tagLib.nextCustomTagId = cast[TagId](cast[int](tagLib.nextCustomTagId) + 1)

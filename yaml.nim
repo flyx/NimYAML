@@ -70,8 +70,8 @@ type
         ## becomes invalid as soon as the current document scope is invalidated
         ## (for example, because the parser yielded a ``yamlEndDocument``
         ## event). ``AnchorId`` s exists because of efficiency, much like
-        ## ``TagId`` s. The actual anchor name can be queried with
-        ## `anchor <#anchor,YamlParser,AnchorId>`_.
+        ## ``TagId`` s. The actual anchor name is a presentation detail and
+        ## cannot be queried by the user.
     
     YamlStreamEvent* = object
         ## An element from a `YamlStream <#YamlStream>`_. Events that start an
@@ -114,29 +114,20 @@ type
         ## well-formed if it's an input.
     
     TagLibrary* = ref object
-        ## A ``YamlTagLibrary`` maps tag URIs to ``TagId`` s. YAML tag URIs
-        ## that are defined in the YAML specification or in the
-        ## `YAML tag repository <http://yaml.org/type/>`_ should be mapped to
-        ## the ``TagId`` s defined as constants in this module.
+        ## A ``TagLibrary`` maps tag URIs to ``TagId`` s.
         ##
         ## Three tag libraries are provided with this module:
         ## `failsafeTagLibrary <#failsafeTagLibrary>`_, 
         ## `coreTagLibrary <#coreTagLibrary>`_, and 
         ## `extendedTagLibrary <#extendedTagLibrary>`_.
         ##
-        ## If the ``YamlParser`` encounters a tag which is not part of
-        ## the ``TagLibrary``, it will create a new ``TagId`` equal to
-        ## ``nextCustomTagId`` and increase that variable. It will be
-        ## initialized to `yFirstCustomTagId <#yFirstCustomTagId>`_. If you do
-        ## not want to allow unknown tag URIs to be processed, just abort
-        ## processing as soon as you encounter the ``yFirstCustomTagId``.
-        ##
-        ## It is highly recommended to base any ``YamlTagLibrary`` on at least
-        ## ``coreTagLibrary``. But it is also possible to use a completely empty
-        ## library and treat all URIs as custom tags.
+        ## When `YamlParser <#YamlParser>`_ encounters tags not existing in the
+        ## tag library, it will assign ``nextCustomTagId`` to the URI, add it
+        ## to the tag library and increase ``nextCustomTagId``.
         tags*: Table[string, TagId]
         nextCustomTagId*: TagId
         secondaryPrefix*: string
+    
     
     WarningCallback* = proc(line, column: int, lineContent: string,
                                 message: string)
@@ -148,15 +139,17 @@ type
         ## - If there is an unknown directive encountered.
     
     YamlParser* = ref object
-        ## A parser object. Retains its ``YamlTagLibrary`` across calls to
-        ## `parse <#parse,YamlSequentialParser,Stream,YamlStream>`_. Can be used
+        ## A parser object. Retains its ``TagLibrary`` across calls to
+        ## `parse <#parse,YamlParser,Stream,YamlStream>`_. Can be used
         ## to access anchor names while parsing a YAML character stream, but
         ## only until the document goes out of scope (i.e. until
         ## ``yamlEndDocument`` is yielded).
         tagLib: TagLibrary
         anchors: OrderedTable[string, AnchorId]
         callback: WarningCallback
-    
+        lexer: BaseLexer
+        tokenstart: int
+        
     PresentationStyle* = enum
         ## Different styles for YAML character stream output.
         ##
@@ -327,7 +320,7 @@ proc initTagLibrary*(): TagLibrary
     ## ``yFirstCustomTagId``.
 
 proc registerUri*(tagLib: TagLibrary, uri: string): TagId
-    ## registers a custom tag URI with a ``YamlTagLibrary``. The URI will get
+    ## registers a custom tag URI with a ``TagLibrary``. The URI will get
     ## the ``TagId`` ``nextCustomTagId``, which will be incremented.
     
 proc uri*(tagLib: TagLibrary, id: TagId): string
@@ -336,50 +329,36 @@ proc uri*(tagLib: TagLibrary, id: TagId): string
 # these should be consts, but the Nim VM still has problems handling tables
 # properly, so we use let instead.
 
-proc initFailsafeTagLibrary(): TagLibrary
-proc initCoreTagLibrary(): TagLibrary
-proc initExtendedTagLibrary(): TagLibrary
-
-let
-    failsafeTagLibrary*: TagLibrary = initFailsafeTagLibrary() ## \
-        ## Contains only:
-        ## - ``!``
-        ## - ``?``
-        ## - ``!!str``
-        ## - ``!!map``
-        ## - ``!!seq``
-    coreTagLibrary*: TagLibrary = initCoreTagLibrary() ## \
-        ## Contains everything in ``failsafeTagLibrary`` plus:
-        ## - ``!!null``
-        ## - ``!!bool``
-        ## - ``!!int``
-        ## - ``!!float``
-    extendedTagLibrary*: TagLibrary = initExtendedTagLibrary() ## \
-        ## Contains everything in ``coreTagLibrary`` plus:
-        ## - ``!!omap``
-        ## - ``!!pairs``
-        ## - ``!!set``
-        ## - ``!!binary``
-        ## - ``!!merge``
-        ## - ``!!timestamp``
-        ## - ``!!value``
-        ## - ``!!yaml``
+proc initFailsafeTagLibrary*(): TagLibrary
+    ## Contains only:
+    ## - ``!``
+    ## - ``?``
+    ## - ``!!str``
+    ## - ``!!map``
+    ## - ``!!seq``
+proc initCoreTagLibrary*(): TagLibrary
+    ## Contains everything in ``initFailsafeTagLibrary`` plus:
+    ## - ``!!null``
+    ## - ``!!bool``
+    ## - ``!!int``
+    ## - ``!!float``
+proc initExtendedTagLibrary*(): TagLibrary
+    ## Contains everything from ``initCoreTagLibrary`` plus:
+    ## - ``!!omap``
+    ## - ``!!pairs``
+    ## - ``!!set``
+    ## - ``!!binary``
+    ## - ``!!merge``
+    ## - ``!!timestamp``
+    ## - ``!!value``
+    ## - ``!!yaml``
 
 proc guessType*(scalar: string): TypeHint {.raises: [].}
 
-proc newParser*(tagLib: TagLibrary): YamlParser
-    ## Instanciates a parser
+proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
+                    callback: WarningCallback = nil): YamlParser
 
-proc setWarningCallback*(parser: YamlParser, callback: WarningCallback)
-
-proc anchor*(parser: YamlParser, id: AnchorId): string
-    ## Get the anchor name which an ``AnchorId`` maps to
-
-proc parse*(parser: YamlParser, s: Stream):
-            YamlStream {.raises: [IOError, YamlParserError].}
-    ## Parse a YAML character stream. ``s`` must be readable.
-
-proc fastparse*(tagLib: TagLibrary, s: Stream):
+proc parse*(p: YamlParser, s: Stream):
         YamlStream {.raises: [IOError, YamlParserError].}
 
 proc constructJson*(s: YamlStream): seq[JsonNode]
@@ -415,10 +394,8 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
 
 # implementation
 
-include private.lexer
 include private.tagLibrary
 include private.events
-include private.parser
 include private.json
 include private.presenter
 include private.hints

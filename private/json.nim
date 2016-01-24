@@ -155,6 +155,6 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
 
 proc loadToJson*(s: Stream): seq[JsonNode] =
     var
-        parser = newParser(coreTagLibrary)
+        parser = newYamlParser(initCoreTagLibrary())
         events = parser.parse(s)
     return constructJson(events)

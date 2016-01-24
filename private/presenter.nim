@@ -131,7 +131,7 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
             let tagUri = tagLib.uri(tag)
             if tagUri.startsWith(tagLib.secondaryPrefix):
                 target.write("!!")
-                target.write(tagUri[18..^1])
+                target.write(tagUri[18..tagUri.high])
                 target.write(' ')
             elif tagUri.startsWith("!"):
                 target.write(tagUri)
@@ -249,7 +249,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                         of yamlEndSequence:
                             break
                         else:
-                            length = int.high
+                            length = high(int)
                             break
                     except:
                         var e = newException(YamlPresenterStreamError, "")
@@ -451,8 +451,8 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
 proc transform*(input: Stream, output: Stream, style: PresentationStyle,
                 indentationStep: int = 2) =
     var
-        tagLib = extendedTagLibrary
-        parser = newParser(tagLib)
+        taglib = initExtendedTagLibrary()
+        parser = newYamlParser(tagLib)
         events = parser.parse(input)
     if style == psCanonical:
         var specificTagEvents = iterator(): YamlStreamEvent =
@@ -487,5 +487,4 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
         present(specificTagEvents, output, tagLib, style,
                 indentationStep)
     else:
-        present(parser.parse(input), output, tagLib, style,
-                indentationStep)
+        present(events, output, tagLib, style, indentationStep)

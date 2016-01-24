@@ -9,12 +9,13 @@ make_serializable:
 
 suite "Serialization":
     setup:
-        var parser = newParser(serializationTagLibrary)
+        var tagLib = serializationTagLibrary
 
     test "Serialization: Load string sequence":
         let input = newStringStream(" - a\n - b")
         var
             result: seq[string]
+            parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
@@ -33,6 +34,7 @@ suite "Serialization":
         let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
         var
             result: Table[int, string]
+            parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
@@ -53,6 +55,7 @@ suite "Serialization":
         let input = newStringStream(" - [1, 2, 3]\n - [4, 5]\n - [6]")
         var
             result: seq[seq[int]]
+            parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
@@ -72,6 +75,7 @@ suite "Serialization":
         let input = newStringStream("firstname: Peter\nsurname: Pan\nage: 12")
         var
             result: Person
+            parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
@@ -91,6 +95,7 @@ suite "Serialization":
             "--- !nim:seq(tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
         var
             result: seq[string]
+            parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
@@ -109,6 +114,7 @@ suite "Serialization":
             "--- !nim:Person\nfirstname: Peter\nsurname: Pan\nage: 12")
         var
             result: Person
+            parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
