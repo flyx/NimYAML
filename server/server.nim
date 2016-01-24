@@ -12,13 +12,13 @@ routes:
         headers["Content-Type"] = "text/plain"
         resp "I am a friendly NimYAML parser webservice."
     post "/":
-        var style: YamlPresentationStyle
+        var style: PresentationStyle
         case @"style"
-        of "minimal": style = ypsMinimal
-        of "canonical": style = ypsCanonical
-        of "default": style = ypsDefault
-        of "json": style = ypsJson
-        of "block": style = ypsBlockOnly
+        of "minimal": style = psMinimal
+        of "canonical": style = psCanonical
+        of "default": style = psDefault
+        of "json": style = psJson
+        of "block": style = psBlockOnly
         var
             output = newStringStream()
             resultNode = newJObject()
@@ -26,7 +26,6 @@ routes:
         headers["Pragma"] = "no-cache"
         headers["Cache-Control"] = "no-cache"
         headers["Expires"] = "0"
-        echo "INPUT: ", @"input", "STYLE:", @"style"
         try:
             transform(newStringStream(@"input"), output, style)
             resultNode["code"] = %0
