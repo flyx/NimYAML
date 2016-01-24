@@ -208,10 +208,16 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 elif item.scalarTag in [yTagQuestionMark, yTagNull] and
                         hint == yTypeNull:
                     safeWrite("null")
+                elif item.scalarTag in [yTagQuestionMark, yTagInteger] and
+                        hint == yTypeInteger:
+                    safeWrite(item.scalarContent)
                 elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
                         hint in [yTypeFloatInf, yTypeFloatNaN]:
                     raise newException(YamlPresenterJsonError,
                             "Infinity and not-a-number values cannot be presented as JSON!")
+                elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
+                        hint == yTypeFloat:
+                    safeWrite(item.scalarContent)
                 else:
                     writeDoubleQuoted(item.scalarContent, target)
             elif style == psCanonical or item.scalarContent.needsEscaping:

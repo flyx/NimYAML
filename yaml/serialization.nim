@@ -473,13 +473,27 @@ proc serialize*[K, V](value: Table[K, V],
         yield YamlStreamEvent(kind: yamlEndMap)
 
 proc load*[K](input: Stream, target: var K)
-        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
-    var
-        tagLib = serializationTagLibrary
-        events = parse(tagLib, input)
-    assert events().kind == yamlStartDocument
-    construct(events, target)
-    assert events().kind == yamlEndDocument
+        {.raises: [YamlConstructionError, IOError, YamlParserError].} =
+    try:
+        var
+            parser = newYamlParser(serializationTagLibrary)
+            events = parser.parse(input)
+        assert events().kind == yamlStartDocument
+        construct(events, target)
+        assert events().kind == yamlEndDocument
+    except YamlConstructionError, IOError, YamlParserError:
+        raise
+    except YamlConstructionStreamError:
+        let e = cast[ref YamlConstructionError](getCurrentException())
+        if e.parent is IOError:
+            raise cast[ref IOError](e.parent)
+        elif e.parent is YamlParserError:
+            raise cast[ref YamlParserError](e.parent)
+        else:
+            assert(false)
+    except Exception:
+        # compiler bug: https://github.com/nim-lang/Nim/issues/3772
+        assert(false)
 
 proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
               tagStyle: TagStyle = tsRootOnly, indentationStep: int = 2)
