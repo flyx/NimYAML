@@ -571,4 +571,7 @@ proc yaml_emitter_dump*(emitter: ptr yaml_emitter_t;
 proc yaml_emitter_flush*(emitter: ptr yaml_emitter_t): cint
 {.pop.}
 
-{.link: "/usr/lib/x86_64-linux-gnu/libyaml-0.so.2".}
+when system.hostOS == "linux":
+  {.link: "/usr/lib/x86_64-linux-gnu/libyaml-0.so.2".}
+elif system.hostOS == "macosx":
+  {.link: "/Users/flyx/.nix-profile/lib/libyaml-0.2.dylib"}

@@ -2,7 +2,26 @@ import "../yaml"
 
 from nimlets_yaml import objKind
 
-import math, strutils, stopwatch, terminal
+import math, strutils, stopwatch, terminal, algorithm
+
+proc cmp(left, right: clock): int = cmp(left.nanoseconds(), right.nanoseconds()) 
+
+template multiBench(nanosecs: int64, times: int, body: stmt): stmt =
+    assert(times mod 2 == 0)
+    var arr: array[0..times - 1, int64]
+    for i in countup(0, times - 1):
+        var c: clock
+        bench(c):
+            body
+        arr[i] = c.nanoseconds()
+    sort(arr, cmp)
+    # ignore lowest and highest 10%
+    let tenth: int = times div 10
+    let lowest = arr[tenth]
+    var totaldiff = 0.int64
+    for i in countup(tenth + 1, times - tenth - 1):
+        totaldiff += arr[i] - lowest
+    nanosecs = lowest + totaldiff div (times - 2 * tenth)
 
 type
     ObjectKind = enum
@@ -130,60 +149,58 @@ proc genJsonString(size: int, maxStringLen: int): string =
 
 var
     cYaml1k, cYaml10k, cYaml100k, cJson1k, cJson10k, cJson100k,
-            cLibYaml1k, cLibYaml10k, cLibYaml100k: clock
+            cLibYaml1k, cLibYaml10k, cLibYaml100k: int64
     json1k   = genJsonString(1, 32)
     json10k  = genJsonString(10, 32)
     json100k = genJsonString(100, 32)
     tagLib   = initCoreTagLibrary()
-    
-    s = newStringStream(json1k)
     parser = newYamlParser(initCoreTagLibrary())
+    
 block:
-    bench(cYaml1k):
-        let res = constructJson(parser.parse(s))
-        assert res[0].kind == JObject
-
-s = newStringStream(json10k)
-
-block:
-    bench(cYaml10k):
-        let res = constructJson(parser.parse(s))
-        assert res[0].kind == JObject
-
-s = newStringStream(json100k)
-
-block:
-    bench(cYaml100k):
+    multibench(cYaml1k, 100):
+        var s = newStringStream(json1k)
         let res = constructJson(parser.parse(s))
         assert res[0].kind == JObject
 
 block:
-    bench(cJson1k):
+    multibench(cYaml10k, 100):
+        var s = newStringStream(json10k)
+        let res = constructJson(parser.parse(s))
+        assert res[0].kind == JObject
+
+block:
+    multibench(cYaml100k, 100):
+        var s = newStringStream(json100k)
+        let res = constructJson(parser.parse(s))
+        assert res[0].kind == JObject
+
+block:
+    multibench(cJson1k, 100):
         let res = parseJson(json1k)
         assert res.kind == JObject
 
 block:
-    bench(cJson10k):
+    multibench(cJson10k, 100):
         let res = parseJson(json10k)
         assert res.kind == JObject
 
 block:
-    bench(cJson100k):
+    multibench(cJson100k, 100):
         let res = parseJson(json100k)
         assert res.kind == JObject
 
 block:
-    bench(cLibYaml1k):
+    multibench(cLibYaml1k, 100):
         let res = nimlets_yaml.load(json1k)
         assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
 
 block:
-    bench(cLibYaml10k):
+    multibench(cLibYaml10k, 100):
         let res = nimlets_yaml.load(json10k)
         assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
 
 block:
-    bench(cLibYaml100k):
+    multibench(cLibYaml100k, 100):
         let res = nimlets_yaml.load(json100k)
         assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
 
@@ -195,14 +212,14 @@ setForegroundColor(fgWhite)
 writeStyled "Benchmark: Processing JSON input with YAML versus Nim's JSON implementation\n"
 writeStyled "===========================================================================\n"
 writeStyled "1k input\n--------\n"
-writeResult "YAML:    ", cYaml1k.nanoseconds div 1000
-writeResult "JSON:    ", cJson1k.nanoseconds div 1000
-writeResult "LibYAML: ", cLibYaml1k.nanoseconds div 1000
+writeResult "YAML:    ", cYaml1k div 1000
+writeResult "JSON:    ", cJson1k div 1000
+writeResult "LibYAML: ", cLibYaml1k div 1000
 writeStyled "10k input\n---------\n"
-writeResult "YAML:    ", cYaml10k.nanoseconds div 1000
-writeResult "JSON:    ", cJson10k.nanoseconds div 1000
-writeResult "LibYAML: ", cLibYaml10k.nanoseconds div 1000
+writeResult "YAML:    ", cYaml10k div 1000
+writeResult "JSON:    ", cJson10k div 1000
+writeResult "LibYAML: ", cLibYaml10k div 1000
 writeStyled "100k input\n----------\n"
-writeResult "YAML:    ", cYaml100k.nanoseconds div 1000
-writeResult "JSON:    ", cJson100k.nanoseconds div 1000
-writeResult "LibYAML: ", cLibYaml100k.nanoseconds div 1000
+writeResult "YAML:    ", cYaml100k div 1000
+writeResult "JSON:    ", cJson100k div 1000
+writeResult "LibYAML: ", cLibYaml100k div 1000

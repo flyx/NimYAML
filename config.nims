@@ -34,6 +34,8 @@ task documentation, "Generate documentation":
 task bench, "Benchmarking":
     --d:release
     --r
+    --w:off
+    --hints:off
     setCommand "c", "bench/json"
 
 task clean, "Remove all generated files":
