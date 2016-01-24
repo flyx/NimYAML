@@ -6,18 +6,27 @@ type
     TagStyle* = enum
         tsNone, tsRootOnly, tsAll
 
-proc initSerializationTagLibrary(): TagLibrary =
+const
+    yTagNimInt*     = 100.TagId
+    yTagNimInt64*   = 101.TagId
+    yTagNimFloat*   = 102.TagId
+    yTagNimFloat64* = 103.TagId
+
+proc initSerializationTagLibrary(): TagLibrary {.raises: [].} =
     result = initTagLibrary()
     result.tags["!"] = yTagExclamationMark
     result.tags["?"] = yTagQuestionMark
     result.tags["tag:yaml.org,2002:str"]       = yTagString
     result.tags["tag:yaml.org,2002:null"]      = yTagNull
     result.tags["tag:yaml.org,2002:bool"]      = yTagBoolean
-    result.tags["tag:yaml.org,2002:int"]       = yTagInteger
     result.tags["tag:yaml.org,2002:float"]     = yTagFloat
     result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
     result.tags["tag:yaml.org,2002:value"]     = yTagValue
     result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
+    result.tags["!nim:int"]      = yTagNimInt
+    result.tags["!nim:int64"]    = yTagNimInt64
+    result.tags["!nim:float"]    = yTagNimFloat
+    result.tags["!nim:float64"]  = yTagNimFloat64
 
 var
     serializationTagLibrary* = initSerializationTagLibrary() ## \
@@ -26,11 +35,12 @@ var
         ## as those are not suited for Nim's static type system.
         ##
         ## Should not be modified manually. Will be extended by
-        ## `make_serializable <#make_serializable,stmt,stmt`_.
+        ## `serializable <#serializable,stmt,stmt>`_.
 
 
 static:
-    iterator objectFields(n: NimNode): tuple[name: NimNode, t: NimNode] =
+    iterator objectFields(n: NimNode): tuple[name: NimNode, t: NimNode]
+            {.raises: [].} =
         assert n.kind in [nnkRecList, nnkTupleTy]
         for identDefs in n.children:
             let numFields = identDefs.len - 2
@@ -42,13 +52,13 @@ static:
 template presentTag(t: typedesc, tagStyle: TagStyle): TagId =
      if tagStyle == tsNone: yTagQuestionMark else: yamlTag(t)
 
-proc lazyLoadTag*(uri: string): TagId {.inline.} =
+proc lazyLoadTag*(uri: string): TagId {.inline, raises: [].} =
     try:
         result = serializationTagLibrary.tags[uri]
     except KeyError:
         result = serializationTagLibrary.registerUri(uri)
 
-macro make_serializable*(types: stmt): stmt =
+macro serializable*(types: stmt): stmt =
     assert types.kind == nnkTypeSection
     result = newStmtList(types)
     for typedef in types.children:
@@ -116,26 +126,31 @@ macro make_serializable*(types: stmt): stmt =
                 newIdentDefs(newIdentNode("s"), newIdentNode("YamlStream")),
                 newIdentDefs(newIdentNode("result"),
                              newNimNode(nnkVarTy).add(tIdent))])
+        constructProc[4] = newNimNode(nnkPragma).add(
+                newNimNode(nnkExprColonExpr).add(newIdentNode("raises"),
+                newNimNode(nnkBracket).add(
+                newIdentNode("YamlConstructionError"),
+                newIdentNode("YamlConstructionStreamError"))))
         impl = quote do:
             var event = s()
             if finished(s) or event.kind != yamlStartMap:
-                raise newException(ValueError, "Construction error!")
+                raise newException(YamlConstructionError, "Expected map start")
             if event.mapTag != yTagQuestionMark and
                     event.mapTag != yamlTag(type(`tIdent`)):
-                raise newException(ValueError, "Wrong tag for " & `tName`)
+                raise newException(YamlConstructionError,
+                                   "Wrong tag for " & `tName`)
             event = s()
-            if finished(s):
-                raise newException(ValueError, "Construction error!")
+            assert(not finished(s))
             while event.kind != yamlEndMap:
                 assert event.kind == yamlScalar
                 assert event.scalarTag in [yTagQuestionMark, yTagString]
                 case hash(event.scalarContent)
                 else:
-                    raise newException(ValueError, "Unknown key for " &
-                                       `tName` & ": " & event.scalarContent)
+                    raise newException(YamlConstructionError,
+                            "Unknown key for " & `tName` & ": " &
+                            event.scalarContent)
                 event = s()
-                if finished(s):
-                    raise newException(ValueError, "Construction error!")
+                assert(not finished(s))
         var keyCase = impl[5][1][2]
         assert keyCase.kind == nnkCaseStmt
         for field in objectFields(recList):
@@ -158,6 +173,9 @@ macro make_serializable*(types: stmt): stmt =
                 newIdentDefs(newIdentNode("tagStyle"),
                              newIdentNode("TagStyle"),
                              newIdentNode("tsNone"))])
+        serializeProc[4] = newNimNode(nnkPragma).add(
+                newNimNode(nnkExprColonExpr).add(newIdentNode("raises"),
+                newNimNode(nnkBracket)))
         var iterBody = newStmtList(
             newLetStmt(newIdentNode("childTagStyle"), newNimNode(nnkIfExpr).add(
                 newNimNode(nnkElifExpr).add(
@@ -213,91 +231,114 @@ macro make_serializable*(types: stmt): stmt =
         serializeProc[6] = impl
         result.add(serializeProc)
 
-proc prepend*(event: YamlStreamEvent, s: YamlStream): YamlStream =
+proc prepend(event: YamlStreamEvent, s: YamlStream): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield event
         for e in s():
             yield e
 
-proc yamlTag*(T: typedesc[string]): TagId {.inline.} = yTagString
+proc safeTagUri*(id: TagId): string {.raises: [].} =
+    try:
+        let uri = serializationTagLibrary.uri(id)
+        if uri.len > 0 and uri[0] == '!':
+            return uri[1..uri.len - 1]
+        else:
+            return uri
+    except KeyError:
+        # cannot happen (theoretically, you known)
+        assert(false)
 
-proc safeTagUri*(id: TagId): string =
-    let uri = serializationTagLibrary.uri(id)
-    if uri.len > 0 and uri[0] == '!':
-        return uri[1..uri.len - 1]
-    else:
-        return uri
-
-proc construct*(s: YamlStream, result: var string) =
-    let item = s()
+template constructScalarItem(item: YamlStreamEvent, name: string, t: TagId,
+                             content: stmt) =
+    try:
+        item = s()
+    except Exception:
+        var e = newException(YamlConstructionStreamError, "")
+        e.parent = getCurrentException()
+        raise e
     if finished(s) or item.kind != yamlScalar:
-        raise newException(ValueError, "Construction error!")
-    if item.scalarTag notin [yTagQuestionMark, yTagExclamationMark, yTagString]:
-        raise newException(ValueError, "Wrong tag for string.")
-    result = item.scalarContent
+        raise newException(YamlConstructionError, "Expected scalar")
+    if item.scalarTag notin [yTagQuestionMark, yTagExclamationMark, t]:
+        raise newException(YamlConstructionError, "Wrong tag for " & name)
+    try:
+        content
+    except YamlConstructionError:
+        raise
+    except Exception:
+        var e = newException(YamlConstructionError,
+                "Cannot construct to " & name & ": " & item.scalarContent)
+        e.parent = getCurrentException()
+        raise e
+
+template safeNextEvent(e: YamlStreamEvent, s: YamlStream) =
+    try:
+        e = s()
+    except Exception:
+        var ex = newException(YamlConstructionStreamError, "")
+        ex.parent = getCurrentException()
+        raise ex
+
+proc yamlTag*(T: typedesc[string]): TagId {.inline, raises: [].} = yTagString
+
+proc construct*(s: YamlStream, result: var string)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, "string", yTagString):
+        result = item.scalarContent
 
 proc serialize*(value: string,
-                tagStyle: TagStyle = tsNone): YamlStream =
+                tagStyle: TagStyle = tsNone): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, tagStyle), yAnchorNone)
 
-proc yamlTag*(T: typedesc[int]): TagId {.inline.} = yTagInteger
+proc yamlTag*(T: typedesc[int]): TagId {.inline.} = yTagNimInt
 
-proc construct*(s: YamlStream, result: var int) =
-    let item = s()
-    if finished(s) or item.kind != yamlScalar:
-        raise newException(ValueError, "Construction error!")
-    if item.scalarTag != yTagInteger and not (
-       item.scalarTag == yTagQuestionMark and
-       guessType(item.scalarContent) == yTypeInteger):
-        raise newException(ValueError, "Wrong scalar type for int.")
-    result = parseInt(item.scalarContent)
+proc construct*(s: YamlStream, result: var int)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, "int", yTagNimInt):
+        result = parseInt(item.scalarContent)
 
 proc serialize*(value: int, tagStyle: TagStyle = tsNone): YamlStream =
-    result = iterator(): YamlStreamEvent =
+    result = iterator(): YamlStreamEvent {.raises: [].} =
         yield scalarEvent($value, presentTag(int, tagStyle), yAnchorNone)
 
-proc yamlTag*(T: typedesc[int64]): TagId {.inline.} = yTagInteger
+proc yamlTag*(T: typedesc[int64]): TagId {.inline, raises: [].} = yTagNimInt64
 
-proc contruct*(s: YamlStream, result: var int64) =
-    let item = s()
-    if finished(s) or item.kind != yamlScalar:
-        raise newException(ValueError, "Construction error!")
-    if item.scalarTag != yTagInteger and not (
-       item.scalarTag == yTagQuestionMark and
-       guessType(item.scalarContent) == yTypeInteger):
-        raise newException(ValueError, "Wrong scalar type for int64.")
-    result = parseBiggestInt(item.scalarContent)
+proc contruct*(s: YamlStream, result: var int64)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, "int64", yTagNimInt64):
+        result = parseBiggestInt(item.scalarContent)
 
-proc serialize*(value: int64, tagStyle: TagStyle = tsNone): YamlStream =
+proc serialize*(value: int64, tagStyle: TagStyle = tsNone): YamlStream
+        {.raises: [].}=
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(int64, tagStyle), yAnchorNone)
 
-proc yamlTag*(T: typedesc[float]): TagId {.inline.} = yTagFloat
+proc yamlTag*(T: typedesc[float]): TagId {.inline, raises: [].} = yTagNimFloat
 
-proc construct*(s: YamlStream, result: var float) =
-    let item = s()
-    if finished(s) or item.kind != yamlScalar:
-        raise newException(ValueError, "Construction error!")
-    let hint = guessType(item.scalarContent)
-    if item.scalarTag != yTagFloat and not (
-       item.scalarTag == yTagQuestionMark and
-       hint in [yTypeFloat, yTypeFloatInf, yTypeFloatNaN]):
-        raise newException(ValueError, "Wrong scalar type for float.")
-    case hint
-    of yTypeFloat:
-        result = parseFloat(item.scalarContent)
-    of yTypeFloatInf:
-        if item.scalarContent[0] == '-':
-            result = NegInf
+proc construct*(s: YamlStream, result: var float)
+         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, "float", yTagNimFloat):
+        let hint = guessType(item.scalarContent)
+        case hint
+        of yTypeFloat:
+            result = parseFloat(item.scalarContent)
+        of yTypeFloatInf:
+            if item.scalarContent[0] == '-':
+                result = NegInf
+            else:
+                result = Inf
+        of yTypeFloatNaN:
+            result = NaN
         else:
-            result = Inf
-    of yTypeFloatNaN:
-        result = NaN
-    else:
-        raise newException(ValueError, "Wrong scalar type for float.")
+            raise newException(YamlConstructionError,
+                    "Cannot construct to float: " & item.scalarContent)
 
-proc serialize*(value: float, tagStyle: TagStyle = tsNone): YamlStream =
+proc serialize*(value: float, tagStyle: TagStyle = tsNone): YamlStream
+         {.raises: [].}=
     result = iterator(): YamlStreamEvent =
         var
             asString: string
@@ -312,57 +353,57 @@ proc serialize*(value: float, tagStyle: TagStyle = tsNone): YamlStream =
             asString = $value
         yield scalarEvent(asString, presentTag(float, tagStyle), yAnchorNone)
 
-proc yamlTag*(T: typedesc[bool]): TagId {.inline.} = yTagBoolean
+proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
 
-proc construct*(s: YamlStream, result: var bool) =
-    let item = s()
-    if finished(s) or item.kind != yamlScalar:
-        raise newException(ValueError, "Construction error!")
-    let hint = guessType(item.scalarContent)
-    case item.scalarTag
-    of yTagQuestionMark, yTagBoolean:
-        case hint
+proc construct*(s: YamlStream, result: var bool)
+         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, "bool", yTagBoolean):
+        case guessType(item.scalarContent)
         of yTypeBoolTrue:
             result = true
         of yTypeBoolFalse:
             result = false
         else:
-            raise newException(ValueError,
-                               "Not a boolean: " & item.scalarContent)
-    else:
-        raise newException(ValueError, "Wrong scalar type for bool")
+            raise newException(YamlConstructionError,
+                    "Cannot construct to bool: " & item.scalarContent)
         
-proc serialize*(value: bool, tagStyle: TagStyle = tsNone): YamlStream =
+proc serialize*(value: bool, tagStyle: TagStyle = tsNone): YamlStream 
+        {.raises: [].}=
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, tagStyle),
                           yAnchorNone)
 
-proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline.} =
+proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
     let uri = "!nim:seq(" & safeTagUri(yamlTag(I)) & ")"
     result = lazyLoadTag(uri)
 
-proc construct*[T](s: YamlStream, result: var seq[T]) =
-    var event = s()
+proc construct*[T](s: YamlStream, result: var seq[T])
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var event: YamlStreamEvent
+    safeNextEvent(event, s)
     if finished(s) or event.kind != yamlStartSequence:
-        raise newException(ValueError, "Construction error!1")
-    if event.seqTag != yTagQuestionMark and
-            event.seqTag != yamlTag(seq[T]):
-        raise newException(ValueError, "Wrong sequence type for seq[T]")
+        raise newException(YamlConstructionError, "Expected sequence start")
+    if event.seqTag notin [yTagQuestionMark, yamlTag(seq[T])]:
+        raise newException(YamlConstructionError, "Wrong tag for seq[T]")
     result = newSeq[T]()
-    event = s()
-    if finished(s):
-        raise newException(ValueError, "Construction error!2")
+    safeNextEvent(event, s)
+    assert(not finished(s))
     while event.kind != yamlEndSequence:
         var
             item: T
             events = prepend(event, s)
-        construct(events, item)
+        try:
+            construct(events, item)
+        except:
+            # compiler bug: https://github.com/nim-lang/Nim/issues/3772
+            assert(false)
         result.add(item)
-        event = s()
-        if finished(s):
-            raise newException(ValueError, "Construction error!3")
+        safeNextEvent(event, s)
+        assert(not finished(s))
 
-proc serialize*[T](value: seq[T], tagStyle: TagStyle = tsNone): YamlStream =
+proc serialize*[T](value: seq[T], tagStyle: TagStyle = tsNone): YamlStream
+         {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if tagStyle == tsRootOnly: tsNone else: tagStyle
         yield YamlStreamEvent(kind: yamlStartSequence,
@@ -374,41 +415,49 @@ proc serialize*[T](value: seq[T], tagStyle: TagStyle = tsNone): YamlStream =
                 yield event
         yield YamlStreamEvent(kind: yamlEndSequence)
 
-proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline.} =
-    let
-        keyUri     = serializationTagLibrary.uri(yamlTag(K))
-        valueUri   = serializationTagLibrary.uri(yamlTag(V))
-        keyIdent   = if keyUri[0] == '!': keyUri[1..keyUri.len - 1] else: keyUri
-        valueIdent = if valueUri[0] == '!':
-                valueUri[1..valueUri.len - 1] else: valueUri
-        uri = "!nim:Table(" & keyUri & "," & valueUri & ")"
-    result = lazyLoadTag(uri)
+proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
+    try:
+        let
+            keyUri     = serializationTagLibrary.uri(yamlTag(K))
+            valueUri   = serializationTagLibrary.uri(yamlTag(V))
+            keyIdent   = if keyUri[0] == '!': keyUri[1..keyUri.len - 1] else:
+                         keyUri
+            valueIdent = if valueUri[0] == '!':
+                    valueUri[1..valueUri.len - 1] else: valueUri
+            uri = "!nim:Table(" & keyUri & "," & valueUri & ")"
+        result = lazyLoadTag(uri)
+    except KeyError:
+        # cannot happen (theoretically, you known)
+        assert(false)
 
-proc construct*[K, V](s: YamlStream, result: var Table[K, V]) =
-    var event = s()
+proc construct*[K, V](s: YamlStream, result: var Table[K, V])
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var event: YamlStreamEvent
+    safeNextEvent(event, s)
     if finished(s) or event.kind != yamlStartMap:
-        raise newException(ValueError, "Construction error!")
-    if event.mapTag != yTagQuestionMark and
-            event.mapTag != yamlTag(Table[K, V]):
-        raise newException(ValueError, "Wrong map type for Table[K, V]")
+        raise newException(YamlConstructionError, "Expected map start")
+    if event.mapTag notin [yTagQuestionMark, yamlTag(Table[K, V])]:
+        raise newException(YamlConstructionError, "Wrong tag for Table[K, V]")
     result = initTable[K, V]()
-    event = s()
-    if finished(s):
-        raise newException(ValueError, "Construction error!")
+    safeNextEvent(event, s)
+    assert(not finished(s))
     while event.kind != yamlEndMap:
         var
             key: K
             value: V
             events = prepend(event, s)
-        construct(events, key)
-        construct(s, value)
+        try:
+            construct(events, key)
+            construct(s, value)
+        except Exception:
+            # compiler bug: https://github.com/nim-lang/Nim/issues/3772
+            assert(false)
         result[key] = value
-        event = s()
-        if finished(s):
-            raise newException(ValueError, "Construction error!")
+        safeNextEvent(event, s)
+        assert(not finished(s))
 
 proc serialize*[K, V](value: Table[K, V],
-                      tagStyle: TagStyle = tsNone): YamlStream =
+                      tagStyle: TagStyle = tsNone): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if tagStyle == tsRootOnly: tsNone else: tagStyle
         yield YamlStreamEvent(kind: yamlStartMap,
@@ -423,7 +472,8 @@ proc serialize*[K, V](value: Table[K, V],
                 yield event
         yield YamlStreamEvent(kind: yamlEndMap)
 
-proc load*[K](input: Stream, target: var K) =
+proc load*[K](input: Stream, target: var K)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var
         tagLib = serializationTagLibrary
         events = parse(tagLib, input)
@@ -432,12 +482,26 @@ proc load*[K](input: Stream, target: var K) =
     assert events().kind == yamlEndDocument
 
 proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
-              tagStyle: TagStyle = tsRootOnly, indentationStep: int = 2) =
+              tagStyle: TagStyle = tsRootOnly, indentationStep: int = 2)
+            {.raises: [YamlConstructionError, YamlConstructionStreamError,
+                       YamlPresenterJsonError, YamlPresenterOutputError].} =
     var serialized = serialize(value,
             if style == psCanonical: tsAll else: tagStyle)
     var events = iterator(): YamlStreamEvent =
         yield YamlStreamEvent(kind: yamlStartDocument)
-        for event in serialized():
+        while true:
+            var event: YamlStreamEvent
+            try:
+                event = serialized()
+                if finished(serialized): break
+            except Exception:
+                # serializing object does not raise any errors, so we can
+                # ignore this
+                assert(false)
             yield event
         yield YamlStreamEvent(kind: yamlEndDocument)
-    present(events, target, serializationTagLibrary, style, indentationStep)
+    try:
+        present(events, target, serializationTagLibrary, style, indentationStep)
+    except YamlPresenterStreamError:
+        # serializing object does not raise any errors, so we can ignore this
+        assert(false)

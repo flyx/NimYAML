@@ -208,7 +208,7 @@ Output:
 
  * Documentation:
    - Document yaml.serialization
- * Lexer:
+ * Misc:
    - Add type hints for more scalar types
  * Serialization:
    - Support for more standard library types
@@ -225,10 +225,6 @@ Output:
    - Possibly use `genSym` for predefined and generated `yamlTag` procs because
      they are an implementation detail and should not be visible to the caller.
      same goes for `lazyLoadTag` and `safeLoadUri`.
- * General:
-   - Proper error handling (do not use `ValueError` for everything)
-   - Proper error handling, seriously
-   - Document exceptions with `raises` pragmas in code
 
 ## License
 
