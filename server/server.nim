@@ -31,15 +31,14 @@ routes:
             resultNode["code"] = %0
             resultNode["output"] = %output.data
             resp resultNode.pretty, "application/json"
-        except YamlPresenterStreamError:
-            let e = (ref YamlParserError)(getCurrentException().parent)
+        except YamlParserError:
+            let e = (ref YamlParserError)(getCurrentException())
             resultNode["code"] = %1
             resultNode["line"] = %e.line
             resultNode["column"] = %e.column
             resultNode["message"] = %e.msg
             resultNode["detail"] = %e.lineContent
             resp resultNode.pretty, "application/json"
-        
         except YamlPresenterJsonError:
             let e = getCurrentException()
             resultNode["code"] = %2
@@ -48,8 +47,8 @@ routes:
             resp resultNode.pretty, "application/json"
         except:
             let e = getCurrentException()
-            let msg = "Name: " & $e.name & "\nMessage: " & e.msg & "\nTrace:\n" & 
-                      e.getStackTrace
+            let msg = "Name: " & $e.name & "\nMessage: " & e.msg &
+                      "\nTrace:\n" & e.getStackTrace
             resp Http500, msg, "text/plain;charset=utf-8"
 
 runForever()
