@@ -144,7 +144,7 @@ macro serializable*(types: stmt): stmt =
             while event.kind != yamlEndMap:
                 assert event.kind == yamlScalar
                 assert event.scalarTag in [yTagQuestionMark, yTagString]
-                case hash(event.scalarContent)
+                case event.scalarContent
                 else:
                     raise newException(YamlConstructionError,
                             "Unknown key for " & `tName` & ": " &
@@ -154,9 +154,8 @@ macro serializable*(types: stmt): stmt =
         var keyCase = impl[5][1][2]
         assert keyCase.kind == nnkCaseStmt
         for field in objectFields(recList):
-            let nameHash = hash($field.name.ident)
             keyCase.insert(1, newNimNode(nnkOfBranch).add(
-                    newIntLitNode(nameHash)).add(newStmtList(
+                    newStrLitNode($field.name.ident)).add(newStmtList(
                         newCall("construct", [newIdentNode("s"), newDotExpr(
                         newIdentNode("result"), field.name)])
                     ))

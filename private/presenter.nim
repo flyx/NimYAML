@@ -164,7 +164,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                     if finished(s):
                         break
                     cached.enqueue(item)
-                except:
+                except Exception:
                     var e = newException(YamlPresenterStreamError, "")
                     e.parent = getCurrentException()
                     raise e
@@ -257,7 +257,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                         else:
                             length = high(int)
                             break
-                    except:
+                    except Exception:
                         var e = newException(YamlPresenterStreamError, "")
                         e.parent = getCurrentException()
                         raise e
@@ -322,7 +322,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                             break
                         else:
                             mps = mpNeedBlock
-                    except:
+                    except Exception:
                         var e = newException(YamlPresenterStreamError, "")
                         e.parent = getCurrentException()
                         raise e
@@ -448,7 +448,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 if finished(s):
                     break
                 cached.enqueue(next)
-            except:
+            except Exception:
                 var e = newException(YamlPresenterStreamError, "")
                 e.parent = getCurrentException()
                 raise e
