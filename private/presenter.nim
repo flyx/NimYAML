@@ -12,7 +12,7 @@ type
         dFlowSequenceStart
 
 proc needsEscaping(scalar: string): bool {.raises: [].} =
-    scalar.len == 0 or 
+    scalar.len == 0 or scalar[0] in ['@', '`'] or
             scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"',
                          '\'', '\x0A', '\c'}) != -1
 

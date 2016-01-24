@@ -66,6 +66,15 @@ html {
     background-color: rgba(252, 248, 244, 0.75);
 }
 
+/* necessary for links to scroll to the right position */
+dt:before {
+    margin-top: -50px;
+    height: 50px;
+    content: ' ';
+    display: block;
+    visibility: hidden;
+}
+
 #testingground textarea {
   width: 100%;
   height: 100%;

@@ -8,11 +8,6 @@ task tests, "Run all tests":
     --verbosity:0
     setCommand "c", "test/tests"
 
-task lexerTests, "Run lexer tests":
-    --r
-    --verbosity:0
-    setCommand "c", "test/lexing"
-
 task parserTests, "Run parser tests":
     --r
     --verbosity:0
@@ -25,8 +20,8 @@ task serializationTests, "Run serialization tests":
 
 task documentation, "Generate documentation":
     exec "mkdir -p docout"
-    exec r"nim doc2 -o:docout/yaml.html yaml"
-    exec r"nim doc2 -o:docout/serialization.html yaml/serialization.nim"
+    exec r"nim doc2 -o:docout/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/`git log -n 1 --format=%H` yaml"
+    exec r"nim doc2 -o:docout/serialization.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/`git log -n 1 --format=%H` yaml/serialization.nim"
     exec r"nim rst2html -o:docout/index.html doc/index.txt"
     exec "cp doc/docutils.css doc/style.css doc/testing.html docout"
     setCommand "nop"
