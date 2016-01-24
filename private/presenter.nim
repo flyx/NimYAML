@@ -4,6 +4,8 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import typetraits
+
 type
     DumperState = enum
         dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
@@ -12,7 +14,7 @@ type
         dFlowSequenceStart
 
 proc needsEscaping(scalar: string): bool {.raises: [].} =
-    scalar.len == 0 or 
+    scalar.len == 0 or scalar[0] in ['@', '`'] or
             scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"',
                          '\'', '\x0A', '\c'}) != -1
 
@@ -164,7 +166,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                     if finished(s):
                         break
                     cached.enqueue(item)
-                except:
+                except Exception:
                     var e = newException(YamlPresenterStreamError, "")
                     e.parent = getCurrentException()
                     raise e
@@ -208,10 +210,16 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 elif item.scalarTag in [yTagQuestionMark, yTagNull] and
                         hint == yTypeNull:
                     safeWrite("null")
+                elif item.scalarTag in [yTagQuestionMark, yTagInteger] and
+                        hint == yTypeInteger:
+                    safeWrite(item.scalarContent)
                 elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
                         hint in [yTypeFloatInf, yTypeFloatNaN]:
                     raise newException(YamlPresenterJsonError,
                             "Infinity and not-a-number values cannot be presented as JSON!")
+                elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
+                        hint == yTypeFloat:
+                    safeWrite(item.scalarContent)
                 else:
                     writeDoubleQuoted(item.scalarContent, target)
             elif style == psCanonical or item.scalarContent.needsEscaping:
@@ -251,7 +259,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                         else:
                             length = high(int)
                             break
-                    except:
+                    except Exception:
                         var e = newException(YamlPresenterStreamError, "")
                         e.parent = getCurrentException()
                         raise e
@@ -316,7 +324,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                             break
                         else:
                             mps = mpNeedBlock
-                    except:
+                    except Exception:
                         var e = newException(YamlPresenterStreamError, "")
                         e.parent = getCurrentException()
                         raise e
@@ -442,7 +450,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 if finished(s):
                     break
                 cached.enqueue(next)
-            except:
+            except Exception:
                 var e = newException(YamlPresenterStreamError, "")
                 e.parent = getCurrentException()
                 raise e
@@ -493,9 +501,9 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
             present(events, output, tagLib, style, indentationStep)
     except YamlPresenterStreamError:
         let e = getCurrentException()
-        if e.parent is IOError:
+        if e.parent of IOError:
             raise cast[ref IOError](e.parent)
-        elif e.parent is YamlParserError:
+        elif e.parent of YamlParserError:
             raise cast[ref YamlParserError](e.parent)
         else:
             # never happens

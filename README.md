@@ -26,7 +26,7 @@ a list:
 """
 
 var
-  parser = newParser(coreTagLibrary())
+  parser = newYamlParser(initCoreTagLibrary())
   events = parser.parse(newStringStream(input))
 
 for event in events():
@@ -60,13 +60,13 @@ import yaml, streams
 proc example(): YamlStream =
   result = iterator(): YamlStreamEvent =
     yield startDocEvent()
-    yield startMapEvent(mayHaveKeyObjects = false)
+    yield startMapEvent()
     yield scalarEvent("an integer")
     yield scalarEvent("42", tag = yTagInteger)
     yield scalarEvent("a list")
     yield startSeqEvent(tag = yTagSequence)
     yield scalarEvent("item", tag = yTagString)
-    yield scalarEvent("no", tag = yTagBoolean, typeHint = yTypeBoolFalse)
+    yield scalarEvent("no", tag = yTagBoolean)
     yield scalarEvent("")
     yield endSeqEvent()
     yield scalarEvent("a float")
@@ -74,11 +74,11 @@ proc example(): YamlStream =
     yield endMapEvent()
     yield endDocEvent()
 
-present(example(), newFileStream(stdout), coreTagLibrary(), yDumpBlockOnly)
+present(example(), newFileStream(stdout), initCoreTagLibrary(), psBlockOnly)
 echo "\n\n"
-present(example(), newFileStream(stdout), coreTagLibrary(), yDumpCanonical)
+present(example(), newFileStream(stdout), initCoreTagLibrary(), psCanonical)
 echo "\n\n"
-present(example(), newFileStream(stdout), coreTagLibrary(), yDumpJson)
+present(example(), newFileStream(stdout), initCoreTagLibrary(), psJson)
 ```
 
 Output:
@@ -129,7 +129,7 @@ a float: !!float 3.14159
 import yaml.serialization
 import tables
 
-make_serializable:
+serializable:
     type
         Person = object
             firstname, surname: string
@@ -162,7 +162,7 @@ assert persons[1].additionalAttributes["location"] == "Celle"
 
 # dumping
 
-dump(persons, newFileStream(stdout), ypsCanonical)
+dump(persons, newFileStream(stdout), psCanonical)
 ```
 
 Output:
@@ -177,9 +177,9 @@ Output:
     ? !!str "surname"
     : !!str "Pan",
     ? !!str "age"
-    : !!int "12",
+    : !nim:int "12",
     ? !!str "additionalAttributes"
-    : {
+    : !nim:Table(tag:yaml.org,2002:str,tag:yaml.org,2002:str) {
       ? !!str "canFly"
       : !!str "yes",
       ? !!str "location"
@@ -192,9 +192,9 @@ Output:
     ? !!str "surname"
     : !!str "Koch",
     ? !!str "age"
-    : !!int "23",
+    : !nim:int "23",
     ? !!str "additionalAttributes"
-    : {
+    : !nim:Table(tag:yaml.org,2002:str,tag:yaml.org,2002:str) {
       ? !!str "occupation"
       : !!str "Hacker",
       ? !!str "location"
@@ -208,7 +208,7 @@ Output:
 
  * Documentation:
    - Document yaml.serialization
- * Lexer:
+ * Misc:
    - Add type hints for more scalar types
  * Serialization:
    - Support for more standard library types
@@ -225,10 +225,6 @@ Output:
    - Possibly use `genSym` for predefined and generated `yamlTag` procs because
      they are an implementation detail and should not be visible to the caller.
      same goes for `lazyLoadTag` and `safeLoadUri`.
- * General:
-   - Proper error handling (do not use `ValueError` for everything)
-   - Proper error handling, seriously
-   - Document exceptions with `raises` pragmas in code
 
 ## License
 

@@ -1,7 +1,7 @@
 import "../yaml/serialization"
 import unittest
 
-make_serializable:
+serializable:
     type
         Person = object
             firstname, surname: string

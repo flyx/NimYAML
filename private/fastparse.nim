@@ -136,7 +136,7 @@ template handleObjectStart(k: YamlStreamEventKind) {.dirty.} =
     debug("started sequence at " & (if level.indentation == -1: $indentation else:
           $level.indentation))
     level.kind = fplSequence
-  tag = yTagQuestionmark
+  tag = yTagQuestionMark
   anchor = yAnchorNone
   if level.indentation == -1:
     level.indentation = indentation
@@ -183,7 +183,7 @@ template handleMapKeyIndicator() {.dirty.} =
   of fplMapValue:
     if level.indentation != indentation:
       parserError("Invalid indentation of map key indicator")
-    yield scalarEvent("", yTagQuestionmark, yAnchorNone)
+    yield scalarEvent("", yTagQuestionMark, yAnchorNone)
     level.kind = fplMapKey
     ancestry.add(level)
     level = FastParseLevel(kind: fplUnknown, indentation: -1)
@@ -205,16 +205,16 @@ template handleMapValueIndicator() {.dirty.} =
   of fplUnknown:
     if level.indentation == -1:
       handleObjectStart(yamlStartMap)
-      yield scalarEvent("", yTagQuestionmark, yAnchorNone)
+      yield scalarEvent("", yTagQuestionMark, yAnchorNone)
     else:
       yield scalarEvent("", tag, anchor)
-      tag = yTagQuestionmark
+      tag = yTagQuestionMark
       anchor = yAnchorNone
     ancestry[ancestry.high].kind = fplMapValue
   of fplMapKey:
     if level.indentation != indentation:
       parserError("Invalid indentation of map key indicator")
-    yield scalarEvent("", yTagQuestionmark, yAnchorNone)
+    yield scalarEvent("", yTagQuestionMark, yAnchorNone)
     level.kind = fplMapValue
     ancestry.add(level)
     level = FastParseLevel(kind: fplUnknown, indentation: -1)
@@ -238,14 +238,14 @@ template initDocValues() {.dirty.} =
   shorthands["!!"] = "tag:yaml.org,2002:"
   nextAnchorId = 0.AnchorId
   level = FastParseLevel(kind: fplUnknown, indentation: -1)
-  tag = yTagQuestionmark
+  tag = yTagQuestionMark
   anchor = yAnchorNone
 
 template handleTagHandle() {.dirty.} =
   startToken()
   if level.kind != fplUnknown:
     parserError("Unexpected tag handle")
-  if tag != yTagQuestionmark:
+  if tag != yTagQuestionMark:
     parserError("Only one tag handle is allowed per node")
   content = ""
   var
@@ -281,7 +281,7 @@ template handleAlias() {.dirty.} =
   startToken()
   if level.kind != fplUnknown:
     parserError("Unexpected token")
-  if anchor != yAnchorNone or tag != yTagQuestionmark:
+  if anchor != yAnchorNone or tag != yTagQuestionMark:
     parserError("Alias may not have anchor or tag")
   content = ""
   p.lexer.anchorName(content)
@@ -338,7 +338,7 @@ template handleBlockItemStart() {.dirty.} =
     level = FastParseLevel(kind: fplUnknown, indentation: indentation)
   of fplMapValue:
     yield scalarEvent("", tag, anchor)
-    tag = yTagQuestionmark
+    tag = yTagQuestionMark
     anchor = yAnchorNone
     level.kind = fplMapKey
     ancestry.add(level)
@@ -1313,8 +1313,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           var stateAfter: FastParseState
           content = ""
           p.lexer.blockScalar(content, stateAfter)
-          if tag == yTagQuestionmark:
-            tag = yTagExclamationmark
+          if tag == yTagQuestionMark:
+            tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(stateAfter)
         of '-':
@@ -1424,14 +1424,14 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           case level.kind
           of fplMapValue:
             yield scalarEvent("", tag, anchor)
-            tag = yTagQuestionmark
+            tag = yTagQuestionMark
             anchor = yAnchorNone
             level.kind = fplMapKey
           of fplMapKey:
-            if tag != yTagQuestionmark or anchor != yAnchorNone or
+            if tag != yTagQuestionMark or anchor != yAnchorNone or
                 explicitFlowKey:
               yield scalarEvent("", tag, anchor)
-              tag = yTagQuestionmark
+              tag = yTagQuestionMark
               anchor = yAnchorNone
               yield scalarEvent("", tag, anchor)
           of fplSequence:
@@ -1446,9 +1446,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           level = ancestry.pop()
           case level.kind
           of fplSequence:
-            if tag != yTagQuestionmark or anchor != yAnchorNone:
+            if tag != yTagQuestionMark or anchor != yAnchorNone:
               yield scalarEvent("", tag, anchor)
-              tag = yTagQuestionmark
+              tag = yTagQuestionMark
               anchor = yAnchorNone
           of fplMapKey, fplMapValue:
             startToken()
@@ -1463,17 +1463,17 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           case level.kind
           of fplSequence:
             yield scalarEvent("", tag, anchor)
-            tag = yTagQuestionmark
+            tag = yTagQuestionMark
             anchor = yAnchorNone
           of fplMapValue:
             yield scalarEvent("", tag, anchor)
-            tag = yTagQuestionmark
+            tag = yTagQuestionMark
             anchor = yAnchorNone
             level.kind = fplMapKey
             explicitFlowKey = false
           of fplMapKey:
             yield scalarEvent("", tag, anchor)
-            tag = yTagQuestionmark
+            tag = yTagQuestionMark
             anchor = yAnchorNone
             yield scalarEvent("", tag, anchor)
             explicitFlowKey = false
@@ -1492,7 +1492,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               parserError("Unexpected token (expected ',')")
             of fplMapKey:
               yield scalarEvent("", tag, anchor)
-              tag = yTagQuestionmark
+              tag = yTagQuestionMark
               anchor = yAnchorNone
               level.kind = fplMapValue
             of fplUnknown, fplScalar:
@@ -1514,8 +1514,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           content = ""
           startToken()
           p.lexer.doubleQuotedScalar(content)
-          if tag == yTagQuestionmark:
-            tag = yTagExclamationmark
+          if tag == yTagQuestionMark:
+            tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(fpFlowAfterObject)
         of '!':
@@ -1567,7 +1567,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           of fplSequence:
             discard
           of fplMapValue:
-            yield scalarEvent("", yTagQuestionmark, yAnchorNone)
+            yield scalarEvent("", yTagQuestionMark, yAnchorNone)
             level.kind = fplMapKey
             explicitFlowKey = false
           of fplMapKey:
