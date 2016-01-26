@@ -17,9 +17,7 @@ suite "Serialization":
             result: seq[string]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        assert events().kind == yamlStartDocument
         construct(events, result)
-        assert events().kind == yamlEndDocument
         assert result.len == 2
         assert result[0] == "a"
         assert result[1] == "b"
@@ -36,9 +34,7 @@ suite "Serialization":
             result: Table[int32, string]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        assert events().kind == yamlStartDocument
         construct(events, result)
-        assert events().kind == yamlEndDocument
         assert result.len == 2
         assert result[23] == "dreiundzwanzig"
         assert result[42] == "zweiundvierzig"
@@ -57,9 +53,7 @@ suite "Serialization":
             result: seq[seq[int32]]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        assert events().kind == yamlStartDocument
         construct(events, result)
-        assert events().kind == yamlEndDocument
         assert result.len == 3
         assert result[0] == @[1.int32, 2.int32, 3.int32]
         assert result[1] == @[4.int32, 5.int32]
@@ -78,9 +72,7 @@ suite "Serialization":
             result: Person
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        assert events().kind == yamlStartDocument
         construct(events, result)
-        assert events().kind == yamlEndDocument
         assert result.firstname == "Peter"
         assert result.surname   == "Pan"
         assert result.age == 12
@@ -98,9 +90,7 @@ suite "Serialization":
             result: seq[string]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        assert events().kind == yamlStartDocument
         construct(events, result)
-        assert events().kind == yamlEndDocument
         assert result[0] == "one"
         assert result[1] == "two"
     
@@ -117,9 +107,7 @@ suite "Serialization":
             result: Person
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        assert events().kind == yamlStartDocument
         construct(events, result)
-        assert events().kind == yamlEndDocument
         assert result.firstname == "Peter"
         assert result.surname   == "Pan"
         assert result.age       == 12

@@ -91,6 +91,7 @@ proc constructJson*(s: YamlStream): seq[JsonNode] =
                 try:
                     item = s()
                     if finished(s): break
+                except AssertionError: raise
                 except Exception:
                     var e = newException(YamlConstructionStreamError, "")
                     e.parent = getCurrentException()
@@ -213,6 +214,7 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
         else:
             # can never happen
             assert(false)
+    except AssertionError: raise
     except Exception:
         # compiler bug: https://github.com/nim-lang/Nim/issues/3772
         assert(false)
