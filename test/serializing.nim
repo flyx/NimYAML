@@ -5,7 +5,7 @@ serializable:
     type
         Person = object
             firstname, surname: string
-            age: int
+            age: int32
 
 suite "Serialization":
     setup:
@@ -33,7 +33,7 @@ suite "Serialization":
     test "Serialization: Load Table[int, string]":
         let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
         var
-            result: Table[int, string]
+            result: Table[int32, string]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
@@ -44,7 +44,7 @@ suite "Serialization":
         assert result[42] == "zweiundvierzig"
     
     test "Serialization: Serialize Table[int, string]":
-        var input = initTable[int, string]()
+        var input = initTable[int32, string]()
         input[23] = "dreiundzwanzig"
         input[42] = "zweiundvierzig"
         var output = newStringStream()
@@ -54,19 +54,20 @@ suite "Serialization":
     test "Serialization: Load Sequences in Sequence":
         let input = newStringStream(" - [1, 2, 3]\n - [4, 5]\n - [6]")
         var
-            result: seq[seq[int]]
+            result: seq[seq[int32]]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
         assert events().kind == yamlStartDocument
         construct(events, result)
         assert events().kind == yamlEndDocument
         assert result.len == 3
-        assert result[0] == @[1, 2, 3]
-        assert result[1] == @[4, 5]
-        assert result[2] == @[6]
+        assert result[0] == @[1.int32, 2.int32, 3.int32]
+        assert result[1] == @[4.int32, 5.int32]
+        assert result[2] == @[6.int32]
     
     test "Serialization: Serialize Sequences in Sequence":
-        let input = @[@[1, 2, 3], @[4, 5], @[6]]
+        let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32],
+                      @[6.int32]]
         var output = newStringStream()
         dump(input, output, psDefault, tsNone)
         assert output.data == "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]"

@@ -133,7 +133,7 @@ serializable:
     type
         Person = object
             firstname, surname: string
-            age: int
+            age: int32
             additionalAttributes: Table[string, string]
 
 # loading

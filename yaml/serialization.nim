@@ -1,5 +1,5 @@
 import "../yaml"
-import macros, strutils, streams, tables, json, hashes
+import macros, strutils, streams, tables, json, hashes, typetraits
 export yaml, streams, tables, json
 
 type
@@ -7,10 +7,17 @@ type
         tsNone, tsRootOnly, tsAll
 
 const
-    yTagNimInt*     = 100.TagId
-    yTagNimInt64*   = 101.TagId
-    yTagNimFloat*   = 102.TagId
-    yTagNimFloat64* = 103.TagId
+    yTagNimInt8*    = 100.TagId
+    yTagNimInt16*   = 101.TagId
+    yTagNimInt32*   = 102.TagId
+    yTagNimInt64*   = 103.TagId
+    yTagNimUInt8*   = 104.TagId
+    yTagNimUInt16*  = 105.TagId
+    yTagNimUInt32*  = 106.TagId
+    yTagNimUInt64*  = 107.TagId
+    yTagNimFloat32* = 108.TagId
+    yTagNimFloat64* = 109.TagId
+    yTagNimChar*    = 110.TagId
 
 proc initSerializationTagLibrary(): TagLibrary {.raises: [].} =
     result = initTagLibrary()
@@ -23,10 +30,17 @@ proc initSerializationTagLibrary(): TagLibrary {.raises: [].} =
     result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
     result.tags["tag:yaml.org,2002:value"]     = yTagValue
     result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
-    result.tags["!nim:int"]      = yTagNimInt
+    result.tags["!nim:int8"]     = yTagNimInt8
+    result.tags["!nim:int16"]    = yTagNimInt16
+    result.tags["!nim:int32"]    = yTagNimInt32
     result.tags["!nim:int64"]    = yTagNimInt64
-    result.tags["!nim:float"]    = yTagNimFloat
+    result.tags["!nim:uint8"]    = yTagNimUInt8
+    result.tags["!nim:uint16"]   = yTagNimUInt16
+    result.tags["!nim:uint32"]   = yTagNimUInt32
+    result.tags["!nim:uint64"]   = yTagNimUInt64
+    result.tags["!nim:float32"]  = yTagNimFloat32
     result.tags["!nim:float64"]  = yTagNimFloat64
+    result.tags["!nim:char"]     = yTagNimChar
 
 var
     serializationTagLibrary* = initSerializationTagLibrary() ## \
@@ -290,41 +304,82 @@ proc serialize*(value: string,
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, tagStyle), yAnchorNone)
 
-proc yamlTag*(T: typedesc[int]): TagId {.inline.} = yTagNimInt
-
-proc construct*(s: YamlStream, result: var int)
-        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(item, "int", yTagNimInt):
-        result = parseInt(item.scalarContent)
-
-proc serialize*(value: int, tagStyle: TagStyle = tsNone): YamlStream =
-    result = iterator(): YamlStreamEvent {.raises: [].} =
-        yield scalarEvent($value, presentTag(int, tagStyle), yAnchorNone)
-
+proc yamlTag*(T: typedesc[int8]): TagId {.inline, raises: [].}  = yTagNimInt8
+proc yamlTag*(T: typedesc[int16]): TagId {.inline, raises: [].} = yTagNimInt16
+proc yamlTag*(T: typedesc[int32]): TagId {.inline, raises: [].} = yTagNimInt32
 proc yamlTag*(T: typedesc[int64]): TagId {.inline, raises: [].} = yTagNimInt64
 
-proc contruct*(s: YamlStream, result: var int64)
+proc construct*[T: int8|int16|int32|int64](s: YamlStream, result: var T)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
-    constructScalarItem(item, "int64", yTagNimInt64):
-        result = parseBiggestInt(item.scalarContent)
+    constructScalarItem(item, name(T), yamlTag(T)):
+        result = T(parseBiggestInt(item.scalarContent))
 
-proc serialize*(value: int64, tagStyle: TagStyle = tsNone): YamlStream
-        {.raises: [].}=
+template construct*(s: YamlStream, result: var int) =
+    {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
+    discard
+
+proc serialize*[T: int8|int16|int32|int64](value: T,
+                                           tagStyle: TagStyle = tsNone):
+            YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
-        yield scalarEvent($value, presentTag(int64, tagStyle), yAnchorNone)
+        yield scalarEvent($value, presentTag(T, tagStyle), yAnchorNone)
 
-proc yamlTag*(T: typedesc[float]): TagId {.inline, raises: [].} = yTagNimFloat
+template serialize*(value: int, tagStyle: TagStyle = tsNone) =
+    {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
+    discard
 
-proc construct*(s: YamlStream, result: var float)
+proc yamlTag*(T: typedesc[uint8]): TagId {.inline, raises: [].} = yTagNimUInt8
+proc yamlTag*(T: typedesc[uint16]): TagId {.inline, raises: [].} = yTagNimUInt16
+proc yamlTag*(T: typedesc[uint32]): TagId {.inline, raises: [].} = yTagNimUInt32
+proc yamlTag*(T: typedesc[uint64]): TagId {.inline, raises: [].} = yTagNimUInt64
+
+{.push overflowChecks: on.}
+proc parseBiggestUInt(s: string): uint64 =
+    result = 0
+    for c in s:
+        if c in {'0'..'9'}:
+            result *= 10.uint64 + (uint64(c) - uint64('0'))
+        elif c == '_':
+            discard
+        else:
+            raise newException(ValueError, "Invalid char in uint: " & c)
+{.pop.}
+
+proc contstruct*[T: uint8|uint16|uint32|uint64](s: YamlStream, result: var T)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, name[T], yamlTag(T)):
+        result = T(parseBiggestUInt(item.scalarContent))
+
+template construct*(s: YamlStream, result: var uint) =
+    {.fatal:
+        "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
+    discard
+
+proc serialize*[T: uint8|uint16|uint32|uint64](
+        value: T, tagStyle: TagStyle = tsNone): YamlStream {.raises: [].} =
+    result = iterator(): YamlStreamEvent =
+        yield scalarEvent($value, presentTag(T, tagStyle), yAnchorNone)
+
+template serialize*(value: uint, tagStyle: TagStyle = tsNone) =
+    {.fatal:
+        "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
+    discard
+
+proc yamlTag*(T: typedesc[float32]): TagId {.inline, raises: [].} =
+    yTagNimFloat32
+proc yamlTag*(T: typedesc[float64]): TagId {.inline, raises: [].} =
+    yTagNimFloat64
+
+proc construct*[T: float32|float64](s: YamlStream, result: var T)
          {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
-    constructScalarItem(item, "float", yTagNimFloat):
+    constructScalarItem(item, name(T), yamlTag(T)):
         let hint = guessType(item.scalarContent)
         case hint
         of yTypeFloat:
-            result = parseFloat(item.scalarContent)
+            result = T(parseBiggestFloat(item.scalarContent))
         of yTypeFloatInf:
             if item.scalarContent[0] == '-':
                 result = NegInf
@@ -336,8 +391,11 @@ proc construct*(s: YamlStream, result: var float)
             raise newException(YamlConstructionError,
                     "Cannot construct to float: " & item.scalarContent)
 
-proc serialize*(value: float, tagStyle: TagStyle = tsNone): YamlStream
-         {.raises: [].}=
+template construct*(s: YamlStream, result: var float) =
+    {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
+
+proc serialize*[T: float32|float64](value: T, tagStyle: TagStyle = tsNone):
+        YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         var
             asString: string
@@ -350,7 +408,10 @@ proc serialize*(value: float, tagStyle: TagStyle = tsNone): YamlStream
             asString = ".nan"
         else:
             asString = $value
-        yield scalarEvent(asString, presentTag(float, tagStyle), yAnchorNone)
+        yield scalarEvent(asString, presentTag(T, tagStyle), yAnchorNone)
+
+template serialize*(value: float, tagStyle: TagStyle = tsNone) =
+    {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
 
@@ -368,10 +429,28 @@ proc construct*(s: YamlStream, result: var bool)
                     "Cannot construct to bool: " & item.scalarContent)
         
 proc serialize*(value: bool, tagStyle: TagStyle = tsNone): YamlStream 
-        {.raises: [].}=
+        {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, tagStyle),
                           yAnchorNone)
+
+proc yamlTag*(T: typedesc[char]): TagId {.inline, raises: [].} = yTagNimChar
+
+proc construct*(s: YamlStream, result: var char)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var item: YamlStreamEvent
+    constructScalarItem(item, "char", yTagNimChar):
+        if item.scalarContent.len != 1:
+            raise newException(YamlConstructionError,
+                    "Cannot construct to char (length != 1): " &
+                    item.scalarContent)
+        else:
+            result = item.scalarContent[0]
+
+proc serialize*(value: char, tagStyle: TagStyle = tsNone): YamlStream
+        {.raises: [].} =
+    result = iterator(): YamlStreamEvent =
+        yield scalarEvent("" & value, presentTag(char, tagStyle), yAnchorNone)
 
 proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
     let uri = "!nim:seq(" & safeTagUri(yamlTag(I)) & ")"
