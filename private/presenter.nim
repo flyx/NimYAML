@@ -508,6 +508,8 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
         else:
             # never happens
             assert(false)
+    except YamlPresenterJsonError, YamlPresenterOutputError:
+        raise
     except Exception:
         # compiler bug: https://github.com/nim-lang/Nim/issues/3772
         assert(false)
