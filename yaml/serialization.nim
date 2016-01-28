@@ -1,5 +1,5 @@
 import "../yaml"
-import macros, strutils, streams, tables, json, hashes, typetraits, queues
+import macros, strutils, streams, tables, json, hashes, typetraits
 export yaml, streams, tables, json
 
 type
@@ -13,6 +13,9 @@ type
         p: pointer
         count: int
         anchor: AnchorId
+    
+    ConstructionContext* = ref object
+        refs: Table[AnchorId, pointer]
     
     SerializationContext* = ref object
         refsList: seq[RefNodeData]
@@ -35,6 +38,10 @@ proc initRefNodeData(p: pointer): RefNodeData =
     result.p = p
     result.count = 1
     result.anchor = yAnchorNone
+
+proc newConstructionContext(): ConstructionContext =
+    new(result)
+    result.refs = initTable[AnchorId, pointer]()
 
 proc newSerializationContext(s: AnchorStyle): SerializationContext =
     new(result)
@@ -160,6 +167,8 @@ macro serializable*(types: stmt): stmt =
         var constructProc = newProc(newIdentNode("constructObject"), [
                 newEmptyNode(),
                 newIdentDefs(newIdentNode("s"), newIdentNode("YamlStream")),
+                newIdentDefs(newIdentNode("c"),
+                newIdentNode("ConstructionContext")),
                 newIdentDefs(newIdentNode("result"),
                              newNimNode(nnkVarTy).add(tIdent))])
         constructProc[4] = newNimNode(nnkPragma).add(
@@ -193,6 +202,7 @@ macro serializable*(types: stmt): stmt =
             keyCase.insert(1, newNimNode(nnkOfBranch).add(
                     newStrLitNode($field.name.ident)).add(newStmtList(
                         newCall("constructObject", [newIdentNode("s"),
+                        newIdentNode("c"),
                         newDotExpr(newIdentNode("result"), field.name)])
                     ))
             )
@@ -289,6 +299,8 @@ template constructScalarItem(item: YamlStreamEvent, name: string, t: TagId,
                              content: stmt) =
     try:
         item = s()
+    except YamlConstructionStreamError, AssertionError:
+        raise
     except Exception:
         var e = newException(YamlConstructionStreamError, "")
         e.parent = getCurrentException()
@@ -310,6 +322,8 @@ template constructScalarItem(item: YamlStreamEvent, name: string, t: TagId,
 template safeNextEvent(e: YamlStreamEvent, s: YamlStream) =
     try:
         e = s()
+    except YamlConstructionStreamError, AssertionError:
+        raise
     except Exception:
         var ex = newException(YamlConstructionStreamError, "")
         ex.parent = getCurrentException()
@@ -317,7 +331,7 @@ template safeNextEvent(e: YamlStreamEvent, s: YamlStream) =
 
 proc yamlTag*(T: typedesc[string]): TagId {.inline, raises: [].} = yTagString
 
-proc constructObject*(s: YamlStream, result: var string)
+proc constructObject*(s: YamlStream, c: ConstructionContext, result: var string)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
     constructScalarItem(item, "string", yTagString):
@@ -333,13 +347,15 @@ proc yamlTag*(T: typedesc[int16]): TagId {.inline, raises: [].} = yTagNimInt16
 proc yamlTag*(T: typedesc[int32]): TagId {.inline, raises: [].} = yTagNimInt32
 proc yamlTag*(T: typedesc[int64]): TagId {.inline, raises: [].} = yTagNimInt64
 
-proc constructObject*[T: int8|int16|int32|int64](s: YamlStream, result: var T)
+proc constructObject*[T: int8|int16|int32|int64](
+        s: YamlStream, c: ConstructionContext, result: var T)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
     constructScalarItem(item, name(T), yamlTag(T)):
         result = T(parseBiggestInt(item.scalarContent))
 
-template constructObject*(s: YamlStream, result: var int) =
+template constructObject*(s: YamlStream, c: ConstructionContext,
+                          result: var int) =
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
 
@@ -371,14 +387,15 @@ proc parseBiggestUInt(s: string): uint64 =
             raise newException(ValueError, "Invalid char in uint: " & c)
 {.pop.}
 
-proc constructObject*[T: uint8|uint16|uint32|uint64](s: YamlStream,
-                                                     result: var T)
+proc constructObject*[T: uint8|uint16|uint32|uint64](
+        s: YamlStream, c: ConstructionContext, result: var T)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
     constructScalarItem(item, name[T], yamlTag(T)):
         result = T(parseBiggestUInt(item.scalarContent))
 
-template constructObject*(s: YamlStream, result: var uint) =
+template constructObject*(s: YamlStream, c: ConstructionContext,
+                          result: var uint) =
     {.fatal:
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
@@ -399,7 +416,8 @@ proc yamlTag*(T: typedesc[float32]): TagId {.inline, raises: [].} =
 proc yamlTag*(T: typedesc[float64]): TagId {.inline, raises: [].} =
     yTagNimFloat64
 
-proc constructObject*[T: float32|float64](s: YamlStream, result: var T)
+proc constructObject*[T: float32|float64](
+        s: YamlStream, c: ConstructionContext, result: var T)
          {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
     constructScalarItem(item, name(T), yamlTag(T)):
@@ -418,7 +436,8 @@ proc constructObject*[T: float32|float64](s: YamlStream, result: var T)
             raise newException(YamlConstructionError,
                     "Cannot construct to float: " & item.scalarContent)
 
-template constructObject*(s: YamlStream, result: var float) =
+template constructObject*(s: YamlStream, c: ConstructionContext,
+                          result: var float) =
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
 proc serializeObject*[T: float32|float64](value: T, ts: TagStyle,
@@ -444,7 +463,7 @@ template serializeObject*(value: float, tagStyle: TagStyle,
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
 
-proc constructObject*(s: YamlStream, result: var bool)
+proc constructObject*(s: YamlStream, c: ConstructionContext, result: var bool)
          {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
     constructScalarItem(item, "bool", yTagBoolean):
@@ -465,7 +484,7 @@ proc serializeObject*(value: bool, ts: TagStyle,
 
 proc yamlTag*(T: typedesc[char]): TagId {.inline, raises: [].} = yTagNimChar
 
-proc constructObject*(s: YamlStream, result: var char)
+proc constructObject*(s: YamlStream, c: ConstructionContext, result: var char)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var item: YamlStreamEvent
     constructScalarItem(item, "char", yTagNimChar):
@@ -485,7 +504,8 @@ proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
     let uri = "!nim:seq(" & safeTagUri(yamlTag(I)) & ")"
     result = lazyLoadTag(uri)
 
-proc constructObject*[T](s: YamlStream, result: var seq[T])
+proc constructObject*[T](s: YamlStream, c: ConstructionContext,
+                         result: var seq[T])
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var event: YamlStreamEvent
     safeNextEvent(event, s)
@@ -501,7 +521,7 @@ proc constructObject*[T](s: YamlStream, result: var seq[T])
             item: T
             events = prepend(event, s)
         try:
-            constructObject(events, item)
+            constructObject(events, c, item)
         except AssertionError: raise
         except:
             # compiler bug: https://github.com/nim-lang/Nim/issues/3772
@@ -538,7 +558,8 @@ proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
         # cannot happen (theoretically, you known)
         assert(false)
 
-proc constructObject*[K, V](s: YamlStream, result: var Table[K, V])
+proc constructObject*[K, V](s: YamlStream, c: ConstructionContext,
+                            result: var Table[K, V])
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var event: YamlStreamEvent
     safeNextEvent(event, s)
@@ -555,8 +576,8 @@ proc constructObject*[K, V](s: YamlStream, result: var Table[K, V])
             value: V
             events = prepend(event, s)
         try:
-            constructObject(events, key)
-            constructObject(s, value)
+            constructObject(events, c, key)
+            constructObject(s, c, value)
         except AssertionError: raise
         except Exception:
             # compiler bug: https://github.com/nim-lang/Nim/issues/3772
@@ -583,7 +604,8 @@ proc serializeObject*[K, V](value: Table[K, V], ts: TagStyle,
 
 proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
 
-proc constructObject*[O](s: YamlStream, result: var ref O)
+proc constructObject*[O](s: YamlStream, c: ConstructionContext,
+                         result: var ref O)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
     var e = s()
     assert(not finished(s))
@@ -593,10 +615,25 @@ proc constructObject*[O](s: YamlStream, result: var ref O)
                 guessType(e.scalarContent) == yTypeNull):
             result = nil
             return
+    elif e.kind == yamlAlias:
+        try:
+            result = cast[ref O](c.refs[e.aliasTarget])
+            return
+        except KeyError:
+            assert(false)
     new(result)
+    var a: AnchorId
+    case e.kind
+    of yamlScalar: a = e.scalarAnchor
+    of yamlStartMap: a = e.mapAnchor
+    of yamlStartSequence: a = e.seqAnchor
+    else: assert(false)
+    if a != yAnchorNone:
+        assert(not c.refs.hasKey(a))
+        c.refs[a] = cast[pointer](result)
     try:
-        constructObject(prepend(e, s), result[])
-    except YamlConstructionError, YamlConstructionStreamError:
+        constructObject(prepend(e, s), c, result[])
+    except YamlConstructionError, YamlConstructionStreamError, AssertionError:
         raise
     except Exception:
         var e = newException(YamlConstructionStreamError,
@@ -643,10 +680,12 @@ proc serializeObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
 
 proc construct*[T](s: YamlStream, target: var T)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var context = newConstructionContext()
     try:
         var e = s()
         assert((not finished(s)) and e.kind == yamlStartDocument)
-        constructObject(s, target)
+        
+        constructObject(s, context, target)
         e = s()
         assert((not finished(s)) and e.kind == yamlEndDocument)
     except YamlConstructionError, YamlConstructionStreamError, AssertionError:
