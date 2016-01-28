@@ -125,7 +125,16 @@ proc startItem(target: Stream, style: PresentationStyle, indentation: int,
         var e = newException(YamlPresenterOutputError, "")
         e.parent = getCurrentException()
         raise e
-    
+
+proc anchorName(a: AnchorId): string {.raises: [].} =
+    result = ""
+    var i = int(a)
+    while i >= 0:
+        let j = i mod 36
+        if j < 26: result.add(char(j + ord('a')))
+        else: result.add(char(j + ord('0') - 26))
+        i -= 36
+
 proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
                        anchor: AnchorId) {.raises:[YamlPresenterOutputError].} =
     try:
@@ -144,8 +153,7 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
                 target.write("> ")
         if anchor != yAnchorNone:
             target.write("&")
-            # TODO: properly select an anchor
-            target.write(cast[byte]('a') + cast[byte](anchor))
+            target.write(anchorName(anchor))
             target.write(' ')
     except:
         var e = newException(YamlPresenterOutputError, "")

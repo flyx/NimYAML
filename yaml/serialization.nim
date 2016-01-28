@@ -1,11 +1,23 @@
 import "../yaml"
-import macros, strutils, streams, tables, json, hashes, typetraits
+import macros, strutils, streams, tables, json, hashes, typetraits, queues
 export yaml, streams, tables, json
 
 type
     TagStyle* = enum
         tsNone, tsRootOnly, tsAll
-
+    
+    AnchorStyle* = enum
+        asNone, asTidy, asAlways
+    
+    RefNodeData* = object
+        p: pointer
+        count: int
+        anchor: AnchorId
+    
+    SerializationContext* = ref object
+        refsList: seq[RefNodeData]
+        style: AnchorStyle
+    
 const
     yTagNimInt8*    = 100.TagId
     yTagNimInt16*   = 101.TagId
@@ -18,6 +30,16 @@ const
     yTagNimFloat32* = 108.TagId
     yTagNimFloat64* = 109.TagId
     yTagNimChar*    = 110.TagId
+
+proc initRefNodeData(p: pointer): RefNodeData =
+    result.p = p
+    result.count = 1
+    result.anchor = yAnchorNone
+
+proc newSerializationContext(s: AnchorStyle): SerializationContext =
+    new(result)
+    result.refsList = newSeq[RefNodeData]()
+    result.style = s
 
 proc initSerializationTagLibrary(): TagLibrary {.raises: [].} =
     result = initTagLibrary()
@@ -63,8 +85,8 @@ static:
     
     var existingTuples = newSeq[NimNode]()
 
-template presentTag(t: typedesc, tagStyle: TagStyle): TagId =
-     if tagStyle == tsNone: yTagQuestionMark else: yamlTag(t)
+template presentTag(t: typedesc, ts: TagStyle): TagId =
+     if ts == tsNone: yTagQuestionMark else: yamlTag(t)
 
 proc lazyLoadTag*(uri: string): TagId {.inline, raises: [].} =
     try:
@@ -183,9 +205,10 @@ macro serializable*(types: stmt): stmt =
         var serializeProc = newProc(newIdentNode("serializeObject"), [
                 newIdentNode("YamlStream"),
                 newIdentDefs(newIdentNode("value"), tIdent),
-                newIdentDefs(newIdentNode("tagStyle"),
-                             newIdentNode("TagStyle"),
-                             newIdentNode("tsNone"))])
+                newIdentDefs(newIdentNode("ts"),
+                             newIdentNode("TagStyle")),
+                newIdentDefs(newIdentNode("c"),
+                             newIdentNode("SerializationContext"))])
         serializeProc[4] = newNimNode(nnkPragma).add(
                 newNimNode(nnkExprColonExpr).add(newIdentNode("raises"),
                 newNimNode(nnkBracket)))
@@ -193,9 +216,9 @@ macro serializable*(types: stmt): stmt =
             newLetStmt(newIdentNode("childTagStyle"), newNimNode(nnkIfExpr).add(
                 newNimNode(nnkElifExpr).add(
                     newNimNode(nnkInfix).add(newIdentNode("=="),
-                        newIdentNode("tagStyle"), newIdentNode("tsRootOnly")),
+                        newIdentNode("ts"), newIdentNode("tsRootOnly")),
                     newIdentNode("tsNone")
-                ), newNimNode(nnkElseExpr).add(newIdentNode("tagStyle")))),
+                ), newNimNode(nnkElseExpr).add(newIdentNode("ts")))),
             newNimNode(nnkYieldStmt).add(
                 newNimNode(nnkObjConstr).add(newIdentNode("YamlStreamEvent"),
                     newNimNode(nnkExprColonExpr).add(newIdentNode("kind"),
@@ -203,7 +226,7 @@ macro serializable*(types: stmt): stmt =
                     newNimNode(nnkExprColonExpr).add(newIdentNode("mapTag"),
                         newNimNode(nnkIfExpr).add(newNimNode(nnkElifExpr).add(
                             newNimNode(nnkInfix).add(newIdentNode("=="),
-                                newIdentNode("tagStyle"),
+                                newIdentNode("ts"),
                                 newIdentNode("tsNone")),
                             newIdentNode("yTagQuestionMark")
                         ), newNimNode(nnkElseExpr).add(
@@ -232,7 +255,8 @@ macro serializable*(types: stmt): stmt =
             )
             iterbody.insert(i + 1, newVarStmt(fieldIterIdent,
                     newCall("serializeObject", newDotExpr(newIdentNode("value"),
-                    field.name), newIdentNode("childTagStyle"))))
+                    field.name), newIdentNode("childTagStyle"),
+                    newIdentNode("c"))))
             iterbody.insert(i + 2, quote do:
                 for event in `fieldIterIdent`():
                     yield event
@@ -299,8 +323,8 @@ proc constructObject*(s: YamlStream, result: var string)
     constructScalarItem(item, "string", yTagString):
         result = item.scalarContent
 
-proc serializeObject*(value: string,
-                      ts: TagStyle = tsNone): YamlStream {.raises: [].} =
+proc serializeObject*(value: string, ts: TagStyle = tsNone,
+                      c: SerializationContext): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, ts), yAnchorNone)
 
@@ -319,13 +343,14 @@ template constructObject*(s: YamlStream, result: var int) =
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
 
-proc serializeObject*[T: int8|int16|int32|int64](value: T,
-                                                 ts: TagStyle = tsNone):
-            YamlStream {.raises: [].} =
+proc serializeObject*[T: int8|int16|int32|int64](
+        value: T, ts: TagStyle = tsNone, c: SerializationContext):
+        YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
 
-template serialize*(value: int, tagStyle: TagStyle = tsNone) =
+template serializeObject*(value: int, tagStyle: TagStyle,
+                          c: SerializationContext) =
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
 
@@ -359,11 +384,12 @@ template constructObject*(s: YamlStream, result: var uint) =
     discard
 
 proc serializeObject*[T: uint8|uint16|uint32|uint64](
-        value: T, ts: TagStyle = tsNone): YamlStream {.raises: [].} =
+        value: T, ts: TagStyle, c: SerializationContext):
+        YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
 
-template serializeObject*(value: uint, ts: TagStyle = tsNone) =
+template serializeObject*(value: uint, ts: TagStyle, c: SerializationContext) =
     {.fatal:
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
@@ -395,7 +421,8 @@ proc constructObject*[T: float32|float64](s: YamlStream, result: var T)
 template constructObject*(s: YamlStream, result: var float) =
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
-proc serializeObject*[T: float32|float64](value: T, ts: TagStyle = tsNone):
+proc serializeObject*[T: float32|float64](value: T, ts: TagStyle,
+                                          c: SerializationContext):
         YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         var
@@ -411,7 +438,8 @@ proc serializeObject*[T: float32|float64](value: T, ts: TagStyle = tsNone):
             asString = $value
         yield scalarEvent(asString, presentTag(T, ts), yAnchorNone)
 
-template serializeObject*(value: float, tagStyle: TagStyle = tsNone) =
+template serializeObject*(value: float, tagStyle: TagStyle,
+                          c: SerializationContext) =
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
@@ -429,8 +457,8 @@ proc constructObject*(s: YamlStream, result: var bool)
             raise newException(YamlConstructionError,
                     "Cannot construct to bool: " & item.scalarContent)
         
-proc serializeObject*(value: bool, ts: TagStyle = tsNone): YamlStream 
-        {.raises: [].} =
+proc serializeObject*(value: bool, ts: TagStyle,
+                      c: SerializationContext): YamlStream  {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, ts),
                           yAnchorNone)
@@ -448,8 +476,8 @@ proc constructObject*(s: YamlStream, result: var char)
         else:
             result = item.scalarContent[0]
 
-proc serializeObject*(value: char, ts: TagStyle = tsNone): YamlStream
-        {.raises: [].} =
+proc serializeObject*(value: char, ts: TagStyle,
+                      c: SerializationContext): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent("" & value, presentTag(char, ts), yAnchorNone)
 
@@ -482,15 +510,15 @@ proc constructObject*[T](s: YamlStream, result: var seq[T])
         safeNextEvent(event, s)
         assert(not finished(s))
 
-proc serializeObject*[T](value: seq[T], ts: TagStyle = tsNone): YamlStream
-         {.raises: [].} =
+proc serializeObject*[T](value: seq[T], ts: TagStyle,
+                         c: SerializationContext): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
         yield YamlStreamEvent(kind: yamlStartSequence,
                               seqTag: presentTag(seq[T], ts),
                               seqAnchor: yAnchorNone)
         for item in value:
-            var events = serializeObject(item, childTagStyle)
+            var events = serializeObject(item, childTagStyle, c)
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndSequence)
@@ -537,21 +565,81 @@ proc constructObject*[K, V](s: YamlStream, result: var Table[K, V])
         safeNextEvent(event, s)
         assert(not finished(s))
 
-proc serializeObject*[K, V](value: Table[K, V],
-                      ts: TagStyle = tsNone): YamlStream {.raises: [].} =
+proc serializeObject*[K, V](value: Table[K, V], ts: TagStyle,
+                            c: SerializationContext): YamlStream {.raises:[].} =
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
         yield YamlStreamEvent(kind: yamlStartMap,
                               mapTag: presentTag(Table[K, V], ts),
                               mapAnchor: yAnchorNone)
         for key, value in value.pairs:
-            var events = serializeObject(key, childTagStyle)
+            var events = serializeObject(key, childTagStyle, c)
             for event in events():
                 yield event
-            events = serializeObject(value, childTagStyle)
+            events = serializeObject(value, childTagStyle, c)
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndMap)
+
+proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
+
+proc constructObject*[O](s: YamlStream, result: var ref O)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    var e = s()
+    assert(not finished(s))
+    if e.kind == yamlScalar:
+        if e.scalarTag == yTagNull or (
+                e.scalarTag in [yTagQuestionMark, yTagExclamationMark] and
+                guessType(e.scalarContent) == yTypeNull):
+            result = nil
+            return
+    new(result)
+    try:
+        constructObject(prepend(e, s), result[])
+    except YamlConstructionError, YamlConstructionStreamError:
+        raise
+    except Exception:
+        var e = newException(YamlConstructionStreamError,
+                             getCurrentExceptionMsg())
+        e.parent = getCurrentException()
+        raise e
+
+proc serializeObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
+        YamlStream {.raises: [].} =
+    if value == nil:
+        result = iterator(): YamlStreamEvent = yield scalarEvent("~", yTagNull)
+    elif c.style == asNone:
+        result = serializeObject(value[], ts, c)
+    else:
+        let
+            p = cast[pointer](value)
+        for i in countup(0, c.refsList.high):
+            if p == c.refsList[i].p:
+                c.refsList[i].count.inc()
+                result = iterator(): YamlStreamEvent =
+                    yield aliasEvent(if c.style == asAlways: AnchorId(i) else:
+                                     cast[AnchorId](p))
+                return
+        c.refsList.add(initRefNodeData(p))
+        let a = if c.style == asAlways: AnchorId(c.refsList.high) else:
+                cast[AnchorId](p)
+        try:
+            var
+                objStream = serializeObject(value[], ts, c)
+                first = objStream()
+            assert(not finished(objStream))
+            case first.kind
+            of yamlStartMap:
+                first.mapAnchor = a
+            of yamlStartSequence:
+                first.seqAnchor = a
+            of yamlScalar:
+                first.scalarAnchor = a
+            else:
+                assert(false)
+            result = prepend(first, objStream)
+        except Exception:
+            assert(false)
 
 proc construct*[T](s: YamlStream, target: var T)
         {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
@@ -591,16 +679,39 @@ proc load*[K](input: Stream, target: var K)
         # compiler bug: https://github.com/nim-lang/Nim/issues/3772
         assert(false)
 
-proc serialize*[T](value: T, ts: TagStyle = tsRootOnly):
-        YamlStream {.raises: [].} =
+proc setAnchor(a: var AnchorId, q: var seq[RefNodeData], n: var AnchorId)
+        {.inline.} =
+    if a != yAnchorNone:
+        let p = cast[pointer](a)
+        for i in countup(0, q.len - 1):
+            if p == q[i].p:
+                if q[i].count > 1:
+                    assert(q[i].anchor == yAnchorNone)
+                    q[i].anchor = n
+                    a = n
+                    n = AnchorId(int(n) + 1)
+                else:
+                    a = yAnchorNone
+                break
+
+proc setAliasAnchor(a: var AnchorId, q: var seq[RefNodeData]) {.inline.} =
+    let p = cast[pointer](a)
+    for i in countup(0, q.len - 1):
+        if p == q[i].p:
+            assert q[i].count > 1
+            assert q[i].anchor != yAnchorNone
+            a = q[i].anchor
+            return
+    assert(false)
+            
+proc insideDoc(s: YamlStream): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
-        var serialized = serializeObject(value, ts)
         yield YamlStreamEvent(kind: yamlStartDocument)
         while true:
             var event: YamlStreamEvent
             try:
-                event = serialized()
-                if finished(serialized): break
+                event = s()
+                if finished(s): break
             except AssertionError: raise
             except Exception:
                 # serializing object does not raise any errors, so we can
@@ -609,14 +720,54 @@ proc serialize*[T](value: T, ts: TagStyle = tsRootOnly):
             yield event
         yield YamlStreamEvent(kind: yamlEndDocument)
 
+proc serialize*[T](value: T, ts: TagStyle = tsRootOnly,
+                   a: AnchorStyle = asTidy): YamlStream {.raises: [].} =
+    var
+        context = newSerializationContext(a)
+        objStream: YamlStream
+    try:
+        objStream = insideDoc(serializeObject(value, ts, context))
+    except Exception:
+        assert(false)
+    if a == asTidy:
+        var objQueue = newSeq[YamlStreamEvent]()
+        try:
+            for event in objStream():
+                objQueue.add(event)
+        except Exception:
+            assert(false)
+        var next = 0.AnchorId
+        result = iterator(): YamlStreamEvent =
+            for i in countup(0, objQueue.len - 1):
+                var event = objQueue[i]
+                case event.kind
+                of yamlStartMap:
+                    event.mapAnchor.setAnchor(context.refsList, next)
+                of yamlStartSequence:
+                    event.seqAnchor.setAnchor(context.refsList, next)
+                of yamlScalar:
+                    event.scalarAnchor.setAnchor(context.refsList, next)
+                of yamlAlias:
+                    event.aliasTarget.setAliasAnchor(context.refsList)
+                else:
+                    discard
+                yield event
+    else:
+        result = objStream
+
 proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
-              tagStyle: TagStyle = tsRootOnly, indentationStep: int = 2)
+              tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
             {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].} =
-    var events = serialize(value, if style == psCanonical: tsAll else: tagStyle)
+    var events = serialize(value, if style == psCanonical: tsAll else: tagStyle,
+                           if style == psJson: asNone else: anchorStyle)
     try:
         present(events, target, serializationTagLibrary, style, indentationStep)
     except YamlPresenterStreamError:
         # serializing object does not raise any errors, so we can ignore this
+        var e = getCurrentException()
+        echo e.msg
+        echo e.parent.repr
         assert(false)
     except YamlPresenterJsonError, YamlPresenterOutputError, AssertionError:
         raise
