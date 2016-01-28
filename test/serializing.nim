@@ -6,6 +6,15 @@ serializable:
         Person = object
             firstname, surname: string
             age: int32
+        
+        Node = object
+            value: string
+            next: ref Node
+
+proc newNode(v: string): ref Node =
+    new(result)
+    result.value = v
+    result.next = nil
 
 suite "Serialization":
     setup:
@@ -117,3 +126,49 @@ suite "Serialization":
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsRootOnly)
         assert output.data == "%YAML 1.2\n--- !nim:Person \nfirstname: Peter\nsurname: Pan\nage: 12"
+    
+    test "Serialization: Serialize cyclic data structure":
+        var
+            a = newNode("a")
+            b = newNode("b")
+            c = newNode("c")
+        a.next = b
+        b.next = c
+        c.next = a
+        var output = newStringStream()
+        dump(a, output, psBlockOnly, tsRootOnly)
+        assert output.data == """%YAML 1.2
+--- !nim:Node &a 
+value: a
+next: 
+  value: b
+  next: 
+    value: c
+    next: *a"""
+    
+    test "Serialization: Load cyclic data structure":
+        let input = newStringStream("""%YAML 1.2
+--- !nim:seq(nim:Node)
+- &a
+  value: a
+  next: &b
+    value: b
+    next: &c
+      value: c
+      next: *a
+- *b
+- *c
+""")
+        var
+            result: seq[ref Node]
+            parser = newYamlParser(tagLib)
+            events = parser.parse(input)
+        construct(events, result)
+        assert(result.len == 3)
+        assert(result[0].value == "a")
+        assert(result[1].value == "b")
+        assert(result[2].value == "c")
+        assert(result[0].next == result[1])
+        assert(result[1].next == result[2])
+        assert(result[2].next == result[0])
+        

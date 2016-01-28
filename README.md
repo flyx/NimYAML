@@ -212,8 +212,7 @@ Output:
    - Add type hints for more scalar types
  * Serialization:
    - Support for more standard library types
-   - Support for ref and ptr types
-   - Support for anchors and aliases (requires ref and ptr types)
+   - Support for enum types
    - Support polymorphism (requires ref and ptr types)
    - Support variant objects
    - Support transient fields (i.e. fields that will not be (de-)serialized on
