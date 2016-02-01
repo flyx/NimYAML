@@ -605,7 +605,7 @@ proc serializeObject*[K, V](value: Table[K, V], ts: TagStyle,
                 yield event
         yield YamlStreamEvent(kind: yamlEndMap)
 
-template yamlTag*(T: typedesc[object]): expr =
+template yamlTag*(T: typedesc[object|enum]): expr =
     var uri = when compiles(yamlTagId(T)): yamlTagId(T) else:
             "!nim:custom:" & T.name
     try:
@@ -662,6 +662,27 @@ proc serializeObject*[O: object|tuple](value: O, ts: TagStyle,
             for event in events():
                 yield event
         yield endMapEvent()
+
+proc constructObject*[O: enum](s: YamlStream, c: ConstructionContext,
+                               result: var O)
+        {.raises: [YamlConstructionError, YamlConstructionStreamError].} =
+    let e = s()
+    assert(not finished(s))
+    if e.kind != yamlScalar:
+        raise newException(YamlConstructionError, "Expected scalar, got " &
+                           $e.kind)
+    try: result = parseEnum[O](e.scalarContent)
+    except ValueError:
+        var ex = newException(YamlConstructionError, "Cannot parse '" &
+                e.scalarContent & "' as " & type(O).name)
+        ex.parent = getCurrentException()
+        raise ex
+
+proc serializeObject*[O: enum](value: O, ts: TagStyle,
+                               c: SerializationContext):
+        YamlStream {.raises: [].} =
+    result = iterator(): YamlStreamEvent =
+        yield scalarEvent($value, presentTag(O, ts), yAnchorNone)
 
 proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
 

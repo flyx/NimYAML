@@ -7,6 +7,9 @@ type
         i: int32
         b: bool
     
+    TrafficLight = enum
+        tlGreen, tlYellow, tlRed
+    
     Person = object
         firstname, surname: string
         age: int32
@@ -87,6 +90,25 @@ suite "Serialization":
         var output = newStringStream()
         dump(input, output, psDefault, tsNone)
         assertStringEqual "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]",
+                          output.data
+    
+    test "Serialization: Load Enum":
+        let input = newStringStream("- tlRed\n- tlGreen\n- tlYellow")
+        var
+            result: seq[TrafficLight]
+            parser = newYamlParser(tagLib)
+            events = parser.parse(input)
+        construct(events, result)
+        assert result.len == 3
+        assert result[0] == tlRed
+        assert result[1] == tlGreen
+        assert result[2] == tlYellow
+    
+    test "Serialization: Serialize Enum":
+        let input = @[tlRed, tlGreen, tlYellow]
+        var output = newStringStream()
+        dump(input, output, psBlockOnly, tsNone)
+        assertStringEqual "%YAML 1.2\n--- \n- tlRed\n- tlGreen\n- tlYellow",
                           output.data
     
     test "Serialization: Load Tuple":
