@@ -1,15 +1,26 @@
 import "../yaml/serialization"
 import unittest
 
-serializable:
-    type
-        Person = object
-            firstname, surname: string
-            age: int32
-        
-        Node = object
-            value: string
-            next: ref Node
+type
+    MyTuple = tuple
+        str: string
+        i: int32
+        b: bool
+    
+    Person = object
+        firstname, surname: string
+        age: int32
+    
+    Node = object
+        value: string
+        next: ref Node
+
+template assertStringEqual(expected, actual: string) =
+    for i in countup(0, min(expected.len, actual.len)):
+        if expected[i] != actual[i]:
+            echo "string mismatch at character #", i, ":"
+            echo "expected:\n", expected, "\nactual:\n", actual
+            assert(false)
 
 proc newNode(v: string): ref Node =
     new(result)
@@ -35,7 +46,7 @@ suite "Serialization":
         var input = @["a", "b"]
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
-        assert output.data == "%YAML 1.2\n--- \n- a\n- b"
+        assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output.data
     
     test "Serialization: Load Table[int, string]":
         let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
@@ -54,7 +65,9 @@ suite "Serialization":
         input[42] = "zweiundvierzig"
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
-        assert output.data == "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig"
+        assertStringEqual(
+                "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig",
+                output.data)
     
     test "Serialization: Load Sequences in Sequence":
         let input = newStringStream(" - [1, 2, 3]\n - [4, 5]\n - [6]")
@@ -73,7 +86,26 @@ suite "Serialization":
                       @[6.int32]]
         var output = newStringStream()
         dump(input, output, psDefault, tsNone)
-        assert output.data == "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]"
+        assertStringEqual "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]",
+                          output.data
+    
+    test "Serialization: Load Tuple":
+        let input = newStringStream("str: value\ni: 42\nb: true")
+        var
+            result: MyTuple
+            parser = newYamlParser(tagLib)
+            events = parser.parse(input)
+        construct(events, result)
+        assert result.str == "value"
+        assert result.i == 42
+        assert result.b == true
+
+    test "Serialization: Serialize Tuple":
+        let input = (str: "value", i: 42.int32, b: true)
+        var output = newStringStream()
+        dump(input, output, psDefault, tsNone)
+        assertStringEqual "%YAML 1.2\n--- \nstr: value\ni: 42\nb: y",
+                          output.data
     
     test "Serialization: Load custom object":
         let input = newStringStream("firstname: Peter\nsurname: Pan\nage: 12")
@@ -90,11 +122,13 @@ suite "Serialization":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
-        assert output.data == "%YAML 1.2\n--- \nfirstname: Peter\nsurname: Pan\nage: 12"
+        assertStringEqual(
+                "%YAML 1.2\n--- \nfirstname: Peter\nsurname: Pan\nage: 12",
+                output.data)
     
     test "Serialization: Load sequence with explicit tags":
-        let input = newStringStream(
-            "--- !nim:seq(tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
+        let input = newStringStream("--- !nim:system:seq(" &
+                "tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
         var
             result: seq[string]
             parser = newYamlParser(tagLib)
@@ -107,11 +141,13 @@ suite "Serialization":
         let input = @["one", "two"]
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsAll)
-        assert output.data == "%YAML 1.2\n--- !nim:seq(tag:yaml.org,2002:str) \n- !!str one\n- !!str two"
+        assertStringEqual("%YAML 1.2\n--- !nim:system:seq(" &
+                "tag:yaml.org,2002:str) \n- !!str one\n- !!str two",
+                output.data)
     
     test "Serialization: Load custom object with explicit root tag":
         let input = newStringStream(
-            "--- !nim:Person\nfirstname: Peter\nsurname: Pan\nage: 12")
+            "--- !nim:custom:Person\nfirstname: Peter\nsurname: Pan\nage: 12")
         var
             result: Person
             parser = newYamlParser(tagLib)
@@ -125,7 +161,9 @@ suite "Serialization":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsRootOnly)
-        assert output.data == "%YAML 1.2\n--- !nim:Person \nfirstname: Peter\nsurname: Pan\nage: 12"
+        assertStringEqual("%YAML 1.2\n" &
+                "--- !nim:custom:Person \nfirstname: Peter\nsurname: Pan\nage: 12",
+                output.data)
     
     test "Serialization: Serialize cyclic data structure":
         var
@@ -137,18 +175,18 @@ suite "Serialization":
         c.next = a
         var output = newStringStream()
         dump(a, output, psBlockOnly, tsRootOnly)
-        assert output.data == """%YAML 1.2
---- !nim:Node &a 
+        assertStringEqual """%YAML 1.2
+--- !nim:custom:Node &a 
 value: a
 next: 
   value: b
   next: 
     value: c
-    next: *a"""
+    next: *a""", output.data
     
     test "Serialization: Load cyclic data structure":
         let input = newStringStream("""%YAML 1.2
---- !nim:seq(nim:Node)
+--- !nim:system:seq(nim:custom:Node)
 - &a
   value: a
   next: &b
