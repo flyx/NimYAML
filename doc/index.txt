@@ -2,4 +2,18 @@
 NimYAML
 =======
 
-TBD: General information here. Possibly move text from yaml.html. Eat pizza.
+Overview
+========
+
+**NimYAML** is a pure YAML implementation for Nim. It is able to read from and
+write to YAML character streams, and to serialize from and construct to native
+Nim types. It exclusively supports
+`YAML 1.2 <#http://www.yaml.org/spec/1.2/spec.html>`_. NimYAML exposes all
+processing steps defined by the YAML specification to the user, so it is
+possible to customize the processing pipeline. The following diagram gives an
+overview of NimYAML's features based on the YAML processing pipeline. The items
+and terminology YAML defines is shown in black, NimYAML's implementation is
+shown in red.
+
+.. image:: processing.svg
+   :align: center

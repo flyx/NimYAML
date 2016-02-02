@@ -338,9 +338,6 @@ proc registerUri*(tagLib: TagLibrary, uri: string): TagId {.raises: [].}
 proc uri*(tagLib: TagLibrary, id: TagId): string {.raises: [KeyError].}
     ## retrieve the URI a ``TagId`` maps to.
 
-# these should be consts, but the Nim VM still has problems handling tables
-# properly, so we use let instead.
-
 proc initFailsafeTagLibrary*(): TagLibrary {.raises: [].}
     ## Contains only:
     ## - ``!``
@@ -366,16 +363,32 @@ proc initExtendedTagLibrary*(): TagLibrary {.raises: [].}
     ## - ``!!yaml``
 
 proc guessType*(scalar: string): TypeHint {.raises: [].}
+    ## Parse scalar string according to the RegEx table documented at
+    ## `TypeHint <#TypeHind>`_.
 
 proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
                     callback: WarningCallback = nil): YamlParser {.raises: [].}
+    ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
+    ## whenever the parser yields a warning. 
 
 proc getLineNumber*(p: YamlParser): int {.raises: [].}
+    ## Get the line number (1-based) of the recently yielded parser token.
+    ## Useful for error reporting at later loading stages.
+
 proc getColNumber*(p: YamlParser): int {.raises: [].}
+    ## Get the column number (1-based) of the recently yielded parser token.
+    ## Useful for error reporting at later parsing stages.
+
 proc getLineContent*(p: YamlParser, marker: bool = true): string {.raises: [].}
+    ## Get the content of the input line containing the recently yielded parser
+    ## token. Useful for error reporting at later parsing stages. The line will
+    ## be terminated by ``"\n"``. If ``marker`` is ``true``, a second line will
+    ## be returned containing a ``^`` at the position of the recent parser
+    ## token.
 
 proc parse*(p: YamlParser, s: Stream):
         YamlStream {.raises: [IOError, YamlParserError].}
+    ## Parse the given stream as YAML character stream. 
 
 proc constructJson*(s: YamlStream): seq[JsonNode]
         {.raises: [YamlConstructionError, YamlConstructionStreamError].}
