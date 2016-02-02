@@ -45,7 +45,7 @@ suite "Serialization":
         assert result[0] == "a"
         assert result[1] == "b"
     
-    test "Serialization: Serialize string sequence":
+    test "Serialization: Represent string sequence":
         var input = @["a", "b"]
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
@@ -62,7 +62,7 @@ suite "Serialization":
         assert result[23] == "dreiundzwanzig"
         assert result[42] == "zweiundvierzig"
     
-    test "Serialization: Serialize Table[int, string]":
+    test "Serialization: Represent Table[int, string]":
         var input = initTable[int32, string]()
         input[23] = "dreiundzwanzig"
         input[42] = "zweiundvierzig"
@@ -84,7 +84,7 @@ suite "Serialization":
         assert result[1] == @[4.int32, 5.int32]
         assert result[2] == @[6.int32]
     
-    test "Serialization: Serialize Sequences in Sequence":
+    test "Serialization: Represent Sequences in Sequence":
         let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32],
                       @[6.int32]]
         var output = newStringStream()
@@ -104,7 +104,7 @@ suite "Serialization":
         assert result[1] == tlGreen
         assert result[2] == tlYellow
     
-    test "Serialization: Serialize Enum":
+    test "Serialization: Represent Enum":
         let input = @[tlRed, tlGreen, tlYellow]
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
@@ -122,7 +122,7 @@ suite "Serialization":
         assert result.i == 42
         assert result.b == true
 
-    test "Serialization: Serialize Tuple":
+    test "Serialization: Represent Tuple":
         let input = (str: "value", i: 42.int32, b: true)
         var output = newStringStream()
         dump(input, output, psDefault, tsNone)
@@ -140,7 +140,7 @@ suite "Serialization":
         assert result.surname   == "Pan"
         assert result.age == 12
     
-    test "Serialization: Serialize custom object":
+    test "Serialization: Represent custom object":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
@@ -159,7 +159,7 @@ suite "Serialization":
         assert result[0] == "one"
         assert result[1] == "two"
     
-    test "Serialization: Serialize sequence with explicit tags":
+    test "Serialization: Represent sequence with explicit tags":
         let input = @["one", "two"]
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsAll)
@@ -179,7 +179,7 @@ suite "Serialization":
         assert result.surname   == "Pan"
         assert result.age       == 12
     
-    test "Serialization: Serialize custom object with explicit root tag":
+    test "Serialization: Represent custom object with explicit root tag":
         let input = Person(firstname: "Peter", surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsRootOnly)
@@ -187,7 +187,7 @@ suite "Serialization":
                 "--- !nim:custom:Person \nfirstname: Peter\nsurname: Pan\nage: 12",
                 output.data)
     
-    test "Serialization: Serialize cyclic data structure":
+    test "Serialization: Represent cyclic data structure":
         var
             a = newNode("a")
             b = newNode("b")

@@ -13,8 +13,7 @@
 ## large data structures.
 ##
 ## As YAML is a strict superset of `JSON <http://json.org>`_, JSON input is
-## automatically supported. Additionally, there is functionality available to
-## convert any YAML stream into JSON. While JSON is less readable than YAML,
+## automatically supported. While JSON is less readable than YAML,
 ## this enhances interoperability with other languages.
 
 import streams, unicode, lexbase, tables, strutils, json, hashes, queues, macros

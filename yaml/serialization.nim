@@ -210,16 +210,16 @@ macro serializable*(types: stmt): stmt =
         constructProc[6] = impl
         result.add(constructProc)
         
-        # serializeObject()
+        # representObject()
         
-        var serializeProc = newProc(newIdentNode("serializeObject"), [
+        var representProc = newProc(newIdentNode("representObject"), [
                 newIdentNode("YamlStream"),
                 newIdentDefs(newIdentNode("value"), tIdent),
                 newIdentDefs(newIdentNode("ts"),
                              newIdentNode("TagStyle")),
                 newIdentDefs(newIdentNode("c"),
                              newIdentNode("SerializationContext"))])
-        serializeProc[4] = newNimNode(nnkPragma).add(
+        representProc[4] = newNimNode(nnkPragma).add(
                 newNimNode(nnkExprColonExpr).add(newIdentNode("raises"),
                 newNimNode(nnkBracket)))
         var iterBody = newStmtList(
@@ -264,7 +264,7 @@ macro serializable*(types: stmt): stmt =
                                       scalarContent: `fieldNameString`)
             )
             iterbody.insert(i + 1, newVarStmt(fieldIterIdent,
-                    newCall("serializeObject", newDotExpr(newIdentNode("value"),
+                    newCall("representObject", newDotExpr(newIdentNode("value"),
                     field.name), newIdentNode("childTagStyle"),
                     newIdentNode("c"))))
             iterbody.insert(i + 2, quote do:
@@ -275,8 +275,8 @@ macro serializable*(types: stmt): stmt =
         impl = newStmtList(newAssignment(newIdentNode("result"), newProc(
                 newEmptyNode(), [newIdentNode("YamlStreamEvent")], iterBody,
                 nnkIteratorDef)))
-        serializeProc[6] = impl
-        result.add(serializeProc)
+        representProc[6] = impl
+        result.add(representProc)
 
 proc prepend(event: YamlStreamEvent, s: YamlStream): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
@@ -337,7 +337,7 @@ proc constructObject*(s: YamlStream, c: ConstructionContext, result: var string)
     constructScalarItem(item, "string", yTagString):
         result = item.scalarContent
 
-proc serializeObject*(value: string, ts: TagStyle = tsNone,
+proc representObject*(value: string, ts: TagStyle = tsNone,
                       c: SerializationContext): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, ts), yAnchorNone)
@@ -359,13 +359,13 @@ template constructObject*(s: YamlStream, c: ConstructionContext,
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
 
-proc serializeObject*[T: int8|int16|int32|int64](
+proc representObject*[T: int8|int16|int32|int64](
         value: T, ts: TagStyle = tsNone, c: SerializationContext):
         YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
 
-template serializeObject*(value: int, tagStyle: TagStyle,
+template representObject*(value: int, tagStyle: TagStyle,
                           c: SerializationContext) =
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
@@ -400,13 +400,13 @@ template constructObject*(s: YamlStream, c: ConstructionContext,
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
 
-proc serializeObject*[T: uint8|uint16|uint32|uint64](
+proc representObject*[T: uint8|uint16|uint32|uint64](
         value: T, ts: TagStyle, c: SerializationContext):
         YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
 
-template serializeObject*(value: uint, ts: TagStyle, c: SerializationContext) =
+template representObject*(value: uint, ts: TagStyle, c: SerializationContext) =
     {.fatal:
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
@@ -440,7 +440,7 @@ template constructObject*(s: YamlStream, c: ConstructionContext,
                           result: var float) =
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
-proc serializeObject*[T: float32|float64](value: T, ts: TagStyle,
+proc representObject*[T: float32|float64](value: T, ts: TagStyle,
                                           c: SerializationContext):
         YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
@@ -457,7 +457,7 @@ proc serializeObject*[T: float32|float64](value: T, ts: TagStyle,
             asString = $value
         yield scalarEvent(asString, presentTag(T, ts), yAnchorNone)
 
-template serializeObject*(value: float, tagStyle: TagStyle,
+template representObject*(value: float, tagStyle: TagStyle,
                           c: SerializationContext) =
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
@@ -476,7 +476,7 @@ proc constructObject*(s: YamlStream, c: ConstructionContext, result: var bool)
             raise newException(YamlConstructionError,
                     "Cannot construct to bool: " & item.scalarContent)
         
-proc serializeObject*(value: bool, ts: TagStyle,
+proc representObject*(value: bool, ts: TagStyle,
                       c: SerializationContext): YamlStream  {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, ts),
@@ -495,7 +495,7 @@ proc constructObject*(s: YamlStream, c: ConstructionContext, result: var char)
         else:
             result = item.scalarContent[0]
 
-proc serializeObject*(value: char, ts: TagStyle,
+proc representObject*(value: char, ts: TagStyle,
                       c: SerializationContext): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent("" & value, presentTag(char, ts), yAnchorNone)
@@ -531,7 +531,7 @@ proc constructObject*[T](s: YamlStream, c: ConstructionContext,
         safeNextEvent(event, s)
         assert(not finished(s))
 
-proc serializeObject*[T](value: seq[T], ts: TagStyle,
+proc representObject*[T](value: seq[T], ts: TagStyle,
                          c: SerializationContext): YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
@@ -539,7 +539,7 @@ proc serializeObject*[T](value: seq[T], ts: TagStyle,
                               seqTag: presentTag(seq[T], ts),
                               seqAnchor: yAnchorNone)
         for item in value:
-            var events = serializeObject(item, childTagStyle, c)
+            var events = representObject(item, childTagStyle, c)
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndSequence)
@@ -589,7 +589,7 @@ proc constructObject*[K, V](s: YamlStream, c: ConstructionContext,
         safeNextEvent(event, s)
         assert(not finished(s))
 
-proc serializeObject*[K, V](value: Table[K, V], ts: TagStyle,
+proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
                             c: SerializationContext): YamlStream {.raises:[].} =
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
@@ -597,10 +597,10 @@ proc serializeObject*[K, V](value: Table[K, V], ts: TagStyle,
                               mapTag: presentTag(Table[K, V], ts),
                               mapAnchor: yAnchorNone)
         for key, value in value.pairs:
-            var events = serializeObject(key, childTagStyle, c)
+            var events = representObject(key, childTagStyle, c)
             for event in events():
                 yield event
-            events = serializeObject(value, childTagStyle, c)
+            events = representObject(value, childTagStyle, c)
             for event in events():
                 yield event
         yield YamlStreamEvent(kind: yamlEndMap)
@@ -649,7 +649,7 @@ proc constructObject*[O: object|tuple](s: YamlStream, c: ConstructionContext,
         e = s()
         assert(not finished(s))
 
-proc serializeObject*[O: object|tuple](value: O, ts: TagStyle,
+proc representObject*[O: object|tuple](value: O, ts: TagStyle,
                                  c: SerializationContext):
         YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
@@ -658,7 +658,7 @@ proc serializeObject*[O: object|tuple](value: O, ts: TagStyle,
         for name, value in fieldPairs(value):
             yield scalarEvent(name, presentTag(string, childTagStyle),
                               yAnchorNone)
-            var events = serializeObject(value, childTagStyle, c)
+            var events = representObject(value, childTagStyle, c)
             for event in events():
                 yield event
         yield endMapEvent()
@@ -678,7 +678,7 @@ proc constructObject*[O: enum](s: YamlStream, c: ConstructionContext,
         ex.parent = getCurrentException()
         raise ex
 
-proc serializeObject*[O: enum](value: O, ts: TagStyle,
+proc representObject*[O: enum](value: O, ts: TagStyle,
                                c: SerializationContext):
         YamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
@@ -724,12 +724,12 @@ proc constructObject*[O](s: YamlStream, c: ConstructionContext,
         e.parent = getCurrentException()
         raise e
 
-proc serializeObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
+proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
         YamlStream {.raises: [].} =
     if value == nil:
         result = iterator(): YamlStreamEvent = yield scalarEvent("~", yTagNull)
     elif c.style == asNone:
-        result = serializeObject(value[], ts, c)
+        result = representObject(value[], ts, c)
     else:
         let
             p = cast[pointer](value)
@@ -745,7 +745,7 @@ proc serializeObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
                 cast[AnchorId](p)
         try:
             var
-                objStream = serializeObject(value[], ts, c)
+                objStream = representObject(value[], ts, c)
                 first = objStream()
             assert(not finished(objStream))
             case first.kind
@@ -842,13 +842,13 @@ proc insideDoc(s: YamlStream): YamlStream {.raises: [].} =
             yield event
         yield YamlStreamEvent(kind: yamlEndDocument)
 
-proc serialize*[T](value: T, ts: TagStyle = tsRootOnly,
+proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream {.raises: [].} =
     var
         context = newSerializationContext(a)
         objStream: YamlStream
     try:
-        objStream = insideDoc(serializeObject(value, ts, context))
+        objStream = insideDoc(representObject(value, ts, context))
     except Exception:
         assert(false)
     if a == asTidy:
@@ -881,7 +881,7 @@ proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
               tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
             {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].} =
-    var events = serialize(value, if style == psCanonical: tsAll else: tagStyle,
+    var events = represent(value, if style == psCanonical: tsAll else: tagStyle,
                            if style == psJson: asNone else: anchorStyle)
     try:
         present(events, target, serializationTagLibrary, style, indentationStep)
@@ -894,5 +894,5 @@ proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
     except YamlPresenterJsonError, YamlPresenterOutputError, AssertionError:
         raise
     except Exception:
-        # cannot occur as serialize() doesn't raise any errors
+        # cannot occur as represent() doesn't raise any errors
         assert(false)
