@@ -1,4 +1,4 @@
-import "../yaml/serialization"
+import "../yaml"
 import unittest
 
 type

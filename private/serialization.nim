@@ -1,41 +1,3 @@
-import "../yaml"
-import macros, strutils, streams, tables, json, hashes, typetraits
-export yaml, streams, tables, json
-
-type
-    TagStyle* = enum
-        tsNone, tsRootOnly, tsAll
-    
-    AnchorStyle* = enum
-        asNone, asTidy, asAlways
-    
-    RefNodeData* = object
-        p: pointer
-        count: int
-        anchor: AnchorId
-    
-    ConstructionContext* = ref object
-        refs: Table[AnchorId, pointer]
-    
-    SerializationContext* = ref object
-        refsList: seq[RefNodeData]
-        style: AnchorStyle
-    
-    RawYamlStream* = iterator(): YamlStreamEvent {.raises: [].}
-    
-const
-    yTagNimInt8*    = 100.TagId
-    yTagNimInt16*   = 101.TagId
-    yTagNimInt32*   = 102.TagId
-    yTagNimInt64*   = 103.TagId
-    yTagNimUInt8*   = 104.TagId
-    yTagNimUInt16*  = 105.TagId
-    yTagNimUInt32*  = 106.TagId
-    yTagNimUInt64*  = 107.TagId
-    yTagNimFloat32* = 108.TagId
-    yTagNimFloat64* = 109.TagId
-    yTagNimChar*    = 110.TagId
-
 proc initRefNodeData(p: pointer): RefNodeData =
     result.p = p
     result.count = 1
@@ -98,12 +60,16 @@ template presentTag(t: typedesc, ts: TagStyle): TagId =
      if ts == tsNone: yTagQuestionMark else: yamlTag(t)
 
 proc lazyLoadTag*(uri: string): TagId {.inline, raises: [].} =
+    ## Internal function. Do not call explicitly.
     try:
         result = serializationTagLibrary.tags[uri]
     except KeyError:
         result = serializationTagLibrary.registerUri(uri)
 
 macro serializable*(types: stmt): stmt =
+    ## Macro for customizing serialization of user-defined types.
+    ## Currently does not provide more features than just using the standard
+    ## serialization procs. This will change in the future.
     assert types.kind == nnkTypeSection
     result = newStmtList(types)
     for typedef in types.children:
@@ -281,6 +247,7 @@ macro serializable*(types: stmt): stmt =
         result.add(representProc)
 
 proc safeTagUri*(id: TagId): string {.raises: [].} =
+    ## Internal function. Do not call explicitly.
     try:
         let uri = serializationTagLibrary.uri(id)
         if uri.len > 0 and uri[0] == '!':
@@ -744,6 +711,7 @@ proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
 
 proc construct*[T](s: var YamlStream, target: var T)
         {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## Construct a Nim value from a YAML stream.
     var
         context = newConstructionContext()
     try:
@@ -763,6 +731,7 @@ proc construct*[T](s: var YamlStream, target: var T)
 
 proc load*[K](input: Stream, target: var K)
         {.raises: [YamlConstructionError, IOError, YamlParserError].} =
+    ## Load a Nim value from a YAML character stream.
     var
         parser = newYamlParser(serializationTagLibrary)
         events = parser.parse(input)
@@ -809,6 +778,7 @@ proc setAliasAnchor(a: var AnchorId, q: var seq[RefNodeData]) {.inline.} =
     
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream {.raises: [].} =
+    ## Represent a Nim value as ``YamlStream``.
     var
         context = newSerializationContext(a)
         objStream = iterator(): YamlStreamEvent =
@@ -850,6 +820,7 @@ proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
               tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
             {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].} =
+    ## Dump a Nim value as YAML character stream.
     var events = represent(value, if style == psCanonical: tsAll else: tagStyle,
                            if style == psJson: asNone else: anchorStyle)
     try:

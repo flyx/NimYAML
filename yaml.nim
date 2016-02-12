@@ -16,7 +16,8 @@
 ## automatically supported. While JSON is less readable than YAML,
 ## this enhances interoperability with other languages.
 
-import streams, unicode, lexbase, tables, strutils, json, hashes, queues, macros
+import streams, unicode, lexbase, tables, strutils, json, hashes, queues,
+       macros, typetraits
 export streams, tables, json
 
 when defined(yamlDebug):
@@ -178,6 +179,51 @@ type
         ##   flow style at all.
         psMinimal, psCanonical, psDefault, psJson, psBlockOnly
     
+    TagStyle* = enum
+        ## Whether object should be serialized with explicit tags.
+        ##
+        ## - ``tsNone``: No tags will be outputted unless necessary.
+        ## - ``tsRootOnly``: A tag will only be outputted for the root tag and
+        ##                   where necessary.
+        ## - ``tsAll``: Tags will be outputted for every object.
+        tsNone, tsRootOnly, tsAll
+    
+    AnchorStyle* = enum
+        ## How ref object should be serialized.
+        ##
+        ## - ``asNone``: No anchors will be outputted. Values present at
+        ##               multiple places in the content that should be
+        ##               serialized will be fully serialized at every occurence.
+        ##               If the content is cyclic, this will lead to an
+        ##               endless loop!
+        ## - ``asTidy``: Anchors will only be generated for objects that
+        ##               actually occur more than once in the content to be
+        ##               serialized. This is a bit slower and needs more memory
+        ##               than ``asAlways``.
+        ## - ``asAlways``: Achors will be generated for every ref object in the
+        ##                 content to be serialized, regardless of whether the
+        ##                 object is referenced again afterwards
+        asNone, asTidy, asAlways
+    
+    RefNodeData = object
+        p: pointer
+        count: int
+        anchor: AnchorId
+    
+    ConstructionContext* = ref object
+        ## Context information for the process of constructing Nim values from
+        ## YAML.
+        refs: Table[AnchorId, pointer]
+    
+    SerializationContext* = ref object
+        ## Context information for the process of serializing YAML from Nim
+        ## values.
+        refsList: seq[RefNodeData]
+        style: AnchorStyle
+    
+    RawYamlStream* = iterator(): YamlStreamEvent {.raises: [].} ## \
+        ## Stream of ``YamlStreamEvent``s returned by ``representObject`` procs.
+    
     YamlLoadingError* = object of Exception
         ## Base class for all exceptions that may be raised during the process
         ## of loading a YAML character stream. 
@@ -296,6 +342,18 @@ const
         ## yielded when no anchor was defined for a YAML node
     
     yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
+    
+    yTagNimInt8*    = 100.TagId ## tag for Nim's ``int8``
+    yTagNimInt16*   = 101.TagId ## tag for Nim's ``int16``
+    yTagNimInt32*   = 102.TagId ## tag for Nim's ``int32``
+    yTagNimInt64*   = 103.TagId ## tag for Nim's ``int64``
+    yTagNimUInt8*   = 104.TagId ## tag for Nim's ``uint8``
+    yTagNimUInt16*  = 105.TagId ## tag for Nim's ``uint16``
+    yTagNimUInt32*  = 106.TagId ## tag for Nim's ``uint32``
+    yTagNimUInt64*  = 107.TagId ## tag for Nim's ``uint64``
+    yTagNimFloat32* = 108.TagId ## tag for Nim's ``float32``
+    yTagNimFloat64* = 109.TagId ## tag for Nim's ``float64``
+    yTagNimChar*    = 110.TagId ## tag for Nim's ``char``
 
 # interface
 
@@ -330,11 +388,25 @@ proc hash*(id: AnchorId): Hash {.borrow.}
 
 proc initYamlStream*(backend: iterator(): YamlStreamEvent):
         YamlStream {.raises: [].}
+    ## Creates a new ``YamlStream`` that uses the given iterator as backend.
 proc next*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
+    ## Get the next item of the stream. Requires ``finished(s) == true``.
+    ## If the backend yields an exception, that exception will be encapsulated
+    ## into a ``YamlStreamError``, which will be raised. 
 proc peek*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
+    ## Get the next item of the stream without advancing the stream.
+    ## Requires ``finished(s) == true``. Handles exceptions of the backend like
+    ## ``next()``.
 proc `peek=`*(s: var YamlStream, value: YamlStreamEvent) {.raises: [].}
+    ## Set the next item of the stream. Will replace a previously peeked item,
+    ## if one exists.
 proc finished*(s: var YamlStream): bool {.raises: [YamlStreamError].}
-iterator items*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].} =
+    ## ``true`` if no more items are available in the stream. Handles exceptions
+    ## of the backend like ``next()``.
+iterator items*(s: var YamlStream): YamlStreamEvent
+        {.raises: [YamlStreamError].} =
+    ## Iterate over all items of the stream. You may not use ``peek()`` on the
+    ## stream while iterating.
     if s.peeked:
         s.peeked = false
         yield s.cached
@@ -464,3 +536,4 @@ include private.presenter
 include private.hints
 include private.fastparse
 include private.streams
+include private.serialization

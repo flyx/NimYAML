@@ -67,7 +67,7 @@ html {
 }
 
 /* necessary for links to scroll to the right position */
-dt:before {
+dt a:before {
     margin-top: -50px;
     height: 50px;
     content: ' ';

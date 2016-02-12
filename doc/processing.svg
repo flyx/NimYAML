@@ -96,7 +96,9 @@
   <g id="atomics" text-anchor="middle" transform="translate(0 90)">
     <g id="represent" transform="translate(65 10)">
       <use xlink:href="#atomic-right-long"/>
-      <text x="80" y="25" font-style="italic">represent</text>
+      <a xlink:href="yaml.html#represent,T,TagStyle,AnchorStyle" target="_top">
+          <text x="80" y="25" font-style="italic">represent</text>
+      </a>
     </g>
     
     <g id="serialize" transform="translate(235 10)">
@@ -113,7 +115,9 @@
     
     <g id="construct" transform="translate(65 120)">
       <use xlink:href="#atomic-left-long"/>
-      <text x="80" y="35" font-style="italic">construct</text>
+      <a xlink:href="yaml.html#construct,YamlStream,T" target="_top">
+          <text x="80" y="35" font-style="italic">construct</text>
+      </a>
     </g>
     
     <g id="compose" transform="translate(235 120)">
@@ -132,22 +136,30 @@
   <g id="skipping-things" text-anchor="middle" transform="translate(0 50)">
     <g id="skipping-represent" transform="translate(55 10)">
       <use xlink:href="#skipping-right"/>
-      <text x="175" y="25" font-weight="bold">represent</text>
+      <a xlink:href="yaml.html#represent,T,TagStyle,AnchorStyle" target="_top">
+          <text x="175" y="25" font-weight="bold">represent</text>
+      </a>
     </g>
     <g id="skipping-construct" transform="translate(55 160)">
       <use xlink:href="#skipping-left"/>
-      <text x="175" y="75" font-weight="bold">construct</text>
+      <a xlink:href="yaml.html#construct,YamlStream,T" target="_top">
+          <text x="175" y="75" font-weight="bold">construct</text>
+      </a>
     </g>
   </g>
   
   <g id="whole-lines" text-anchor="middle" transform="translate(0 20)">
     <g id="dump">
       <use xlink:href="#whole-right"/>
-      <text x="325" y="25" font-style="italic" font-weight="bold">dump</text>
+      <a xlink:href="yaml.html#dump,K,Stream,PresentationStyle,TagStyle,AnchorStyle,int" target="_top">
+          <text x="325" y="25" font-style="italic" font-weight="bold">dump</text>
+      </a>
     </g>
     <g id="load" transform="translate(0 280)">
       <use xlink:href="#whole-left"/>
-      <text x="325" y="25" font-style="italic" font-weight="bold">load</text>
+      <a xlink:href="yaml.html#load,Stream,K" target="_top">
+          <text x="325" y="25" font-style="italic" font-weight="bold">load</text>
+      </a>
     </g>
   </g>
   
