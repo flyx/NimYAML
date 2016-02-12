@@ -160,28 +160,16 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
         e.parent = getCurrentException()
         raise e
 
-proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
+proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               style: PresentationStyle = psDefault,
               indentationStep: int = 2) =
     var
-        cached = initQueue[YamlStreamEvent]()
-        cacheIterator = iterator(): YamlStreamEvent =
-            while true:
-                while cached.len > 0:
-                    yield cached.dequeue()
-                try:
-                    let item = s()
-                    if finished(s):
-                        break
-                    cached.enqueue(item)
-                except Exception:
-                    var e = newException(YamlPresenterStreamError, "")
-                    e.parent = getCurrentException()
-                    raise e
         indentation = 0
         levels = newSeq[DumperState]()
+        cached = initQueue[YamlStreamEvent]()
     
-    for item in cacheIterator():
+    while cached.len > 0 or not s.finished():
+        let item = if cached.len > 0: cached.dequeue else: s.next()
         case item.kind
         of yamlStartDocument:
             if style != psJson:
@@ -253,24 +241,19 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
             of psDefault:
                 var length = 0
                 while true:
-                    try:
-                        let next = s()
-                        assert (not finished(s))
-                        cached.enqueue(next)
-                        case next.kind
-                        of yamlScalar:
-                            length += 2 + next.scalarContent.len
-                        of yamlAlias:
-                            length += 6
-                        of yamlEndSequence:
-                            break
-                        else:
-                            length = high(int)
-                            break
-                    except Exception:
-                        var e = newException(YamlPresenterStreamError, "")
-                        e.parent = getCurrentException()
-                        raise e
+                    assert(not(s.finished()))
+                    let next = s.next()
+                    cached.enqueue(next)
+                    case next.kind
+                    of yamlScalar:
+                        length += 2 + next.scalarContent.len
+                    of yamlAlias:
+                        length += 6
+                    of yamlEndSequence:
+                        break
+                    else:
+                        length = high(int)
+                        break
                 nextState = if length <= 60: dFlowSequenceStart else:
                             dBlockSequenceItem
             of psJson:
@@ -318,24 +301,16 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                     mpInitial, mpKey, mpValue, mpNeedBlock
                 var mps = mpInitial
                 while mps != mpNeedBlock:
-                    try:
-                        let next = s()
-                        assert (not finished(s))
-                        cached.enqueue(next)
-                        case next.kind
-                        of yamlScalar, yamlAlias:
-                            case mps
-                            of mpInitial: mps = mpKey
-                            of mpKey: mps = mpValue
-                            else: mps = mpNeedBlock
-                        of yamlEndMap:
-                            break
-                        else:
-                            mps = mpNeedBlock
-                    except Exception:
-                        var e = newException(YamlPresenterStreamError, "")
-                        e.parent = getCurrentException()
-                        raise e
+                    case s.peek().kind
+                    of yamlScalar, yamlAlias:
+                        case mps
+                        of mpInitial: mps = mpKey
+                        of mpKey: mps = mpValue
+                        else: mps = mpNeedBlock
+                    of yamlEndMap:
+                        break
+                    else:
+                        mps = mpNeedBlock
                 nextState = if mps == mpNeedBlock: dBlockMapValue else:
                         dBlockInlineMap
             of psMinimal:
@@ -363,11 +338,11 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                     indentation += indentationStep
             else:
                 if nextState in [dBlockMapValue, dBlockImplicitMapKey]:
+                    startItem(target, style, indentation, levels[levels.high],
+                              true)
                     if style != psJson:
                         writeTagAndAnchor(target,
                                           item.mapTag, tagLib, item.mapAnchor)
-                    startItem(target, style, indentation, levels[levels.high],
-                              true)
                 else:
                     startItem(target, style, indentation, levels[levels.high],
                               true)
@@ -453,15 +428,7 @@ proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
                 assert false
             indentation -= indentationStep
         of yamlEndDocument:
-            try:
-                let next = s()
-                if finished(s):
-                    break
-                cached.enqueue(next)
-            except Exception:
-                var e = newException(YamlPresenterStreamError, "")
-                e.parent = getCurrentException()
-                raise e
+            if finished(s): break
             safeWrite("...\x0A")
 
 proc transform*(input: Stream, output: Stream, style: PresentationStyle,
@@ -473,7 +440,7 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
     try:
         if style == psCanonical:
             var specificTagEvents = iterator(): YamlStreamEvent =
-                for e in events():
+                for e in events:
                     var event = e
                     case event.kind
                     of yamlStartDocument, yamlEndDocument, yamlEndMap,
@@ -503,12 +470,14 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
                         elif event.scalarTag == yTagExclamationMark:
                             event.scalarTag = yTagString
                     yield event
-            present(specificTagEvents, output, tagLib, style,
+            var s = initYamlStream(specificTagEvents)
+            present(s, output, tagLib, style,
                     indentationStep)
         else:
             present(events, output, tagLib, style, indentationStep)
-    except YamlPresenterStreamError:
-        let e = getCurrentException()
+    except YamlStreamError:
+        var e = getCurrentException()
+        while e.parent of YamlStreamError: e = e.parent
         if e.parent of IOError:
             raise cast[ref IOError](e.parent)
         elif e.parent of YamlParserError:

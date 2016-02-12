@@ -100,8 +100,9 @@ type
         of yamlAlias:
             aliasTarget* : AnchorId
     
-    YamlStream* = iterator(): YamlStreamEvent ## \
-        ## A ``YamlStream`` is an iterator that yields a well-formed stream of
+    YamlStream* = object ## \
+        ## A ``YamlStream`` is an iterator-like object that yields a
+        ## well-formed stream of
         ## ``YamlStreamEvents``. Well-formed means that every ``yamlStartMap``
         ## is terminated by a ``yamlEndMap``, every ``yamlStartSequence`` is
         ## terminated by a ``yamlEndSequence`` and every ``yamlStartDocument``
@@ -113,7 +114,12 @@ type
         ## and is not required to check for it. The procs in this module will
         ## always yield a well-formed ``YamlStream`` and expect it to be
         ## well-formed if it's an input.
-    
+        ##
+        ## 
+        backend: iterator(): YamlStreamEvent
+        peeked: bool
+        cached: YamlStreamEvent
+        
     TagLibrary* = ref object
         ## A ``TagLibrary`` maps tag URIs to ``TagId`` s.
         ##
@@ -228,10 +234,9 @@ type
         ## writing character data to the output stream raises any exception.
         ## The error that has occurred is available from ``parent``.
     
-    YamlPresenterStreamError* = object of Exception
-        ## Exception that may be raised by the YAML presenter. This occurs if
-        ## an exception is raised while retrieving the next item from a
-        ## `YamlStream <#YamlStream>`_. The error that has occurred is
+    YamlStreamError* = object of Exception
+        ## Exception that may be raised by a ``YamlStream`` when the underlying
+        ## backend raises an exception. The error that has occurred is
         ## available from ``parent``.
     
     YamlConstructionError* = object of YamlLoadingError
@@ -240,11 +245,7 @@ type
         ## ``lineContent`` are only available if the costructing proc also does
         ## parsing, because otherwise this information is not available to the
         ## costruction proc.
-    
-    YamlConstructionStreamError* = object of YamlLoadingError
-        ## Exception that may be raised by a constructor if the input
-        ## `YamlStream <#YamlStream>`_ raises an error. The error that has
-        ## occurred is available from ``parent``.
+
 const
     # failsafe schema
 
@@ -327,6 +328,33 @@ proc `==`*(left, right: AnchorId): bool {.borrow.}
 proc `$`*(id: AnchorId): string {.borrow.}
 proc hash*(id: AnchorId): Hash {.borrow.}
 
+proc initYamlStream*(backend: iterator(): YamlStreamEvent):
+        YamlStream {.raises: [].}
+proc next*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
+proc peek*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
+proc `peek=`*(s: var YamlStream, value: YamlStreamEvent) {.raises: [].}
+proc finished*(s: var YamlStream): bool {.raises: [YamlStreamError].}
+iterator items*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].} =
+    if s.peeked:
+        s.peeked = false
+        yield s.cached
+    while true:
+        var event: YamlStreamEvent
+        try:
+            event = s.backend()
+            if finished(s.backend): break
+        except AssertionError: raise
+        except YamlStreamError:
+            let cur = getCurrentException()
+            var e = newException(YamlStreamError, cur.msg)
+            e.parent = cur.parent
+            raise e
+        except Exception:
+            var e = newException(YamlStreamError, getCurrentExceptionMsg())
+            e.parent = getCurrentException()
+            raise e
+        yield event
+
 proc initTagLibrary*(): TagLibrary {.raises: [].}
     ## initializes the ``tags`` table and sets ``nextCustomTagId`` to
     ## ``yFirstCustomTagId``.
@@ -386,12 +414,11 @@ proc getLineContent*(p: YamlParser, marker: bool = true): string {.raises: [].}
     ## be returned containing a ``^`` at the position of the recent parser
     ## token.
 
-proc parse*(p: YamlParser, s: Stream):
-        YamlStream {.raises: [IOError, YamlParserError].}
+proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [].}
     ## Parse the given stream as YAML character stream. 
 
-proc constructJson*(s: YamlStream): seq[JsonNode]
-        {.raises: [YamlConstructionError, YamlConstructionStreamError].}
+proc constructJson*(s: var YamlStream): seq[JsonNode]
+        {.raises: [YamlConstructionError, YamlStreamError].}
     ## Construct an in-memory JSON tree from a YAML event stream. The stream may
     ## not contain any tags apart from those in ``coreTagLibrary``. Anchors and
     ## aliases will be resolved. Maps in the input must not contain
@@ -406,22 +433,24 @@ proc constructJson*(s: YamlStream): seq[JsonNode]
     ## of these values into a JSON character stream.
 
 proc loadToJson*(s: Stream): seq[JsonNode]
-        {.raises: [IOError, YamlParserError, YamlConstructionError].}
+        {.raises: [IOError, YamlParserError, YamlConstructionError,
+                   OutOfMemError].}
     ## Uses `YamlParser <#YamlParser>`_ and
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
     
-proc present*(s: YamlStream, target: Stream, tagLib: TagLibrary,
+proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               style: PresentationStyle = psDefault,
               indentationStep: int = 2) {.raises: [YamlPresenterJsonError,
                                                    YamlPresenterOutputError,
-                                                   YamlPresenterStreamError].}
+                                                   YamlStreamError].}
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
     
 proc transform*(input: Stream, output: Stream, style: PresentationStyle,
                 indentationStep: int = 2) {.raises: [IOError, YamlParserError,
                                                      YamlPresenterJsonError,
-                                                     YamlPresenterOutputError].}
+                                                     YamlPresenterOutputError,
+                                                     OutOfMemError].}
     ## Parser ``input`` as YAML character stream and then dump it to ``output``
     ## while resolving non-specific tags to the ones in the YAML core tag
     ## library.
@@ -434,3 +463,4 @@ include private.json
 include private.presenter
 include private.hints
 include private.fastparse
+include private.streams

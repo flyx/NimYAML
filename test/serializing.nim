@@ -223,7 +223,14 @@ next:
             result: seq[ref Node]
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
-        construct(events, result)
+        try:
+            construct(events, result)
+        except YamlConstructionError:
+            let ex = (ref YamlConstructionError)(getCurrentException())
+            echo "line ", parser.getLineNumber, ", column ",
+                parser.getColNumber, ": ", ex.msg
+            echo parser.getLineContent
+
         assert(result.len == 3)
         assert(result[0].value == "a")
         assert(result[1].value == "b")

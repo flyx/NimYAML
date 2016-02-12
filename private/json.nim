@@ -78,26 +78,13 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
         e.parent = getCurrentException()
         raise e
 
-proc constructJson*(s: YamlStream): seq[JsonNode] =
+proc constructJson*(s: var YamlStream): seq[JsonNode] =
     newSeq(result, 0)
     
     var
         levels  = newSeq[Level]()
         anchors = initTable[AnchorId, JsonNode]()
-        safeIter = iterator(): YamlStreamEvent
-                {.raises: [YamlConstructionStreamError].} =
-            while true:
-                var item: YamlStreamEvent
-                try:
-                    item = s()
-                    if finished(s): break
-                except AssertionError: raise
-                except Exception:
-                    var e = newException(YamlConstructionStreamError, "")
-                    e.parent = getCurrentException()
-                    raise e
-                yield item
-    for event in safeIter():
+    for event in s:
         case event.kind
         of yamlStartDocument:
             # we don't need to do anything here; root node will be created
@@ -205,7 +192,7 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
         e.column = parser.getColNumber()
         e.lineContent = parser.getLineContent()
         raise e
-    except YamlConstructionStreamError:
+    except YamlStreamError:
         let e = getCurrentException()
         if e.parent of IOError:
             raise cast[ref IOError](e.parent)

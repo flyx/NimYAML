@@ -8,7 +8,8 @@ proc wc(line, column: int, lineContent: string, message: string) =
 proc ensureEqual(yamlIn, jsonIn: string) =
     var
         parser = newYamlParser(initCoreTagLibrary(), wc)
-        yamlResult = constructJson(parser.parse(newStringStream(yamlIn)))
+        s = parser.parse(newStringStream(yamlIn))
+        yamlResult = constructJson(s)
         jsonResult = parseJson(jsonIn)
     assert yamlResult.len == 1
     assert(jsonResult == yamlResult[0])

@@ -986,7 +986,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
     discard
 
 proc parse*(p: YamlParser, s: Stream): YamlStream =
-  result = iterator(): YamlStreamEvent =
+  var backend = iterator(): YamlStreamEvent =
     var
       state = fpInitial
       shorthands: Table[string, string]
@@ -1600,3 +1600,6 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         else:
           startToken()
           parserError("Unexpected content (expected flow indicator)")
+  try:
+    result = initYamlStream(backend)
+  except Exception: assert(false) # compiler error

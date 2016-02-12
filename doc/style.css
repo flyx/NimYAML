@@ -91,3 +91,9 @@ dt:before {
   display: inline-block;
   margin-right: 20px;
 }
+
+object {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+}

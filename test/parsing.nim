@@ -56,7 +56,7 @@ template ensure(input: string, expected: varargs[YamlStreamEvent]) {.dirty.} =
         parser = newYamlParser(tagLib)
         events = parser.parse(newStringStream(input))
     try:
-        for token in events():
+        for token in events:
             if i >= expected.len:
                 echo "received more tokens than expected (next token = ",
                      token.kind, ")"
