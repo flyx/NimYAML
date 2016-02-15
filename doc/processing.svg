@@ -96,9 +96,7 @@
   <g id="atomics" text-anchor="middle" transform="translate(0 90)">
     <g id="represent" transform="translate(65 10)">
       <use xlink:href="#atomic-right-long"/>
-      <a xlink:href="yaml.html#represent,T,TagStyle,AnchorStyle" target="_top">
-          <text x="80" y="25" font-style="italic">represent</text>
-      </a>
+      <text x="80" y="25" font-style="italic">represent</text>
     </g>
     
     <g id="serialize" transform="translate(235 10)">
@@ -115,9 +113,7 @@
     
     <g id="construct" transform="translate(65 120)">
       <use xlink:href="#atomic-left-long"/>
-      <a xlink:href="yaml.html#construct,YamlStream,T" target="_top">
-          <text x="80" y="35" font-style="italic">construct</text>
-      </a>
+      <text x="80" y="35" font-style="italic">construct</text>
     </g>
     
     <g id="compose" transform="translate(235 120)">

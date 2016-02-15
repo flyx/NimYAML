@@ -22,6 +22,7 @@ task documentation, "Generate documentation":
     exec "mkdir -p docout"
     exec r"nim doc2 -o:docout/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/`git log -n 1 --format=%H` yaml"
     exec r"nim rst2html -o:docout/index.html doc/index.txt"
+    exec r"nim rst2html -o:docout/api.html doc/api.txt"
     exec "cp doc/docutils.css doc/style.css doc/testing.html doc/processing.svg docout"
     setCommand "nop"
 

@@ -11,12 +11,16 @@ type
         tlGreen, tlYellow, tlRed
     
     Person = object
-        firstname, surname: string
+        firstnamechar: char
+        surname: string
         age: int32
     
     Node = object
         value: string
         next: ref Node
+
+setTagUriForType(TrafficLight, "!tl")
+setTagUriForType(Node, "!example.net:Node")
 
 template assertStringEqual(expected, actual: string) =
     for i in countup(0, min(expected.len, actual.len)):
@@ -93,7 +97,7 @@ suite "Serialization":
                           output.data
     
     test "Serialization: Load Enum":
-        let input = newStringStream("- tlRed\n- tlGreen\n- tlYellow")
+        let input = newStringStream("!nim:system:seq(tl)\n- !tl tlRed\n- tlGreen\n- tlYellow")
         var
             result: seq[TrafficLight]
             parser = newYamlParser(tagLib)
@@ -130,22 +134,22 @@ suite "Serialization":
                           output.data
     
     test "Serialization: Load custom object":
-        let input = newStringStream("firstname: Peter\nsurname: Pan\nage: 12")
+        let input = newStringStream("firstnamechar: P\nsurname: Pan\nage: 12")
         var
             result: Person
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
         construct(events, result)
-        assert result.firstname == "Peter"
+        assert result.firstnamechar == 'P'
         assert result.surname   == "Pan"
         assert result.age == 12
     
     test "Serialization: Represent custom object":
-        let input = Person(firstname: "Peter", surname: "Pan", age: 12)
+        let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsNone)
         assertStringEqual(
-                "%YAML 1.2\n--- \nfirstname: Peter\nsurname: Pan\nage: 12",
+                "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12",
                 output.data)
     
     test "Serialization: Load sequence with explicit tags":
@@ -169,22 +173,22 @@ suite "Serialization":
     
     test "Serialization: Load custom object with explicit root tag":
         let input = newStringStream(
-            "--- !nim:custom:Person\nfirstname: Peter\nsurname: Pan\nage: 12")
+            "--- !nim:custom:Person\nfirstnamechar: P\nsurname: Pan\nage: 12")
         var
             result: Person
             parser = newYamlParser(tagLib)
             events = parser.parse(input)
         construct(events, result)
-        assert result.firstname == "Peter"
+        assert result.firstnamechar == 'P'
         assert result.surname   == "Pan"
         assert result.age       == 12
     
     test "Serialization: Represent custom object with explicit root tag":
-        let input = Person(firstname: "Peter", surname: "Pan", age: 12)
+        let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
         var output = newStringStream()
         dump(input, output, psBlockOnly, tsRootOnly)
         assertStringEqual("%YAML 1.2\n" &
-                "--- !nim:custom:Person \nfirstname: Peter\nsurname: Pan\nage: 12",
+                "--- !nim:custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12",
                 output.data)
     
     test "Serialization: Represent cyclic data structure":
@@ -198,7 +202,7 @@ suite "Serialization":
         var output = newStringStream()
         dump(a, output, psBlockOnly, tsRootOnly)
         assertStringEqual """%YAML 1.2
---- !nim:custom:Node &a 
+--- !example.net:Node &a 
 value: a
 next: 
   value: b
@@ -208,7 +212,7 @@ next:
     
     test "Serialization: Load cyclic data structure":
         let input = newStringStream("""%YAML 1.2
---- !nim:system:seq(nim:custom:Node)
+--- !nim:system:seq(example.net:Node)
 - &a
   value: a
   next: &b

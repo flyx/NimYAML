@@ -23,17 +23,6 @@ proc initSerializationTagLibrary(): TagLibrary {.raises: [].} =
     result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
     result.tags["tag:yaml.org,2002:value"]     = yTagValue
     result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
-    result.tags["!nim:system:int8"]     = yTagNimInt8
-    result.tags["!nim:system:int16"]    = yTagNimInt16
-    result.tags["!nim:system:int32"]    = yTagNimInt32
-    result.tags["!nim:system:int64"]    = yTagNimInt64
-    result.tags["!nim:system:uint8"]    = yTagNimUInt8
-    result.tags["!nim:system:uint16"]   = yTagNimUInt16
-    result.tags["!nim:system:uint32"]   = yTagNimUInt32
-    result.tags["!nim:system:uint64"]   = yTagNimUInt64
-    result.tags["!nim:system:float32"]  = yTagNimFloat32
-    result.tags["!nim:system:float64"]  = yTagNimFloat64
-    result.tags["!nim:system:char"]     = yTagNimChar
 
 var
     serializationTagLibrary* = initSerializationTagLibrary() ## \
@@ -43,7 +32,6 @@ var
         ##
         ## Should not be modified manually. Will be extended by
         ## `serializable <#serializable,stmt,stmt>`_.
-
 
 static:
     iterator objectFields(n: NimNode): tuple[name: NimNode, t: NimNode]
@@ -58,6 +46,31 @@ static:
 
 template presentTag(t: typedesc, ts: TagStyle): TagId =
      if ts == tsNone: yTagQuestionMark else: yamlTag(t)
+
+template setTagUriForType*(t: typedesc, uri: string): stmt =
+    ## Associate the given uri with a certain type. This uri is used as YAML tag
+    ## when loading and dumping values of this type.
+    let id {.gensym.} = serializationTagLibrary.registerUri(uri)
+    proc yamlTag*(T: typedesc[t]): TagId {.inline, raises: [].} = id
+
+template setTagUriForType*(t: typedesc, uri: string, idName: expr): stmt =
+    ## Like `setTagUriForType <#setTagUriForType,typedesc,string>`_, but lets
+    ## you choose a symbol for the `TagId <#TagId>`_ of the uri. This is only
+    ## necessary if you want to implement serialization / construction yourself.
+    let idName* = serializationTagLibrary.registerUri(uri)
+    proc yamlTag*(T: typedesc[t]): TagId {.inline, raises: [].} = idName
+
+setTagUriForType(char, "!nim:system:char", yTagNimChar)
+setTagUriForType(int8, "!nim:system:int8", yTagNimInt8)
+setTagUriForType(int16, "!nim:system:int16", yTagNimInt16)
+setTagUriForType(int32, "!nim:system:int32", yTagNimInt32)
+setTagUriForType(int64, "!nim:system:int64", yTagNimInt64)
+setTagUriForType(uint8, "!nim:system:uint8", yTagNimUInt8)
+setTagUriForType(uint16, "!nim:system:uint16", yTagNimUInt16)
+setTagUriForType(uint32, "!nim:system:uint32", yTagNimUInt32)
+setTagUriForType(uint64, "!nim:system:uint64", yTagNimUInt64)
+setTagUriForType(float32, "!nim:system:float32", yTagNimFloat32)
+setTagUriForType(float64, "!nim:system:float64", yTagNimFloat64)
 
 proc lazyLoadTag*(uri: string): TagId {.inline, raises: [].} =
     ## Internal function. Do not call explicitly.
@@ -275,7 +288,8 @@ template constructScalarItem(bs: var YamlStream, item: YamlStreamEvent,
         e.parent = getCurrentException()
         raise e
 
-proc yamlTag*(T: typedesc[string]): TagId {.inline, raises: [].} = yTagString
+proc yamlTag*(T: typedesc[string]): TagId {.inline, noSideEffect, raises: [].} =
+    yTagString
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var string)
@@ -288,11 +302,6 @@ proc representObject*(value: string, ts: TagStyle = tsNone,
         c: SerializationContext): RawYamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, ts), yAnchorNone)
-
-proc yamlTag*(T: typedesc[int8]): TagId {.inline, raises: [].}  = yTagNimInt8
-proc yamlTag*(T: typedesc[int16]): TagId {.inline, raises: [].} = yTagNimInt16
-proc yamlTag*(T: typedesc[int32]): TagId {.inline, raises: [].} = yTagNimInt32
-proc yamlTag*(T: typedesc[int64]): TagId {.inline, raises: [].} = yTagNimInt64
 
 proc constructObject*[T: int8|int16|int32|int64](
         s: var YamlStream, c: ConstructionContext, result: var T)
@@ -316,11 +325,6 @@ template representObject*(value: int, tagStyle: TagStyle,
                           c: SerializationContext): RawYamlStream =
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
-
-proc yamlTag*(T: typedesc[uint8]): TagId {.inline, raises: [].} = yTagNimUInt8
-proc yamlTag*(T: typedesc[uint16]): TagId {.inline, raises: [].} = yTagNimUInt16
-proc yamlTag*(T: typedesc[uint32]): TagId {.inline, raises: [].} = yTagNimUInt32
-proc yamlTag*(T: typedesc[uint64]): TagId {.inline, raises: [].} = yTagNimUInt64
 
 {.push overflowChecks: on.}
 proc parseBiggestUInt(s: string): uint64 =
@@ -358,11 +362,6 @@ template representObject*(value: uint, ts: TagStyle, c: SerializationContext):
     {.fatal:
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
-
-proc yamlTag*(T: typedesc[float32]): TagId {.inline, raises: [].} =
-    yTagNimFloat32
-proc yamlTag*(T: typedesc[float64]): TagId {.inline, raises: [].} =
-    yTagNimFloat64
 
 proc constructObject*[T: float32|float64](
         s: var YamlStream, c: ConstructionContext, result: var T)
@@ -430,8 +429,6 @@ proc representObject*(value: bool, ts: TagStyle,
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, ts),
                           yAnchorNone)
-
-proc yamlTag*(T: typedesc[char]): TagId {.inline, raises: [].} = yTagNimChar
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var char)
@@ -617,6 +614,11 @@ proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
     if e.kind != yamlScalar:
         raise newException(YamlConstructionError, "Expected scalar, got " &
                            $e.kind)
+    if e.scalarAnchor != yAnchorNone:
+        raise newException(YamlConstructionError, "Anchor on a non-ref type")
+    if e.scalarTag notin [yTagQuestionMark, yamlTag(O)]:
+        raise newException(YamlConstructionError,
+                           "Wrong tag for " & type(O).name)
     try: result = parseEnum[O](e.scalarContent)
     except ValueError:
         var ex = newException(YamlConstructionError, "Cannot parse '" &

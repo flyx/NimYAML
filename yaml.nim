@@ -126,7 +126,7 @@ type
         ##
         ## When `YamlParser <#YamlParser>`_ encounters tags not existing in the
         ## tag library, it will use
-        ## `registerTagUri <#registerTagUri,TagLibrary,string>`_ to add
+        ## `registerUri <#registerUri,TagLibrary,string>`_ to add
         ## the tag to the library.
         ##
         ## You can base your tag library on common tag libraries by initializing
@@ -343,18 +343,6 @@ const
     
     yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
     
-    yTagNimInt8*    = 100.TagId ## tag for Nim's ``int8``
-    yTagNimInt16*   = 101.TagId ## tag for Nim's ``int16``
-    yTagNimInt32*   = 102.TagId ## tag for Nim's ``int32``
-    yTagNimInt64*   = 103.TagId ## tag for Nim's ``int64``
-    yTagNimUInt8*   = 104.TagId ## tag for Nim's ``uint8``
-    yTagNimUInt16*  = 105.TagId ## tag for Nim's ``uint16``
-    yTagNimUInt32*  = 106.TagId ## tag for Nim's ``uint32``
-    yTagNimUInt64*  = 107.TagId ## tag for Nim's ``uint64``
-    yTagNimFloat32* = 108.TagId ## tag for Nim's ``float32``
-    yTagNimFloat64* = 109.TagId ## tag for Nim's ``float64``
-    yTagNimChar*    = 110.TagId ## tag for Nim's ``char``
-
 # interface
 
 proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].}
