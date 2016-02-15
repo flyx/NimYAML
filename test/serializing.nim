@@ -234,6 +234,7 @@ next:
             echo "line ", parser.getLineNumber, ", column ",
                 parser.getColNumber, ": ", ex.msg
             echo parser.getLineContent
+            raise ex
 
         assert(result.len == 3)
         assert(result[0].value == "a")
@@ -242,4 +243,33 @@ next:
         assert(result[0].next == result[1])
         assert(result[1].next == result[2])
         assert(result[2].next == result[0])
+    
+    test "Serialization: Load nil values":
+        let input = newStringStream("- ~\n- !!str ~")
+        var
+            result: seq[ref string]
+            parser = newYamlParser(tagLib)
+            events = parser.parse(input)
+        try:
+            construct(events, result)
+        except YamlConstructionError:
+            let ex = (ref YamlConstructionError)(getCurrentException())
+            echo "line ", parser.getLineNumber, ", column ",
+                parser.getColNumber, ": ", ex.msg
+            echo parser.getLineContent
+            raise ex
+        
+        assert(result.len == 2)
+        assert(result[0] == nil)
+        assert(result[1][] == "~")
+    
+    test "Serialization: Represent nil values":
+        var input = newSeq[ref string]()
+        input.add(nil)
+        input.add(new string)
+        input[1][] = "~"
+        var output = newStringStream()
+        dump(input, output, psBlockOnly, tsRootOnly)
+        assertStringEqual "%YAML 1.2\n--- !nim:system:seq(tag:yaml.org,2002:str) \n- !!null ~\n- !!str ~",
+                output.data
         

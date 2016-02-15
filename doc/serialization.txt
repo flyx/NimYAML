@@ -1,0 +1,139 @@
+======================
+Serialization Overview
+======================
+
+Introduction
+============
+
+NimYAML tries hard to make transforming YAML characters streams to native Nim
+types and vice versa as easy as possible. In simple scenarios, you might not
+need anything else than the two procs
+`dump <yaml.html#dump,K,Stream,PresentationStyle,TagStyle,AnchorStyle,int>`_ and
+`load <yaml.html#load,Stream,K>`_. On the other side, the process should be as
+customizable as possible to allow the user to tightly control how the generated
+YAML character stream will look and how a YAML character stream is interpreted.
+
+An important thing to remember in NimYAML is that unlike in interpreted
+languages like Ruby, Nim cannot load a YAML character stream without knowing the
+resulting type beforehand. For example, if you want to load this piece of YAML:
+
+.. code-block:: yaml
+    %YAML 1.2
+    --- !nim:system:seq(nim:system:int8)
+    - 1
+    - 2
+    - 3
+
+You would need to know that it will load a ``seq[int8]`` *at compile time*. This
+is not really a problem because without knowing which type you will load, you
+cannot do anything useful with the result afterwards in the code. But it may be
+unfamiliar for programmers who are used to the YAML libraries of Python or Ruby.
+
+Supported Types
+===============
+
+NimYAML supports a growing number of types of Nim's ``system`` module and
+standard library, and it also supports user-defined object, tuple and enum types
+out of the box.
+
+**Important**: NimYAML currently does not support polymorphism or variant
+object types. This may be added in the future.
+
+This also means that NimYAML is generally able to work with object, tuple and
+enum types defined in the standard library or a third-party library without
+further configuration.
+
+Scalar Types
+------------
+
+The following integer types are supported by NimYAML: ``int8``, ``int16``,
+``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``, ``uint64``. Note that
+the ``int`` type is *not* supported, since its sice varies based on the target
+operation system. This makes it unfit for usage within NimYAML, because a value
+might not round-trip between a binary for a 32-bit OS and another binary for a
+64-bit OS. The same goes for ``uint``.
+
+The floating point types ``float32`` and ``float64`` are also supported, but
+``float`` is not, for the same reason.
+
+``string`` is supported and one of the few Nim types which directly map to a
+standard YAML type. ``char`` is also supported.
+
+To support new scalar types, you must implement the ``constructObject()`` and
+``representObject()`` procs on that type (see below).
+
+Collection Types
+----------------
+
+NimYAML supports Nim's ``seq`` and ``Table`` types out of the box. Unlike the
+native YAML types ``!!seq`` and ``!!map``, ``seq`` and ``Table`` define the type
+of all their items (or keys and values). So YAML objects with heterogeneous
+types in them cannot be loaded to Nim collection types. For example, this
+sequence:
+
+.. code-block:: yaml
+    %YAML 1.2
+    --- !!seq
+    - !!int 1
+    - !!string foo
+
+Cannot be loaded to a Nim ``seq``. For this reason, you cannot load YAML's
+native ``!!map`` and ``!!seq`` types directly into Nim types.
+
+Reference Types
+---------------
+
+A reference to any supported non-reference type (including user defined types,
+see below) is supported by NimYAML. A reference type will be treated like its
+base type, but NimYAML is able to detect multiple references to the same object
+and dump the structure properly with anchors and aliases in place. It is
+possible to dump and load cyclic data structures without further configuration.
+It is possible for reference types to hold a ``nil`` value, which will be mapped
+to the ``!!null`` YAML scalar type.
+
+Pointer types are not supported because it seems dangerous to automatically
+allocate memory which the user must then manually deallocate.
+
+User Defined Types
+------------------
+
+For an object or tuple type to be directly usable with NimYAML, the following
+conditions must be met:
+
+- Every type contained in the object/tuple must be supported
+- All fields of an object type must be accessible from the code position where 
+  you call NimYAML. If an object has non-public member fields, it can only be
+  processed in the module where it is defined.
+- The object may not contain a ``case`` clause.
+- The object may not have a generic parameter
+
+NimYAML will present enum types as YAML scalars, and tuple and object types as
+YAML maps. Some of the conditions above may be loosened in future releases.
+
+Tags
+====
+
+NimYAML uses local tags to represent Nim types that do not map directly to a
+YAML type. For example, ``int8`` is presented with the tag ``!nim:system:int8``.
+Tags are mostly unnecessary when loading YAML data because the user already
+defines the target Nim type which usually defines all types of the structure.
+However, there is one case where a tag is necessary: A reference type with the
+value ``nil`` is represented in YAML as a ``!!null`` scalar. This will be
+automatically detected by type guessing, but if it is for example a reference to
+a string with the value ``"~"``, it must be tagged with ``!!string``, because
+otherwise, it would be loaded as ``nil``.
+
+As you might have noticed in the example above, the YAML tag of a ``seq``
+depends on its generic type parameter. The same applies to ``Table``. So, a
+table that maps ``int8`` to string sequences would be presented with the tag
+``!nim:tables:Table(nim:system:int8,nim:system:seq(tag:yaml.org,2002:string))``. 
+These tags are generated on the fly based on the types you instantiate
+``Table`` or ``seq`` with.
+
+You may customize the tags used for your types by using the template
+`setTagUriForType <yaml.html#setTagUriForType.t,typedesc,string>`_. It may not
+be applied to scalar and collection types implemented by NimYAML, but you can
+for example use it on a certain ``seq`` type:
+
+.. code-block:: nim
+    setTagUriForType(seq[string], "!nim:my:seq")

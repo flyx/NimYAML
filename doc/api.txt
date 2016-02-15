@@ -1,9 +1,9 @@
-===
-API
-===
+============
+API Overview
+============
 
-Overview
-========
+Introduction
+============
 
 NimYAML advocates parsing YAML input into native Nim types. Basic Nim library
 types like integers, floats and strings, as well as all tuples, enums and
@@ -51,10 +51,10 @@ way to load YAML data. The following paragraphs will explain the steps involved.
 For parsing, a `YamlParser <yaml.html#YamlParser>`_ object is needed. This
 object stores some state while parsing that may be useful for error reporting to
 the user. The
-`parse <yaml.html#present,YamlStream,Stream,TagLibrary,PresentationStyle,int>`_
-proc implements the YAML processing step of the same name. All syntax errors in
-the input character stream are processed by ``parse``, which will raise a
-``YamlParserError`` if it encounters a syntax error.
+`parse <yaml.html#parse,YamlParser,Stream>`_ proc implements the YAML processing
+step of the same name. All syntax errors in the input character stream are
+processed by ``parse``, which will raise a ``YamlParserError`` if it encounters
+a syntax error.
 
 Transforming a ``YamlStream`` to a native YAML object is done via
 ``construct``. It skips the ``compose`` step for efficiency reasons. As Nim is
@@ -81,6 +81,6 @@ that if you use ``asNone``, the value you serialize might not round-trip.
 Transforming a ``YamlStream`` into YAML character data is done with
 `present <yaml.html#present,YamlStream,Stream,TagLibrary,PresentationStyle,int>`_.
 You can choose from multiple presentation styles. ``psJson`` is not able to
-process some features of ``YamlStream``s, the other styles support all features
+process some features of ``YamlStream`` s, the other styles support all features
 and are guaranteed to round-trip to the same ``YamlStream`` if you parse the
 generated YAML character stream again.

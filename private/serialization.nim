@@ -691,19 +691,25 @@ proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
                                      cast[AnchorId](p))
                 return
         c.refsList.add(initRefNodeData(p))
-        let a = if c.style == asAlways: AnchorId(c.refsList.high) else:
+        let
+            a = if c.style == asAlways: AnchorId(c.refsList.high) else:
                 cast[AnchorId](p)
+            childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
         result = iterator(): YamlStreamEvent =
-            var child = representObject(value[], ts, c)
+            var child = representObject(value[], childTagStyle, c)
             var first = child()
             assert(not finished(child))
             case first.kind 
             of yamlStartMap:
                 first.mapAnchor = a
+                if ts == tsNone: first.mapTag = yTagQuestionMark
             of yamlStartSequence:
                 first.seqAnchor = a
+                if ts == tsNone: first.seqTag = yTagQuestionMark
             of yamlScalar:
                 first.scalarAnchor = a
+                if ts == tsNone and guessType(first.scalarContent) != yTypeNull:
+                    first.scalarTag = yTagQuestionMark
             else: discard
             yield first
             while true:
