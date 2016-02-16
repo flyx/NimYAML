@@ -18,6 +18,7 @@ languages like Ruby, Nim cannot load a YAML character stream without knowing the
 resulting type beforehand. For example, if you want to load this piece of YAML:
 
 .. code-block:: yaml
+
     %YAML 1.2
     --- !nim:system:seq(nim:system:int8)
     - 1
@@ -72,6 +73,7 @@ types in them cannot be loaded to Nim collection types. For example, this
 sequence:
 
 .. code-block:: yaml
+
     %YAML 1.2
     --- !!seq
     - !!int 1
@@ -136,4 +138,39 @@ be applied to scalar and collection types implemented by NimYAML, but you can
 for example use it on a certain ``seq`` type:
 
 .. code-block:: nim
+
     setTagUriForType(seq[string], "!nim:my:seq")
+
+Customize Serialization
+=======================
+
+It is possible to customize the serialization of a type. For this, you need to
+implement two procs, ``constructObject̀`` and ``representObject``. If you only
+need to process the type in one direction (loading or dumping), you can omit
+the other proc.
+
+constructObject
+---------------
+
+.. code-block:: nim
+
+    proc constructObject*(s: var YamlStream, c: ConstructionContext,
+                          result: var MyObject)
+            {.raises: [YamlConstructionError, YamlStreamError.}
+
+This proc should construct the type from a ``YamlStream``.
+
+**TBD: More documentation here**
+
+representObject
+---------------
+
+.. code-block:: nim
+
+    proc representObject*(value: MyObject, ts: TagStyle = tsNone,
+                          c: SerializationContext): RawYamlStream {.raises: [].}
+
+This proc should return an iterator over ``YamlStreamEvent`` which represents
+the type.
+
+**TBD: More documentation here**

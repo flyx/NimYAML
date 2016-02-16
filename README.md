@@ -21,6 +21,22 @@ available features.
      they are an implementation detail and should not be visible to the caller.
      same goes for `lazyLoadTag` and `safeLoadUri`.
 
+## Developers
+
+```bash
+nim tests # runs all tests
+nim parserTests # runs parser tests
+nim serializationTests # runs serialization tests
+nim documentation # builds documentation to folder docout
+nim server # builds the REST server used for the testing ground
+nim bench # runs benchmarks, requires libyaml
+nim clean # guess
+nim build # build a library
+```
+
+Project is tested against current develop branch of Nim. Older Nim versions
+probably do not work.
+
 ## License
 
 [MIT](copying.txt)
