@@ -1,13 +1,15 @@
 # NimYAML - YAML implementation for Nim
 
-NimYAML is currently being developed. There is no release yet. See
-[the documentation](http://flyx.github.io/NimYAML/) for an overview of already
-available features.
+NimYAML is currently being developed. The current release 0.1.0 is not
+considered stable. See [the documentation](http://flyx.github.io/NimYAML/) for
+an overview of already available features.
 
 ## TODO list
 
  * Misc:
    - Add type hints for more scalar types
+   - Add implementation of YAML document object model, serialize and compose
+     procs
  * Serialization:
    - Support for more standard library types
    - Support polymorphism
