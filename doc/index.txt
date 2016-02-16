@@ -10,6 +10,13 @@ write to YAML character streams, and to serialize from and construct to native
 Nim types. It exclusively supports
 `YAML 1.2 <#http://www.yaml.org/spec/1.2/spec.html>`_.
 
+Source code can be found on `GitHub <https://github.com/flyx/NimYAML>`_. You can
+install it with `Nimble <https://github.com/nim-lang/nimble>`_:
+
+.. code-block:: bash
+
+    nimble install nimyaml
+
 Quickstart
 ----------
 
