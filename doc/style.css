@@ -87,6 +87,11 @@ dt a:before {
 #testingground pre {
   font-size: small;
 }
+#testingground #style-options {
+    margin-top: 10px;
+    width: 100%;
+    text-align: center;
+}
 #testingground .style-option {
   display: inline-block;
   margin-right: 20px;

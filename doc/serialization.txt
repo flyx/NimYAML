@@ -158,9 +158,54 @@ constructObject
                           result: var MyObject)
             {.raises: [YamlConstructionError, YamlStreamError.}
 
-This proc should construct the type from a ``YamlStream``.
+This proc should construct the type from a ``YamlStream``. Follow the following
+guidelines when implementing a custom ``constructObject`` proc:
 
-**TBD: More documentation here**
+- For constructing a value from a YAML scalar, consider using the
+  ``constructScalarItem`` template, which will automatically catch exceptions
+  and wrap them with a ``YamlConstructionError``, and also will assure that the
+  item you use for construction is a ``yamlScalar``. See below for an example.
+- For constructing a value from a YAML sequence or map, you **must** use the
+  ``constructChild`` proc for child values if you want to use their
+  ``constructObject`` implementation. This will check their tag and anchor.
+  Always try to construct child values that way.
+- For non-scalars, make sure that the last value you remove from the stream is
+  the object's ending event (``yamlEndMap`` or ``yamlEndSequence``)
+- Use `peek <yaml.html#peek,YamlStream>`_ for inspecting the next event in
+  the ``YamlStream`` without removing it.
+- Never write a ``constructObject`` proc for a ``ref`` type. ``ref`` types are
+  always handled by NimYAML itself. You can only customize the construction of
+  the underlying object.
+
+The following example for constructing from a YAML scalar value is the actual
+implementation of constructing ``int`` types:
+
+.. code-block:: nim
+
+    proc constructObject*[T: int8|int16|int32|int64](
+            s: var YamlStream, c: ConstructionContext, result: var T)
+            {.raises: [YamlConstructionError, YamlStreamError].} =
+        var item: YamlStreamEvent
+        constructScalarItem(s, item, name(T)):
+            result = T(parseBiggestInt(item.scalarContent))
+
+The following example for constructiong from a YAML non-scalar is the actual
+implementation of constructing ``seq`` types:
+
+.. code-block:: nim
+
+    proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
+                             result: var seq[T])
+            {.raises: [YamlConstructionError, YamlStreamError].} =
+        let event = s.next()
+        if event.kind != yamlStartSequence:
+            raise newException(YamlConstructionError, "Expected sequence start")
+        result = newSeq[T]()
+        while s.peek().kind != yamlEndSequence:
+            var item: T
+            constructChild(s, c, item)
+            result.add(item)
+        discard s.next()
 
 representObject
 ---------------
@@ -171,6 +216,47 @@ representObject
                           c: SerializationContext): RawYamlStream {.raises: [].}
 
 This proc should return an iterator over ``YamlStreamEvent`` which represents
-the type.
+the type. Follow the following guidelines when implementing a custom
+``representObject`` proc:
 
-**TBD: More documentation here**
+- You can use the helper template
+  `presentTag <yaml.html#presentTag,typedesc,TagStyle>`_ for outputting the
+  tag.
+- Always output the first tag with a ``yAnchorNone``. Anchors will be set
+  automatically by ``ref`` type handling.
+- When outputting non-scalar types, you should use the ``representObject``
+  implementation of the child types, if possible.
+- Check if the given ``TagStyle`` equals ``tsRootOnly`` and if yes, change it
+  to ``tsNone`` for the child values.
+- Never write a ``representObject`` proc for ``ref`` types.
+
+The following example for representing to a YAML scalar is the actual
+implementation of representing ``int`` types:
+
+.. code-block:: nim
+
+    proc representObject*[T: uint8|uint16|uint32|uint64](
+            value: T, ts: TagStyle, c: SerializationContext):
+            RawYamlStream {.raises: [].} =
+        result = iterator(): YamlStreamEvent =
+            yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
+
+The following example for representing to a YAML non-scalar is the actual
+implementation of representing ``seq`` types:
+
+.. code-block:: nim
+
+    proc representObject*[T](value: seq[T], ts: TagStyle,
+            c: SerializationContext): RawYamlStream {.raises: [].} =
+        result = iterator(): YamlStreamEvent =
+            let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+            yield YamlStreamEvent(kind: yamlStartSequence,
+                                  seqTag: presentTag(seq[T], ts),
+                                  seqAnchor: yAnchorNone)
+            for item in value:
+                var events = representObject(item, childTagStyle, c)
+                while true:
+                    let event = events()
+                    if finished(events): break
+                    yield event
+            yield YamlStreamEvent(kind: yamlEndSequence)

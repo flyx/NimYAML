@@ -25,18 +25,20 @@
       <h1 class="title">Testing Ground</h1>
       <p>Input is being processed on the fly by a friendly web service and
          Output is updated as you type.</p>
-      <section id="testingground">
-        <table style="width: 100%; table-layout: fixed">
-          <thead>
-            <tr>
-              <th>Input</th>
-              <th>Output</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style="width: 50%; height: 400px; vertical-align: top;">
-                <textarea id="yaml-input" style="width: 100%; height: 100%">
+    </div>
+  </article>
+  <section id="testingground">
+    <table style="width: 100%; table-layout: fixed">
+      <thead>
+        <tr>
+          <th>Input</th>
+          <th>Output</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="width: 50%; height: 550px; vertical-align: top;">
+            <textarea id="yaml-input" style="width: 100%; height: 100%">
 - test some
 - {YAML: here}
 - foo: bar
@@ -47,42 +49,40 @@
   : !!bool yes
   ? reference to anchor
   : *a</textarea>
-              </td>
-              <td style="width: 50%; vertical-align: top; height: 400px; padding-left: 10px">
-                <div style="width:100%; height:100%; overflow: scroll">
-                  <pre id="yaml-output" style="width: 100%"/>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div id="style-options">
-          <p>Output style:</p>
-          <div class="style-option">
-            <input type="radio" name="style" id="style-minimal" value="minimal"/>
-            <label for="style-minimal">Minimal</label>
-          </div>
-          <div class="style-option">
-            <input type="radio" name="style" id="style-default" value="default"/>
-            <label for="style-default">Default</label>
-          </div>
-          <div class="style-option">
-            <input type="radio" name="style" id="style-canonical" value="canonical" checked="checked"/>
-            <label for="style-canonical">Canonical</label>
-          </div>
-          <div class="style-option">
-            <input type="radio" name="style" id="style-block" value="block"/>
-            <label for="style-block">Block Only</label>
-          </div>
-          <div class="style-option">
-            <input type="radio" name="style" id="style-json" value="json"/>
-            <label for="style-json">JSON</label>
-          </div>
-        </div>
-      </section>
+          </td>
+          <td style="width: 50%; vertical-align: top; height: 550px; padding-left: 10px">
+            <div style="width:100%; height:100%; overflow: scroll">
+              <pre id="yaml-output" style="width: 100%"/>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div id="style-options">
+      <div class="style-option">Output style:</div>
+      <div class="style-option">
+        <input type="radio" name="style" id="style-minimal" value="minimal"/>
+        <label for="style-minimal">Minimal</label>
+      </div>
+      <div class="style-option">
+        <input type="radio" name="style" id="style-default" value="default"/>
+        <label for="style-default">Default</label>
+      </div>
+      <div class="style-option">
+        <input type="radio" name="style" id="style-canonical" value="canonical" checked="checked"/>
+        <label for="style-canonical">Canonical</label>
+      </div>
+      <div class="style-option">
+        <input type="radio" name="style" id="style-block" value="block"/>
+        <label for="style-block">Block Only</label>
+      </div>
+      <div class="style-option">
+        <input type="radio" name="style" id="style-json" value="json"/>
+        <label for="style-json">JSON</label>
+      </div>
     </div>
-  </article>
-    <script type="text/javascript">
+  </section>
+  <script type="text/javascript">
     function setTextContent(element, text) {
       while (element.firstChild!==null) {
         element.removeChild(element.firstChild); // remove all existing content
@@ -137,6 +137,6 @@
       radios[i].onclick = parse;
     }
     parse();
-    </script>
-  </body>
+  </script>
+</body>
 </html>
