@@ -260,3 +260,7 @@ suite "Parsing":
                scalarEvent("b"), scalarEvent("", yTagQuestionMark, 1.AnchorId),
                scalarEvent("", yTagQuestionMark, 2.AnchorId),
                scalarEvent("", yTagQuestionMark, 3.AnchorId), endMapEvent(), endDocEvent())
+    test "Parsing: Whitespace before end of flow content":
+        ensure("- [a, b, c ]", startDocEvent(), startSeqEvent(),
+               startSeqEvent(), scalarEvent("a"), scalarEvent("b"),
+               scalarEvent("c"), endSeqEvent(), endSeqEvent(), endDocEvent())

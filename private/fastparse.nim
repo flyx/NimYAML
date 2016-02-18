@@ -686,6 +686,13 @@ template plainScalar(lexer: BaseLexer, content: var string,
               break outer
           of '#':
             break outer
+          of flowIndicators:
+            if context in [cBlockOut, cBlockIn, cBlockKey]:
+              content.add(after)
+              content.add(c2)
+              break
+            else:
+              break outer
           else:
             content.add(after)
             content.add(c2)
