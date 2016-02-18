@@ -1174,6 +1174,12 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             else:
               ensureCorrectIndentation()
               state = fpBlockObjectStart
+        of EndOfFile:
+          closeEverything()
+          break
+        of '\t', '\x0A', '\c', '#':
+          p.lexer.lineEnding()
+          handleLineEnd(true)
         else:
           indentation = 0
           closeMoreIndentedLevels()

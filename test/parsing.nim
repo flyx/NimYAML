@@ -264,3 +264,10 @@ suite "Parsing":
         ensure("- [a, b, c ]", startDocEvent(), startSeqEvent(),
                startSeqEvent(), scalarEvent("a"), scalarEvent("b"),
                scalarEvent("c"), endSeqEvent(), endSeqEvent(), endDocEvent())
+    test "Parsing: Empty lines after document":
+        ensure(":\n\n", startDocEvent(), startMapEvent(), scalarEvent(""),
+               scalarEvent(""), endMapEvent(), endDocEvent())
+    test "Parsing: Empty lines between map elements":
+        ensure("1: 2\n\n\n3: 4", startDocEvent(), startMapEvent(),
+               scalarEvent("1"), scalarEvent("2"), scalarEvent("3"),
+               scalarEvent("4"), endMapEvent(), endDocEvent())
