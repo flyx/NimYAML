@@ -271,3 +271,13 @@ suite "Parsing":
         ensure("1: 2\n\n\n3: 4", startDocEvent(), startMapEvent(),
                scalarEvent("1"), scalarEvent("2"), scalarEvent("3"),
                scalarEvent("4"), endMapEvent(), endDocEvent())
+    test "Parsing: Sequence beginning at same line as map key":
+        ensure("1:\n- 2\n- 3\n4: 5", startDocEvent(), startMapEvent(),
+               scalarEvent("1"), startSeqEvent(), scalarEvent("2"),
+               scalarEvent("3"), endSeqEvent(), scalarEvent("4"),
+               scalarEvent("5"), endMapEvent(), endDocEvent())
+    test "Parsing: Sequence beginning at same line as map key with > 0 indent":
+        ensure("  foo:\n  - bar\n  baz:", startDocEvent(), startMapEvent(),
+               scalarEvent("foo"), startSeqEvent(), scalarEvent("bar"),
+               endSeqEvent(), scalarEvent("baz"), scalarEvent(""),
+               endMapEvent(), endDocEvent())

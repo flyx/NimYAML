@@ -143,10 +143,14 @@ template handleObjectStart(k: YamlStreamEventKind) {.dirty.} =
   ancestry.add(level)
   level = FastParseLevel(kind: fplUnknown, indentation: -1)
   
-template closeMoreIndentedLevels() {.dirty.} =
+template closeMoreIndentedLevels(atSequenceItem: bool = false) {.dirty.} =
   while ancestry.len > 0:
     let parent = ancestry[ancestry.high]
     if parent.indentation >= indentation:
+      when atSequenceItem:
+        if (indentation == level.indentation and level.kind == fplSequence) or
+           (indentation == parent.indentation and level.kind == fplUnknown):
+          break
       debug("Closing because parent.indentation (" & $parent.indentation &
             ") >= indentation(" & $indentation & ")")
       yieldLevelEnd()
@@ -1115,7 +1119,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             state = fpBlockObjectStart
           of lpdeSequenceItem:
             indentation = 0
-            closeMoreIndentedLevels()
+            closeMoreIndentedLevels(true)
             p.lexer.bufpos.inc()
             handleBlockSequenceIndicator()
             state = fpBlockObjectStart
@@ -1160,12 +1164,17 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               state = fpBlockAfterPlainScalar
         of ' ':
           p.lexer.skipIndentation()
-          if p.lexer.buf[p.lexer.bufpos] in ['\t', '\x0A', '\c', '#']:
+          if p.lexer.buf[p.lexer.bufpos] in
+              ['\t', '\x0A', '\c', '#', EndOfFile]:
             p.lexer.lineEnding()
             handleLineEnd(true)
           else:
             indentation = p.lexer.getColNumber(p.lexer.bufpos)
-            closeMoreIndentedLevels()
+            if p.lexer.buf[p.lexer.bufpos] == '-' and not
+                p.lexer.isPlainSafe(p.lexer.bufpos + 1, if flowdepth == 0:
+                                    cBlockOut else: cFlowOut):
+              closeMoreIndentedLevels(true)
+            else: closeMoreIndentedLevels()
             case level.kind
             of fplScalar:
               state = fpBlockContinueScalar
