@@ -27,7 +27,7 @@ type
         ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
         
         ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus,
-        ythExponent, ythNone
+        ythExponent
 
 macro typeHintStateMachine(c: untyped, content: untyped): stmt =
     assert content.kind == nnkStmtList

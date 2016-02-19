@@ -492,9 +492,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
     ## check for these values and will output invalid JSON when rendering one
     ## of these values into a JSON character stream.
 
-proc loadToJson*(s: Stream): seq[JsonNode]
-        {.raises: [IOError, YamlParserError, YamlConstructionError,
-                   OutOfMemError].}
+proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [].}
     ## Uses `YamlParser <#YamlParser>`_ and
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
@@ -509,8 +507,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
 proc transform*(input: Stream, output: Stream, style: PresentationStyle,
                 indentationStep: int = 2) {.raises: [IOError, YamlParserError,
                                                      YamlPresenterJsonError,
-                                                     YamlPresenterOutputError,
-                                                     OutOfMemError].}
+                                                     YamlPresenterOutputError].}
     ## Parser ``input`` as YAML character stream and then dump it to ``output``
     ## while resolving non-specific tags to the ones in the YAML core tag
     ## library.

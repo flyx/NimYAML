@@ -297,9 +297,9 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
             var nextState: DumperState
             case style
             of psDefault:
-                type mapParseState = enum
+                type MapParseState = enum
                     mpInitial, mpKey, mpValue, mpNeedBlock
-                var mps = mpInitial
+                var mps: MapParseState = mpInitial
                 while mps != mpNeedBlock:
                     case s.peek().kind
                     of yamlScalar, yamlAlias:
@@ -479,14 +479,13 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
         var e = getCurrentException()
         while e.parent of YamlStreamError: e = e.parent
         if e.parent of IOError:
-            raise cast[ref IOError](e.parent)
+            raise (ref IOError)(e.parent)
         elif e.parent of YamlParserError:
-            raise cast[ref YamlParserError](e.parent)
+            raise (ref YamlParserError)(e.parent)
         else:
             # never happens
             assert(false)
-    except YamlPresenterJsonError, YamlPresenterOutputError:
-        raise
-    except Exception:
-        # compiler bug: https://github.com/nim-lang/Nim/issues/3772
-        assert(false)
+    except YamlPresenterJsonError:
+        raise (ref YamlPresenterJsonError)(getCurrentException())
+    except YamlPresenterOutputError:
+        raise (ref YamlPresenterOutputError)(getCurrentException())

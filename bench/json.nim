@@ -158,20 +158,26 @@ var
     
 block:
     multibench(cYaml1k, 100):
-        var s = newStringStream(json1k)
-        let res = constructJson(parser.parse(s))
+        var
+            s = newStringStream(json1k)
+            events = parser.parse(s)
+        let res = constructJson(events)
         assert res[0].kind == JObject
 
 block:
     multibench(cYaml10k, 100):
-        var s = newStringStream(json10k)
-        let res = constructJson(parser.parse(s))
+        var
+            s = newStringStream(json10k)
+            events = parser.parse(s)
+        let res = constructJson(events)
         assert res[0].kind == JObject
 
 block:
     multibench(cYaml100k, 100):
-        var s = newStringStream(json100k)
-        let res = constructJson(parser.parse(s))
+        var
+            s = newStringStream(json100k)
+            events = parser.parse(s)
+        let res = constructJson(events)
         assert res[0].kind == JObject
 
 block:
@@ -209,17 +215,17 @@ proc writeResult(caption: string, num: int64) =
 
 setForegroundColor(fgWhite)
 
-writeStyled "Benchmark: Processing JSON input with YAML versus Nim's JSON implementation\n"
-writeStyled "===========================================================================\n"
+writeStyled "Benchmark: Processing JSON input\n"
+writeStyled "================================\n"
 writeStyled "1k input\n--------\n"
-writeResult "YAML:    ", cYaml1k div 1000
+writeResult "NimYAML: ", cYaml1k div 1000
 writeResult "JSON:    ", cJson1k div 1000
 writeResult "LibYAML: ", cLibYaml1k div 1000
 writeStyled "10k input\n---------\n"
-writeResult "YAML:    ", cYaml10k div 1000
+writeResult "NimYAML: ", cYaml10k div 1000
 writeResult "JSON:    ", cJson10k div 1000
 writeResult "LibYAML: ", cLibYaml10k div 1000
 writeStyled "100k input\n----------\n"
-writeResult "YAML:    ", cYaml100k div 1000
+writeResult "NimYAML: ", cYaml100k div 1000
 writeResult "JSON:    ", cJson100k div 1000
 writeResult "LibYAML: ", cLibYaml100k div 1000

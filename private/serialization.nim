@@ -32,18 +32,7 @@ var
         ##
         ## Should not be modified manually. Will be extended by
         ## `serializable <#serializable,stmt,stmt>`_.
-
-static:
-    iterator objectFields(n: NimNode): tuple[name: NimNode, t: NimNode]
-            {.raises: [].} =
-        assert n.kind in [nnkRecList, nnkTupleTy]
-        for identDefs in n.children:
-            let numFields = identDefs.len - 2
-            for i in 0..numFields - 1:
-                yield (name: identDefs[i], t: identDefs[^2])
     
-    var existingTuples = newSeq[NimNode]()
-
 template presentTag*(t: typedesc, ts: TagStyle): TagId =
      if ts == tsNone: yTagQuestionMark else: yamlTag(t)
 
@@ -310,14 +299,8 @@ proc representObject*[T](value: seq[T], ts: TagStyle,
 
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
     try:
-        let
-            keyUri     = serializationTagLibrary.uri(yamlTag(K))
-            valueUri   = serializationTagLibrary.uri(yamlTag(V))
-            keyIdent   = if keyUri[0] == '!': keyUri[1..keyUri.len - 1] else:
-                         keyUri
-            valueIdent = if valueUri[0] == '!':
-                    valueUri[1..valueUri.len - 1] else: valueUri
-            uri = "!nim:tables:Table(" & keyUri & "," & valueUri & ")"
+        let uri = "!nim:tables:Table(" & safeTagUri(yamlTag(K)) & "," &
+                    safeTagUri(yamlTag(V)) & ")"
         result = lazyLoadTag(uri)
     except KeyError:
         # cannot happen (theoretically, you known)
@@ -559,8 +542,12 @@ proc construct*[T](s: var YamlStream, target: var T)
         constructChild(s, context, target)
         e = s.next()
         assert(e.kind == yamlEndDocument)
-    except YamlConstructionError, YamlStreamError, AssertionError:
-        raise
+    except YamlConstructionError:
+        raise (ref YamlConstructionError)(getCurrentException())
+    except YamlStreamError:
+        raise (ref YamlStreamError)(getCurrentException())
+    except AssertionError:
+        raise (ref AssertionError)(getCurrentException())
     except Exception:
         # may occur while calling s()
         var ex = newException(YamlStreamError, "")
@@ -665,10 +652,4 @@ proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
         present(events, target, serializationTagLibrary, style, indentationStep)
     except YamlStreamError:
         # serializing object does not raise any errors, so we can ignore this
-        var e = getCurrentException()
-        assert(false)
-    except YamlPresenterJsonError, YamlPresenterOutputError, AssertionError, FieldError:
-        raise
-    except Exception:
-        # cannot occur as represent() doesn't raise any errors
-        assert(false)
+        assert false, "Can never happen"

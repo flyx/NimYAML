@@ -24,7 +24,7 @@ type
     lpdeDirectivesEnd, lpdeSequenceItem, lpdeScalarContent
   
   YamlContext = enum
-    cFlowIn, cFlowOut, cFlowKey, cBlockKey, cBlockIn, cBlockOut
+    cBlock, cFlow
   
 const
   space          = [' ', '\t']
@@ -658,7 +658,7 @@ proc isPlainSafe(lexer: BaseLexer, index: int, context: YamlContext): bool =
   of spaceOrLineEnd:
     result = false
   of flowIndicators:
-    result = context in [cBlockIn, cBlockOut, cBlockKey]
+    result = context == cBlock
   else:
     result = true
 
@@ -691,7 +691,7 @@ template plainScalar(lexer: BaseLexer, content: var string,
           of '#':
             break outer
           of flowIndicators:
-            if context in [cBlockOut, cBlockIn, cBlockKey]:
+            if context == cBlock:
               content.add(after)
               content.add(c2)
               break
@@ -702,7 +702,7 @@ template plainScalar(lexer: BaseLexer, content: var string,
             content.add(c2)
             break
       of flowIndicators:
-        if context in [cBlockOut, cBlockIn, cBlockKey]:
+        if context == cBlock:
           content.add(c)
         else:
           break
@@ -719,13 +719,13 @@ template plainScalar(lexer: BaseLexer, content: var string,
 template continueMultilineScalar() {.dirty.} =
   content.add(if newlines == 1: " " else: repeat('\x0A', newlines - 1))
   startToken()
-  p.lexer.plainScalar(content, cBlockOut)
+  p.lexer.plainScalar(content, cBlock)
   state = fpBlockAfterPlainScalar
 
 template handleFlowPlainScalar() {.dirty.} =
   content = ""
   startToken()
-  p.lexer.plainScalar(content, cFlowOut)
+  p.lexer.plainScalar(content, cFlow)
   if p.lexer.buf[p.lexer.bufpos] in ['{', '}', '[', ']', ',', ':', '#']:
     discard
   else:
@@ -733,14 +733,14 @@ template handleFlowPlainScalar() {.dirty.} =
     while true:
       case p.lexer.buf[p.lexer.bufpos]
       of ':':
-        if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlowOut):
+        if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
           if newlines == 1:
             content.add(' ')
             newlines = 0
           elif newlines > 1:
             content.add(repeat(' ', newlines - 1))
             newlines = 0
-          p.lexer.plainScalar(content, cFlowOut)
+          p.lexer.plainScalar(content, cFlow)
         elif explicitFlowKey:
           break
         else:
@@ -764,7 +764,7 @@ template handleFlowPlainScalar() {.dirty.} =
         elif newlines > 1:
           content.add(repeat(' ', newlines - 1))
           newlines = 0
-        p.lexer.plainScalar(content, cFlowOut)
+        p.lexer.plainScalar(content, cFlow)
   yield scalarEvent(content, tag, anchor)
   handleObjectEnd(fpFlowAfterObject)
 
@@ -1098,7 +1098,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             state = fpBlockObjectStart
           of lpdeScalarContent:
             content = ""
-            p.lexer.plainScalar(content, cBlockOut)
+            p.lexer.plainScalar(content, cBlock)
             state = fpBlockAfterPlainScalar
         else:
           yield startDocEvent()
@@ -1134,7 +1134,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               ancestry.add(level)
               level = FastParseLevel(kind: fplUnknown, indentation: -1)
               content = ""
-              p.lexer.plainScalar(content, cBlockOut)
+              p.lexer.plainScalar(content, cBlock)
               state = fpBlockAfterPlainScalar
         of '.':
           var isDocumentEnd: bool
@@ -1160,7 +1160,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               ancestry.add(level)
               level = FastParseLevel(kind: fplUnknown, indentation: -1)
               content = ""
-              p.lexer.plainScalar(content, cBlockOut)
+              p.lexer.plainScalar(content, cBlock)
               state = fpBlockAfterPlainScalar
         of ' ':
           p.lexer.skipIndentation()
@@ -1172,7 +1172,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             indentation = p.lexer.getColNumber(p.lexer.bufpos)
             if p.lexer.buf[p.lexer.bufpos] == '-' and not
                 p.lexer.isPlainSafe(p.lexer.bufpos + 1, if flowdepth == 0:
-                                    cBlockOut else: cFlowOut):
+                                    cBlock else: cFlow):
               closeMoreIndentedLevels(true)
             else: closeMoreIndentedLevels()
             case level.kind
@@ -1212,7 +1212,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           newlines.inc()
           p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
         of ':':
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlockOut):
+          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlock):
             continueMultilineScalar()
           else:
             startToken()
@@ -1294,7 +1294,6 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         debug("state: blockObjectStart")
         p.lexer.skipWhitespace()
         indentation = p.lexer.getColNumber(p.lexer.bufpos)
-        let objectStart = p.lexer.getColNumber(p.lexer.bufpos)
         case p.lexer.buf[p.lexer.bufpos]
         of '\x0A':
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
@@ -1340,11 +1339,11 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(stateAfter)
         of '-':
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlockOut):
+          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlock):
             handleBlockItemStart()
             content = ""
             startToken()
-            p.lexer.plainScalar(content, cBlockOut)
+            p.lexer.plainScalar(content, cBlock)
             state = fpBlockAfterPlainScalar
           else:
             p.lexer.bufpos.inc()
@@ -1362,21 +1361,21 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           handleBlockItemStart()
           state = fpFlow
         of '?':
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlockOut):
+          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlock):
             handleBlockItemStart()
             content = ""
             startToken()
-            p.lexer.plainScalar(content, cBlockOut)
+            p.lexer.plainScalar(content, cBlock)
             state = fpBlockAfterPlainScalar
           else:
             p.lexer.bufpos.inc()
             handleMapKeyIndicator()
         of ':':
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlockOut):
+          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlock):
             handleBlockItemStart()
             content = ""
             startToken()
-            p.lexer.plainScalar(content, cBlockOut)
+            p.lexer.plainScalar(content, cBlock)
             state = fpBlockAfterPlainScalar
           else:
             p.lexer.bufpos.inc()
@@ -1387,7 +1386,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           handleBlockItemStart()
           content = ""
           startToken()
-          p.lexer.plainScalar(content, cBlockOut)
+          p.lexer.plainScalar(content, cBlock)
           state = fpBlockAfterPlainScalar
       of fpExpectDocEnd:
         case p.lexer.buf[p.lexer.bufpos]
@@ -1506,7 +1505,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           p.lexer.bufpos.inc()
         of ':':
           assert(level.kind == fplUnknown)
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlowIn):
+          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
             level = ancestry.pop()
             case level.kind
             of fplSequence, fplMapValue:
@@ -1548,7 +1547,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           handleAlias()
           state = fpFlowAfterObject
         of '?':
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlowOut):
+          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
             handleFlowPlainScalar()
           elif explicitFlowKey:
             startToken()

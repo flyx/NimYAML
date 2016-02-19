@@ -56,9 +56,6 @@ proc newNode(v: string): ref Node =
     result.next = nil
 
 suite "Serialization":
-    setup:
-        var tagLib = serializationTagLibrary
-
     test "Serialization: Load string sequence":
         let input = newStringStream(" - a\n - b")
         var result: seq[string]
