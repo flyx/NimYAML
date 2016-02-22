@@ -84,3 +84,24 @@ You can choose from multiple presentation styles. ``psJson`` is not able to
 process some features of ``YamlStream`` s, the other styles support all features
 and are guaranteed to round-trip to the same ``YamlStream`` if you parse the
 generated YAML character stream again.
+
+The Document Object Model
+=========================
+
+Much like XML, YAML also defines a *document object model*. If you cannot or do
+not want to load a YAML character stream to native Nim types, you can instead
+load it into a ``YamlDocument``. This ``YamlDocument`` can also be serialized
+into a YAML character stream. All tags will be preserved exactly as they are
+when transforming from and to a ``YamlDocument``. The only important thing to
+remember is that when a value has no tag, it will get the non-specific tag
+``"!"`` for quoted scalars and ``"?"`` for all other nodes.
+
+While tags are preserved, anchors will be resolved during loading and re-added
+during serialization. It is allowed for a ``YamlNode`` to occur multiple times
+within a ``YamlDocument``, in which case it will be serialized once and referred
+to afterwards via aliases.
+
+The document object model is provided for completeness, but you are encouraged
+to use native Nim types as start- or endpoint instead. That may be significantly
+faster, as every ``YamlNode`` is allocated on the heap and subject to garbage
+collection.

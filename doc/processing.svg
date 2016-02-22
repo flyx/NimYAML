@@ -1,6 +1,6 @@
 <svg version="1.1"
      baseProfile="full"
-     width="600" height="340"
+     width="600" height="420"
      xmlns="http://www.w3.org/2000/svg"
      xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
@@ -47,6 +47,16 @@
       <path d="M 0 60 q 0 10 10 10 h 115" fill="transparent" stroke="black"/>
       <path d="M 225 70 h 90 q 10 0 10 -10 v -60" fill="transparent" stroke="black"/>
     </g>
+    <g id="dom-right">
+      <rect x="330" y="45" width="100" height="30" stroke="black" fill="white" stroke-width="1"/>
+      <line x1="170" y1="60" x2="330" y2="60" stroke="black" stroke-width="2"/>
+      <line x1="430" y1="60" x2="583" y2="60" stroke="black" stroke-width="2" marker-end="url(#Triangle)"/>
+    </g>
+    <g id="dom-left">
+      <rect x="330" y="5" width="100" height="30" stroke="black" fill="white" stroke-width="1"/>
+      <line x1="330" y1="20" x2="182" y2="20" stroke="black" stroke-width="2" marker-end="url(#Triangle)"/>
+      <line x1="430" y1="20" x2="595" y2="20" stroke="black" stroke-width="2"/>
+    </g>
     <g id="whole-right">
       <rect x="275" y="5" width="100" height="30" stroke="black" fill="white" stroke-width="1"/>
       <line x1="5" y1="20" x2="275" y2="20" stroke="black" stroke-width="2"/>
@@ -59,11 +69,11 @@
     </g>
   </defs>
   
-  <line x1="145" y1="0" x2="145" y2="340" stroke="gray"/>
+  <line x1="145" y1="0" x2="145" y2="420" stroke="gray"/>
   <text x="55" y="25" fill="gray">Application</text>
   <text x="160" y="25" fill="gray">YAML</text>
   
-  <g id="boxes" text-anchor="middle" transform="translate(0 150)">
+  <g id="boxes" text-anchor="middle" transform="translate(0 190)">
     <g id="native" transform="translate(0 0)">
       <use xlink:href="#box"/>
       <text x="60" y="25" font-style="italic">Native</text>
@@ -73,7 +83,9 @@
     <g id="representation" transform="translate(170 0)">
       <use xlink:href="#box"/>
       <text x="60" y="25" font-style="italic">Representation</text>
-      <text x="60" y="45" font-weight="bold">not implemented</text>
+      <a xlink:href="yaml.html#YamlDocument" target="_top">
+        <text x="60" y="45" font-weight="bold">YamlDocument</text>
+      </a>
     </g>
   
     <g id="serialization" transform="translate(320 0)">
@@ -93,7 +105,7 @@
     </g>
   </g>
   
-  <g id="atomics" text-anchor="middle" transform="translate(0 90)">
+  <g id="atomics" text-anchor="middle" transform="translate(0 130)">
     <g id="represent" transform="translate(65 10)">
       <use xlink:href="#atomic-right-long"/>
       <text x="80" y="25" font-style="italic">represent</text>
@@ -101,7 +113,9 @@
     
     <g id="serialize" transform="translate(235 10)">
       <use xlink:href="#atomic-right"/>
-      <text x="70" y="25" font-style="italic" font-weight="bold">serialize</text>
+      <a xlink:href="yaml.html#serialize,YamlDocument,TagLibrary,AnchorStyle" target="_top">
+        <text x="70" y="25" font-style="italic" font-weight="bold">serialize</text>
+      </a>
     </g>
     
     <g id="present" transform="translate(385 10)">
@@ -118,7 +132,9 @@
     
     <g id="compose" transform="translate(235 120)">
       <use xlink:href="#atomic-left"/>
-      <text x="70" y="35" font-style="italic" font-weight="bold">compose</text>
+      <a xlink:href="yaml.html#compose,YamlStream,TagLibrary" target="_top">
+        <text x="70" y="35" font-style="italic" font-weight="bold">compose</text>
+      </a>
     </g>
     
     <g id="parse" transform="translate(385 120)">
@@ -129,7 +145,7 @@
     </g>
   </g>
   
-  <g id="skipping-things" text-anchor="middle" transform="translate(0 50)">
+  <g id="skipping-things" text-anchor="middle" transform="translate(0 90)">
     <g id="skipping-represent" transform="translate(55 10)">
       <use xlink:href="#skipping-right"/>
       <a xlink:href="yaml.html#represent,T,TagStyle,AnchorStyle" target="_top">
@@ -151,7 +167,19 @@
           <text x="325" y="25" font-style="italic" font-weight="bold">dump</text>
       </a>
     </g>
-    <g id="load" transform="translate(0 280)">
+    <g id="dumpDOM">
+      <use xlink:href="#dom-right"/>
+      <a xlink:href="yaml.html#dumpDOM,YamlDocument,Stream,PresentationStyle,AnchorStyle,int" target="_top">
+        <text x="380" y="65" font-weight="bold">dumpDOM</text> 
+      </a>
+    </g>
+    <g id="loadDOM" transform="translate(0 320)">
+      <use xlink:href="#dom-left"/>
+      <a xlink:href="yaml.html#loadDOM,Stream" target="_top">
+        <text x="380" y="25" font-weight="bold">loadDOM</text>
+      </a>
+    </g>
+    <g id="load" transform="translate(0 360)">
       <use xlink:href="#whole-left"/>
       <a xlink:href="yaml.html#load,Stream,K" target="_top">
           <text x="325" y="25" font-style="italic" font-weight="bold">load</text>

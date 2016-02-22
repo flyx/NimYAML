@@ -218,11 +218,29 @@ type
     SerializationContext* = ref object
         ## Context information for the process of serializing YAML from Nim
         ## values.
-        refsList: seq[RefNodeData]
+        refs: Table[pointer, AnchorId]
         style: AnchorStyle
+        nextAnchorId: AnchorId
     
     RawYamlStream* = iterator(): YamlStreamEvent {.raises: [].} ## \
         ## Stream of ``YamlStreamEvent``s returned by ``representObject`` procs.
+    
+    YamlNodeKind* = enum
+        yScalar, yMapping, ySequence
+    
+    YamlNode* = ref YamlNodeObj not nil
+        ## Represents a node in a ``YamlDocument``.
+    
+    YamlNodeObj* = object
+        tag*: string
+        case kind*: YamlNodeKind
+        of yScalar: content*: string
+        of ySequence: children*: seq[YamlNode]
+        of yMapping: pairs*: seq[tuple[key, value: YamlNode]]
+    
+    YamlDocument* = object
+        ## Represents a YAML document.
+        root*: YamlNode
     
     YamlLoadingError* = object of Exception
         ## Base class for all exceptions that may be raised during the process
@@ -522,3 +540,4 @@ include private.hints
 include private.fastparse
 include private.streams
 include private.serialization
+include private.dom

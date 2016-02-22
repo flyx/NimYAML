@@ -9,8 +9,9 @@ proc newConstructionContext(): ConstructionContext =
 
 proc newSerializationContext(s: AnchorStyle): SerializationContext =
     new(result)
-    result.refsList = newSeq[RefNodeData]()
+    result.refs = initTable[pointer, AnchorId]()
     result.style = s
+    result.nextAnchorId = 0.AnchorId
 
 proc initSerializationTagLibrary(): TagLibrary {.raises: [].} =
     result = initTagLibrary()
@@ -494,41 +495,49 @@ proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
     elif c.style == asNone:
         result = representObject(value[], ts, c)
     else:
-        let
-            p = cast[pointer](value)
-        for i in countup(0, c.refsList.high):
-            if p == c.refsList[i].p:
-                c.refsList[i].count.inc()
-                result = iterator(): YamlStreamEvent =
-                    yield aliasEvent(if c.style == asAlways: AnchorId(i) else:
-                                     cast[AnchorId](p))
-                return
-        c.refsList.add(initRefNodeData(p))
-        let
-            a = if c.style == asAlways: AnchorId(c.refsList.high) else:
-                cast[AnchorId](p)
-            childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
-        result = iterator(): YamlStreamEvent =
-            var child = representObject(value[], childTagStyle, c)
-            var first = child()
-            assert(not finished(child))
-            case first.kind 
-            of yamlStartMap:
-                first.mapAnchor = a
-                if ts == tsNone: first.mapTag = yTagQuestionMark
-            of yamlStartSequence:
-                first.seqAnchor = a
-                if ts == tsNone: first.seqTag = yTagQuestionMark
-            of yamlScalar:
-                first.scalarAnchor = a
-                if ts == tsNone and guessType(first.scalarContent) != yTypeNull:
-                    first.scalarTag = yTagQuestionMark
-            else: discard
-            yield first
-            while true:
-                let event = child()
-                if finished(child): break
+        let p = cast[pointer](value)
+        if c.refs.hasKey(p):
+            try:
+                if c.refs[p] == yAnchorNone:
+                    c.refs[p] = c.nextAnchorId
+                    c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+            except KeyError: assert false, "Can never happen"
+            result = iterator(): YamlStreamEvent {.raises: [].} =
+                var event: YamlStreamEvent
+                try: event = aliasEvent(c.refs[p])
+                except KeyError: assert false, "Can never happen"
                 yield event
+            return
+        try:
+            if c.style == asAlways:
+                c.refs[p] = c.nextAnchorId
+                c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+            else: c.refs[p] = yAnchorNone
+            let
+                a = if c.style == asAlways: c.refs[p] else: cast[AnchorId](p)
+                childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
+            result = iterator(): YamlStreamEvent =
+                var child = representObject(value[], childTagStyle, c)
+                var first = child()
+                assert(not finished(child))
+                case first.kind 
+                of yamlStartMap:
+                    first.mapAnchor = a
+                    if ts == tsNone: first.mapTag = yTagQuestionMark
+                of yamlStartSequence:
+                    first.seqAnchor = a
+                    if ts == tsNone: first.seqTag = yTagQuestionMark
+                of yamlScalar:
+                    first.scalarAnchor = a
+                    if ts == tsNone and guessType(first.scalarContent) != yTypeNull:
+                        first.scalarTag = yTagQuestionMark
+                else: discard
+                yield first
+                while true:
+                    let event = child()
+                    if finished(child): break
+                    yield event
+        except KeyError: assert false, "Can never happen"
 
 proc construct*[T](s: var YamlStream, target: var T)
         {.raises: [YamlConstructionError, YamlStreamError].} =
@@ -577,29 +586,11 @@ proc load*[K](input: Stream, target: var K)
         else:
             assert(false)
 
-proc setAnchor(a: var AnchorId, q: var seq[RefNodeData], n: var AnchorId)
+proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
         {.inline.} =
     if a != yAnchorNone:
-        let p = cast[pointer](a)
-        for i in countup(0, q.len - 1):
-            if p == q[i].p:
-                if q[i].count > 1:
-                    assert(q[i].anchor == yAnchorNone)
-                    q[i].anchor = n
-                    a = n
-                    n = AnchorId(int(n) + 1)
-                else: a = yAnchorNone
-                break
-
-proc setAliasAnchor(a: var AnchorId, q: var seq[RefNodeData]) {.inline.} =
-    let p = cast[pointer](a)
-    for i in countup(0, q.len - 1):
-        if p == q[i].p:
-            assert q[i].count > 1
-            assert q[i].anchor != yAnchorNone
-            a = q[i].anchor
-            return
-    assert(false)
+        try:a = q[cast[pointer](a)]
+        except KeyError: assert false, "Can never happen"
     
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream {.raises: [].} =
@@ -621,21 +612,17 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                 objQueue.add(event)
         except Exception:
             assert(false)
-        var next = 0.AnchorId
         var backend = iterator(): YamlStreamEvent =
             for i in countup(0, objQueue.len - 1):
                 var event = objQueue[i]
                 case event.kind
                 of yamlStartMap:
-                    event.mapAnchor.setAnchor(context.refsList, next)
+                    event.mapAnchor.setAnchor(context.refs)
                 of yamlStartSequence:
-                    event.seqAnchor.setAnchor(context.refsList, next)
+                    event.seqAnchor.setAnchor(context.refs)
                 of yamlScalar:
-                    event.scalarAnchor.setAnchor(context.refsList, next)
-                of yamlAlias:
-                    event.aliasTarget.setAliasAnchor(context.refsList)
-                else:
-                    discard
+                    event.scalarAnchor.setAnchor(context.refs)
+                else: discard
                 yield event
         result = initYamlStream(backend)
     else:
