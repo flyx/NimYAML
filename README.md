@@ -1,6 +1,6 @@
 # NimYAML - YAML implementation for Nim
 
-NimYAML is currently being developed. The current release 0.1.0 is not
+NimYAML is currently being developed. The current release 0.2.0 is not
 considered stable. See [the documentation](http://flyx.github.io/NimYAML/) for
 an overview of already available features.
 
@@ -8,15 +8,12 @@ an overview of already available features.
 
  * Misc:
    - Add type hints for more scalar types
-   - Add implementation of YAML document object model, serialize and compose
-     procs
  * Serialization:
    - Support for more standard library types
    - Support polymorphism
    - Support variant objects
    - Support transient fields (i.e. fields that will not be (de-)serialized on
      objects and tuples)
-   - Use `concept` type class `Serializable` or something
    - Check for and avoid name clashes when generating local tags for custom
      object types.
    - Possibly use `genSym` for predefined and generated `yamlTag` procs because
