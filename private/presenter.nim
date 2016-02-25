@@ -12,7 +12,83 @@ type
         dBlockInlineMap, dBlockSequenceItem, dFlowImplicitMapKey, dFlowMapValue,
         dFlowExplicitMapKey, dFlowSequenceItem, dFlowMapStart,
         dFlowSequenceStart
+    
+    ScalarStyle = enum
+        sLiteral, sFolded, sPlain, sDoubleQuoted
 
+proc inspect(scalar: string, indentation: int,
+             words, lines: var seq[tuple[start, finish: int]]):
+        ScalarStyle {.raises: [].} =
+    var
+        inLine = false
+        inWord = false
+        multipleSpaces = true
+        curWord, curLine: tuple[start, finish: int]
+        canUseFolded = true
+        canUseLiteral = true
+        canUsePlain = scalar.len > 0 and scalar[0] notin {'@', '`'}
+    for i, c in scalar:
+        case c
+        of ' ':
+            if inWord:
+                if not multipleSpaces:
+                    curWord.finish = i - 1
+                    inWord = false
+            else:
+                multipleSpaces = true
+                inWord = true
+                if not inLine:
+                    inLine = true
+                    curLine.start = i
+                    # space at beginning of line will preserve previous and next
+                    # linebreak. that is currently too complex to handle.
+                    canUseFolded = false
+        of '\x0A':
+            canUsePlain = false # we don't use multiline plain scalars
+            curWord.finish = i - 1
+            if curWord.finish - curWord.start + 1 > 80 - indentation:
+                return if canUsePlain: sPlain else: sDoubleQuoted
+            words.add(curWord)
+            inWord = false
+            curWord.start = i + 1
+            multipleSpaces = true
+            if not inLine: curLine.start = i
+            inLine = false
+            curLine.finish = i - 1
+            if curLine.start - curLine.finish + 1 > 80 - indentation:
+                canUseLiteral = false
+            lines.add(curLine)
+        else:
+            if c in {'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"',
+                     '\''} or c.ord < 32: canUsePlain = false
+            if not inLine:
+                curLine.start = i
+                inLine = true
+            if not inWord:
+                if not multipleSpaces:
+                    if curWord.finish - curWord.start + 1 > 80 - indentation:
+                        return if canUsePlain: sPlain else: sDoubleQuoted
+                    words.add(curWord)
+                curWord.start = i
+                inWord = true
+                multipleSpaces = false
+    if inWord:
+        curWord.finish = scalar.len - 1
+        if curWord.finish - curWord.start + 1 > 80 - indentation:
+            return if canUsePlain: sPlain else: sDoubleQuoted
+        words.add(curWord)
+    if inLine:
+        curLine.finish = scalar.len - 1
+        if curLine.finish - curLine.start + 1 > 80 - indentation:
+            canUseLiteral = false
+        lines.add(curLine)
+    if scalar.len <= 80 - indentation:
+        result = if canUsePlain: sPlain else: sDoubleQuoted
+    elif canUseLiteral: result = sLiteral
+    elif canUseFolded: result = sFolded
+    elif canUsePlain: result = sPlain
+    else: result = sDoubleQuoted
+    
 proc needsEscaping(scalar: string): bool {.raises: [].} =
     scalar.len == 0 or scalar[0] in ['@', '`'] or
             scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"',
@@ -23,12 +99,59 @@ proc writeDoubleQuoted(scalar: string, s: Stream)
     try:
         s.write('"')
         for c in scalar:
-            if c == '"':
-                s.write('\\')
-            s.write(c)
+            case c
+            of '"': s.write("\\\"")
+            of '\x0A': s.write("\\n")
+            of '\x0D': s.write("\\x0D")
+            else: s.write(c)
         s.write('"')
     except:
-        var e = newException(YamlPresenterOutputError, "")
+        var e = newException(YamlPresenterOutputError,
+                             "Error while writing to output stream")
+        e.parent = getCurrentException()
+        raise e
+
+proc writeLiteral(scalar: string, indentation, indentStep: int, s: Stream,
+                  lines: seq[tuple[start, finish: int]])
+        {.raises: [YamlPresenterOutputError].} =
+    try:
+        s.write('|')
+        if scalar[^1] != '\x0A': s.write('-')
+        if scalar[0] in [' ', '\t']: s.write($indentStep)
+        for line in lines:
+            s.write('\x0A')
+            s.write(repeat(' ', indentation + indentStep))
+            if line.finish >= line.start:
+                s.write(scalar[line.start .. line.finish])
+    except:
+        var e = newException(YamlPresenterOutputError,
+                             "Error while writing to output stream")
+        e.parent = getCurrentException()
+        raise e
+
+proc writeFolded(scalar: string, indentation, indentStep: int, s: Stream,
+                 words: seq[tuple[start, finish: int]])
+        {.raises: [YamlPresenterOutputError].} =
+    try:
+        s.write("|-")
+        var curPos = 80
+        for word in words:
+            if word.start > 0 and scalar[word.start - 1] == '\x0A':
+                s.write("\x0A\x0A")
+                s.write(repeat(' ', indentation + indentStep))
+                curPos = indentation + indentStep
+            elif curPos + (word.finish - word.start) > 80:
+                s.write('\x0A')
+                s.write(repeat(' ', indentation + indentStep))
+                curPos = indentation + indentStep
+            else:
+                s.write(' ')
+                curPos.inc()
+            s.write(scalar[word.start .. word.finish])
+            curPos += word.finish - word.start + 1
+    except:
+        var e = newException(YamlPresenterOutputError,
+                             "Error while writing to output stream")
         e.parent = getCurrentException()
         raise e
 
@@ -218,10 +341,18 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                     safeWrite(item.scalarContent)
                 else:
                     writeDoubleQuoted(item.scalarContent, target)
-            elif style == psCanonical or item.scalarContent.needsEscaping:
+            elif style == psCanonical:
                 writeDoubleQuoted(item.scalarContent, target)
             else:
-                safeWrite(item.scalarContent)
+                var words, lines = newSeq[tuple[start, finish: int]]()
+                case item.scalarContent.inspect(indentation + indentationStep,
+                                                words, lines)
+                of sLiteral: writeLiteral(item.scalarContent, indentation,
+                                          indentationStep, target, lines)
+                of sFolded: writeFolded(item.scalarContent, indentation,
+                                        indentationStep, target, words)
+                of sPlain: safeWrite(item.scalarContent)
+                of sDoubleQuoted: writeDoubleQuoted(item.scalarContent, target)
         of yamlAlias:
             if style == psJson:
                 raise newException(YamlPresenterJsonError,
