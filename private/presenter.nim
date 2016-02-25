@@ -89,21 +89,64 @@ proc inspect(scalar: string, indentation: int,
     elif canUsePlain: result = sPlain
     else: result = sDoubleQuoted
     
-proc needsEscaping(scalar: string): bool {.raises: [].} =
-    scalar.len == 0 or scalar[0] in ['@', '`'] or
-            scalar.find({'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"',
-                         '\'', '\x0A', '\c'}) != -1
-
-proc writeDoubleQuoted(scalar: string, s: Stream)
+proc writeDoubleQuoted(scalar: string, s: Stream, indentation: int)
             {.raises: [YamlPresenterOutputError].} =
+    var curPos = indentation
+    try:
+        s.write('"')
+        curPos.inc()
+        for c in scalar:
+            if curPos == 79:
+                s.write("\\\x0A")
+                s.write(repeat(' ', indentation))
+                curPos = indentation
+                if c == ' ':
+                    s.write('\\')
+                    curPos.inc()
+            case c
+            of '"':
+                s.write("\\\"")
+                curPos.inc(2)
+            of '\x0A':
+                s.write("\\n")
+                curPos.inc(2)
+            of '\t':
+                s.write("\\t")
+                curPos.inc(2)
+            of '\\':
+                s.write("\\\\")
+                curPos.inc(2)
+            else:
+                if ord(c) < 32:
+                    s.write("\\x" & toHex(ord(c), 2))
+                    curPos.inc(4)
+                else:
+                    s.write(c)
+                    curPos.inc()
+        s.write('"')
+    except:
+        var e = newException(YamlPresenterOutputError,
+                             "Error while writing to output stream")
+        e.parent = getCurrentException()
+        raise e
+
+proc writeDoubleQuotedJson(scalar: string, s: Stream)
+        {.raises: [YamlPresenterOutputError].} =
     try:
         s.write('"')
         for c in scalar:
             case c
             of '"': s.write("\\\"")
+            of '\\': s.write("\\\\")
             of '\x0A': s.write("\\n")
-            of '\x0D': s.write("\\x0D")
-            else: s.write(c)
+            of '\t': s.write("\\t")
+            of '\f': s.write("\\f")
+            of '\b': s.write("\\b")
+            else:
+                if ord(c) < 32:
+                    s.write("\\u" & toHex(ord(c), 4))
+                else:
+                    s.write(c)
         s.write('"')
     except:
         var e = newException(YamlPresenterOutputError,
@@ -340,9 +383,10 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                         hint == yTypeFloat:
                     safeWrite(item.scalarContent)
                 else:
-                    writeDoubleQuoted(item.scalarContent, target)
+                    writeDoubleQuotedJson(item.scalarContent, target)
             elif style == psCanonical:
-                writeDoubleQuoted(item.scalarContent, target)
+                writeDoubleQuoted(item.scalarContent, target,
+                                  indentation + indentationStep)
             else:
                 var words, lines = newSeq[tuple[start, finish: int]]()
                 case item.scalarContent.inspect(indentation + indentationStep,
@@ -352,7 +396,8 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                 of sFolded: writeFolded(item.scalarContent, indentation,
                                         indentationStep, target, words)
                 of sPlain: safeWrite(item.scalarContent)
-                of sDoubleQuoted: writeDoubleQuoted(item.scalarContent, target)
+                of sDoubleQuoted: writeDoubleQuoted(item.scalarContent, target,
+                                        indentation + indentationStep)
         of yamlAlias:
             if style == psJson:
                 raise newException(YamlPresenterJsonError,
