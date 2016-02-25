@@ -220,3 +220,7 @@ suite "Parsing":
                scalarEvent("foo"), startSeqEvent(), scalarEvent("bar"),
                endSeqEvent(), scalarEvent("baz"), scalarEvent(""),
                endMapEvent(), endDocEvent())
+    test "Parsing: Colon in double quoted string":
+        ensure("\"foo: bar\\\": baz\"", startDocEvent(),
+               scalarEvent("foo: bar\": baz", yTagExclamationMark),
+               endDocEvent())

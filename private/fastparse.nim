@@ -309,7 +309,8 @@ template leaveFlowLevel() {.dirty.} =
 template handlePossibleMapStart() {.dirty.} =
   if level.indentation == -1:
     var flowDepth = 0
-    for pos in countup(p.lexer.bufpos, p.lexer.bufpos + 1024):
+    var pos = p.lexer.bufpos
+    while pos < p.lexer.bufpos + 1024:
       case p.lexer.buf[pos]
       of ':':
         if flowDepth == 0 and p.lexer.buf[pos + 1] in spaceOrLineEnd:
@@ -317,17 +318,20 @@ template handlePossibleMapStart() {.dirty.} =
           break
       of lineEnd:
         break
-      of '[', '{':
-        flowDepth.inc()
-      of '}', ']':
-        flowDepth.inc(-1)
+      of '[', '{': flowDepth.inc()
+      of '}', ']': flowDepth.inc(-1)
       of '?':
         if flowDepth == 0: break
       of '#':
-        if p.lexer.buf[pos - 1] in space:
-          break
-      else:
-        discard
+        if p.lexer.buf[pos - 1] in space: break
+      of '"':
+        pos.inc()
+        while p.lexer.buf[pos] notin {'"', EndOfFile, '\x0A', '\c'}:
+          if p.lexer.buf[pos] == '\\': pos.inc()
+          pos.inc()
+        if p.lexer.buf[pos] != '"': break
+      else: discard
+      pos.inc()
     if level.indentation == -1:
       level.indentation = indentation
 
