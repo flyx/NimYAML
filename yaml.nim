@@ -17,7 +17,7 @@
 ## this enhances interoperability with other languages.
 
 import streams, unicode, lexbase, tables, strutils, json, hashes, queues,
-       macros, typetraits
+       macros, typetraits, parseutils
 export streams, tables, json
 
 when defined(yamlDebug):
@@ -529,6 +529,46 @@ proc transform*(input: Stream, output: Stream, style: PresentationStyle,
     ## Parser ``input`` as YAML character stream and then dump it to ``output``
     ## while resolving non-specific tags to the ones in the YAML core tag
     ## library.
+
+proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
+                        result: var T)
+            {.raises: [YamlConstructionError, YamlStreamError].}
+    ## Constructs an arbitrary Nim value from a part of a YAML stream.
+    ## The stream will advance until after the finishing token that was used
+    ## for constructing the value. The ``ConstructionContext`` is needed for
+    ## potential child objects which may be refs.
+
+proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
+                         result: var ref O)
+        {.raises: [YamlConstructionError, YamlStreamError].}
+    ## Constructs an arbitrary Nim value from a part of a YAML stream.
+    ## The stream will advance until after the finishing token that was used
+    ## for constructing the value. The object may be constructed from an alias
+    ## node which will be resolved using the ``ConstructionContext``.
+
+proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
+        RawYamlStream {.raises: [].}
+    ## Represents an arbitrary Nim value as YAML object. The object may be
+    ## represented as alias node if the object is already present in the
+    ## ``SerializationContext``.
+
+proc construct*[T](s: var YamlStream, target: var T)
+        {.raises: [YamlConstructionError, YamlStreamError].}
+    ## Constructs a Nim value from a YAML stream.
+
+proc load*[K](input: Stream, target: var K)
+        {.raises: [YamlConstructionError, IOError, YamlParserError].}
+    ## Loads a Nim value from a YAML character stream.
+
+proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
+                   a: AnchorStyle = asTidy): YamlStream {.raises: [].}
+    ## Represents a Nim value as ``YamlStream``
+
+proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
+              tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
+            {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].}
+    ## Dump a Nim value as YAML character stream.
 
 # implementation
 

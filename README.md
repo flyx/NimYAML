@@ -16,9 +16,6 @@ an overview of already available features.
      objects and tuples)
    - Check for and avoid name clashes when generating local tags for custom
      object types.
-   - Possibly use `genSym` for predefined and generated `yamlTag` procs because
-     they are an implementation detail and should not be visible to the caller.
-     same goes for `lazyLoadTag` and `safeLoadUri`.
 
 ## Developers
 

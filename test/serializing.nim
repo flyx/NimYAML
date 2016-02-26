@@ -39,8 +39,7 @@ proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var BetterInt)
         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, "BetterInt"):
+    constructScalarItem(s, item, BetterInt):
         result = BetterInt(parseBiggestInt(item.scalarContent) + 1)
 
 template assertStringEqual(expected, actual: string) =

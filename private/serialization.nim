@@ -35,7 +35,8 @@ var
         ## `serializable <#serializable,stmt,stmt>`_.
     
 template presentTag*(t: typedesc, ts: TagStyle): TagId =
-     if ts == tsNone: yTagQuestionMark else: yamlTag(t)
+    ## Get the TagId that represents the given type in the given style
+    if ts == tsNone: yTagQuestionMark else: yamlTag(t)
 
 template setTagUriForType*(t: typedesc, uri: string): stmt =
     ## Associate the given uri with a certain type. This uri is used as YAML tag
@@ -64,15 +65,13 @@ setTagUriForType(uint64, "!nim:system:uint64", yTagNimUInt64)
 setTagUriForType(float32, "!nim:system:float32", yTagNimFloat32)
 setTagUriForType(float64, "!nim:system:float64", yTagNimFloat64)
 
-proc lazyLoadTag*(uri: string): TagId {.inline, raises: [].} =
-    ## Internal function. Do not call explicitly.
+proc lazyLoadTag(uri: string): TagId {.inline, raises: [].} =
     try:
         result = serializationTagLibrary.tags[uri]
     except KeyError:
         result = serializationTagLibrary.registerUri(uri)
 
-proc safeTagUri*(id: TagId): string {.raises: [].} =
-    ## Internal function. Do not call explicitly.
+proc safeTagUri(id: TagId): string {.raises: [].} =
     try:
         let uri = serializationTagLibrary.uri(id)
         if uri.len > 0 and uri[0] == '!':
@@ -82,34 +81,23 @@ proc safeTagUri*(id: TagId): string {.raises: [].} =
         # cannot happen (theoretically, you known)
         assert(false)
 
-template constructScalarItem*(bs: var YamlStream, item: YamlStreamEvent,
-                              name: string, content: stmt) =
-    item = bs.next()
-    if item.kind != yamlScalar:
+template constructScalarItem*(s: var YamlStream, i: expr,
+                              t: typedesc, content: untyped) =
+    ## Helper template for implementing ``constructObject`` for types that
+    ## are constructed from a scalar. ``i`` is the identifier that holds
+    ## the scalar as ``YamlStreamEvent`` in the content. Exceptions raised in
+    ## the content will be automatically catched and wrapped in
+    ## ``YamlConstructionError``, which will then be raised.
+    let i = s.next() 
+    if i.kind != yamlScalar:
         raise newException(YamlConstructionError, "Expected scalar")
     try: content
     except YamlConstructionError: raise
     except Exception:
         var e = newException(YamlConstructionError,
-                "Cannot construct to " & name & ": " & item.scalarContent)
+                "Cannot construct to " & name(t) & ": " & item.scalarContent)
         e.parent = getCurrentException()
         raise e
-
-proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
-                        result: var T)
-            {.raises: [YamlConstructionError, YamlStreamError].}
-    ## Used for implementing ``constructObject`` on a non-scalar type. Call it
-    ## for constructing child values of the object that is constructed. It will
-    ## ensure correct tag and anchor on the input stream for the child object
-    ## and then call ``constructObject`` on the child object.
-
-proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
-                         result: var ref O)
-        {.raises: [YamlConstructionError, YamlStreamError].}
-    ## Used for implementing ``constructObject`` on a non-scalar type. Call it
-    ## for constructing child values of the object that is constructed. It will
-    ## handle anchors, aliases and nil values, and then call ``constructChild``
-    ## on the base type.
 
 proc yamlTag*(T: typedesc[string]): TagId {.inline, noSideEffect, raises: [].} =
     yTagString
@@ -117,35 +105,39 @@ proc yamlTag*(T: typedesc[string]): TagId {.inline, noSideEffect, raises: [].} =
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var string)
         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, "string"):
+    ## costructs a string from a YAML scalar
+    constructScalarItem(s, item, string):
         result = item.scalarContent
 
 proc representObject*(value: string, ts: TagStyle = tsNone,
         c: SerializationContext): RawYamlStream {.raises: [].} =
+    ## represents a string as YAML scalar
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(value, presentTag(string, ts), yAnchorNone)
 
 proc constructObject*[T: int8|int16|int32|int64](
         s: var YamlStream, c: ConstructionContext, result: var T)
         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, name(T)):
+    ## constructs an integer value from a YAML scalar
+    constructScalarItem(s, item, T):
         result = T(parseBiggestInt(item.scalarContent))
 
 template constructObject*(s: var YamlStream, c: ConstructionContext,
                           result: var int) =
+    ## calling this will raise a compiler error because ``int`` is not supported
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
 
 proc representObject*[T: int8|int16|int32|int64](
         value: T, ts: TagStyle = tsNone, c: SerializationContext):
         RawYamlStream {.raises: [].} =
+    ## represents an integer value as YAML scalar
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
 
 template representObject*(value: int, tagStyle: TagStyle,
                           c: SerializationContext): RawYamlStream =
+    ## calling this will raise a compiler error because ``int`` is not supported
     {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
     discard
 
@@ -164,12 +156,14 @@ proc parseBiggestUInt(s: string): uint64 =
 proc constructObject*[T: uint8|uint16|uint32|uint64](
         s: var YamlStream, c: ConstructionContext, result: var T)
         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, name[T]):
+    ## construct an unsigned integer value from a YAML scalar
+    constructScalarItem(s, item, T):
         result = T(parseBiggestUInt(item.scalarContent))
 
 template constructObject*(s: var YamlStream, c: ConstructionContext,
                           result: var uint) =
+    ## calling this will raise a compiler error because ``uint`` is not
+    ## supported
     {.fatal:
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
@@ -177,20 +171,23 @@ template constructObject*(s: var YamlStream, c: ConstructionContext,
 proc representObject*[T: uint8|uint16|uint32|uint64](
         value: T, ts: TagStyle, c: SerializationContext):
         RawYamlStream {.raises: [].} =
+    ## represents an unsigned integer value as YAML scalar
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
 
 template representObject*(value: uint, ts: TagStyle, c: SerializationContext):
-         RawYamlStream =
+        RawYamlStream =
+    ## calling this will raise a compiler error because ``uint`` is not
+    ## supported
     {.fatal:
         "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
     discard
 
 proc constructObject*[T: float32|float64](
         s: var YamlStream, c: ConstructionContext, result: var T)
-         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, name(T)):
+        {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## construct a float value from a YAML scalar
+    constructScalarItem(s, item, T):
         let hint = guessType(item.scalarContent)
         case hint
         of yTypeFloat:
@@ -208,11 +205,14 @@ proc constructObject*[T: float32|float64](
 
 template constructObject*(s: var YamlStream, c: ConstructionContext,
                           result: var float) =
+    ## calling this will raise a compiler error because ``float`` is not
+    ## supported
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
 proc representObject*[T: float32|float64](value: T, ts: TagStyle,
                                           c: SerializationContext):
         RawYamlStream {.raises: [].} =
+    ## represents a float value as YAML scalar
     result = iterator(): YamlStreamEvent =
         var
             asString: string
@@ -225,15 +225,17 @@ proc representObject*[T: float32|float64](value: T, ts: TagStyle,
 
 template representObject*(value: float, tagStyle: TagStyle,
                           c: SerializationContext): RawYamlStream =
+    ## calling this will result in a compiler error because ``float`` is not
+    ## supported
     {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var bool)
-         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, "bool"):
+        {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## constructs a bool value from a YAML scalar
+    constructScalarItem(s, item, bool):
         case guessType(item.scalarContent)
         of yTypeBoolTrue:
             result = true
@@ -245,6 +247,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
         
 proc representObject*(value: bool, ts: TagStyle,
                       c: SerializationContext): RawYamlStream  {.raises: [].} =
+    ## represents a bool value as a YAML scalar
     result = iterator(): YamlStreamEvent =
         yield scalarEvent(if value: "y" else: "n", presentTag(bool, ts),
                           yAnchorNone)
@@ -252,8 +255,8 @@ proc representObject*(value: bool, ts: TagStyle,
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var char)
         {.raises: [YamlConstructionError, YamlStreamError].} =
-    var item: YamlStreamEvent
-    constructScalarItem(s, item, "char"):
+    ## constructs a char value from a YAML scalar
+    constructScalarItem(s, item, char):
         if item.scalarContent.len != 1:
             raise newException(YamlConstructionError,
                     "Cannot construct to char (length != 1): " &
@@ -263,6 +266,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
 
 proc representObject*(value: char, ts: TagStyle,
                       c: SerializationContext): RawYamlStream {.raises: [].} =
+    ## represents a char value as YAML scalar
     result = iterator(): YamlStreamEvent =
         yield scalarEvent("" & value, presentTag(char, ts), yAnchorNone)
 
@@ -273,6 +277,7 @@ proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
 proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
                          result: var seq[T])
         {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## constructs a Nim seq from a YAML sequence
     let event = s.next()
     if event.kind != yamlStartSequence:
         raise newException(YamlConstructionError, "Expected sequence start")
@@ -285,6 +290,7 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
 
 proc representObject*[T](value: seq[T], ts: TagStyle,
         c: SerializationContext): RawYamlStream {.raises: [].} =
+    ## represents a Nim seq as YAML sequence
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
         yield YamlStreamEvent(kind: yamlStartSequence,
@@ -310,6 +316,7 @@ proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
 proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
                             result: var Table[K, V])
         {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## constructs a Nim Table from a YAML mapping
     let event = s.next()
     if event.kind != yamlStartMap:
         raise newException(YamlConstructionError, "Expected map start, got " &
@@ -326,6 +333,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
 
 proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
         c: SerializationContext): RawYamlStream {.raises:[].} =
+    ## represents a Nim Table as YAML mapping
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
         yield YamlStreamEvent(kind: yamlStartMap,
@@ -369,6 +377,7 @@ proc constructObject*[O: object|tuple](s: var YamlStream,
                                        c: ConstructionContext,
                                        result: var O)
         {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## constructs a Nim object or tuple from a YAML mapping
     let e = s.next()
     if e.kind != yamlStartMap:
         raise newException(YamlConstructionError, "Expected map start, got " &
@@ -387,6 +396,7 @@ proc constructObject*[O: object|tuple](s: var YamlStream,
 
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
         c: SerializationContext): RawYamlStream {.raises: [].} =
+    ## represents a Nim object or tuple as YAML mapping
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
         yield startMapEvent(presentTag(O, ts), yAnchorNone)
@@ -403,6 +413,7 @@ proc representObject*[O: object|tuple](value: O, ts: TagStyle,
 proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
                                result: var O)
         {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## constructs a Nim enum from a YAML scalar
     let e = s.next()
     if e.kind != yamlScalar:
         raise newException(YamlConstructionError, "Expected scalar, got " &
@@ -416,6 +427,7 @@ proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
 
 proc representObject*[O: enum](value: O, ts: TagStyle,
         c: SerializationContext): RawYamlStream {.raises: [].} =
+    ## represents a Nim enum as YAML scalar
     result = iterator(): YamlStreamEvent =
         yield scalarEvent($value, presentTag(O, ts), yAnchorNone)
 
@@ -488,7 +500,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
         raise e
 
 proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
-        RawYamlStream {.raises: [].} =
+        RawYamlStream =
     if value == nil:
         result = iterator(): YamlStreamEvent =
             yield scalarEvent("~", yTagNull)
@@ -539,9 +551,7 @@ proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
                     yield event
         except KeyError: assert false, "Can never happen"
 
-proc construct*[T](s: var YamlStream, target: var T)
-        {.raises: [YamlConstructionError, YamlStreamError].} =
-    ## Construct a Nim value from a YAML stream.
+proc construct*[T](s: var YamlStream, target: var T) =
     var
         context = newConstructionContext()
     try:
@@ -563,9 +573,7 @@ proc construct*[T](s: var YamlStream, target: var T)
         ex.parent = getCurrentException()
         raise ex
 
-proc load*[K](input: Stream, target: var K)
-        {.raises: [YamlConstructionError, IOError, YamlParserError].} =
-    ## Load a Nim value from a YAML character stream.
+proc load*[K](input: Stream, target: var K) =
     var
         parser = newYamlParser(serializationTagLibrary)
         events = parser.parse(input)
@@ -593,8 +601,7 @@ proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
         except KeyError: assert false, "Can never happen"
     
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
-                   a: AnchorStyle = asTidy): YamlStream {.raises: [].} =
-    ## Represent a Nim value as ``YamlStream``.
+                   a: AnchorStyle = asTidy): YamlStream =
     var
         context = newSerializationContext(a)
         objStream = iterator(): YamlStreamEvent =
@@ -630,9 +637,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
 
 proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
               tagStyle: TagStyle = tsRootOnly,
-              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
-            {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].} =
-    ## Dump a Nim value as YAML character stream.
+              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2) =
     var events = represent(value, if style == psCanonical: tsAll else: tagStyle,
                            if style == psJson: asNone else: anchorStyle)
     try:
