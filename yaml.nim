@@ -184,7 +184,7 @@ type
         ##
         ## - ``tsNone``: No tags will be outputted unless necessary.
         ## - ``tsRootOnly``: A tag will only be outputted for the root tag and
-        ##                   where necessary.
+        ##   where necessary.
         ## - ``tsAll``: Tags will be outputted for every object.
         tsNone, tsRootOnly, tsAll
     
@@ -192,17 +192,15 @@ type
         ## How ref object should be serialized.
         ##
         ## - ``asNone``: No anchors will be outputted. Values present at
-        ##               multiple places in the content that should be
-        ##               serialized will be fully serialized at every occurence.
-        ##               If the content is cyclic, this will lead to an
-        ##               endless loop!
+        ##   multiple places in the content that should be serialized will be
+        ##   fully serialized at every occurence. If the content is cyclic, this
+        ##   will lead to an endless loop!
         ## - ``asTidy``: Anchors will only be generated for objects that
-        ##               actually occur more than once in the content to be
-        ##               serialized. This is a bit slower and needs more memory
-        ##               than ``asAlways``.
+        ##   actually occur more than once in the content to be serialized.
+        ##   This is a bit slower and needs more memory than ``asAlways``.
         ## - ``asAlways``: Achors will be generated for every ref object in the
-        ##                 content to be serialized, regardless of whether the
-        ##                 object is referenced again afterwards
+        ##   content to be serialized, regardless of whether the object is
+        ##   referenced again afterwards
         asNone, asTidy, asAlways
     
     NewLineStyle* = enum
@@ -210,9 +208,9 @@ type
         ##
         ## - ``nlLF``: Use a single linefeed char as newline.
         ## - ``nlCRLF``: Use a sequence of carriage return and linefeed as
-        ##               newline.
+        ##   newline.
         ## - ``nlOSDefault``: Use the target operation system's default newline
-        ##                    sequence (CRLF on Windows, LF everywhere else).
+        ##   sequence (CRLF on Windows, LF everywhere else).
         nlLF, nlCRLF, nlOSDefault
             
     PresentationOptions* = object
