@@ -635,13 +635,14 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
     else:
         result = initYamlStream(objStream)
 
-proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
-              tagStyle: TagStyle = tsRootOnly,
-              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2) =
-    var events = represent(value, if style == psCanonical: tsAll else: tagStyle,
-                           if style == psJson: asNone else: anchorStyle)
+proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions) =
+    var events = represent(value,
+            if options.style == psCanonical: tsAll else: tagStyle,
+            if options.style == psJson: asNone else: anchorStyle)
     try:
-        present(events, target, serializationTagLibrary, style, indentationStep)
+        present(events, target, serializationTagLibrary, options)
     except YamlStreamError:
         # serializing object does not raise any errors, so we can ignore this
         assert false, "Can never happen"

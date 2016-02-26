@@ -189,16 +189,16 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
         result = initYamlStream(backend)
 
 proc dumpDOM*(doc: YamlDocument, target: Stream,
-              style: PresentationStyle = psDefault,
-              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions)
             {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].} =
     ## Dump a YamlDocument as YAML character stream.
     var
         tagLib = initExtendedTagLibrary()
         events = serialize(doc, tagLib,
-                           if style == psJson: asNone else: anchorStyle)
+                           if options.style == psJson: asNone else: anchorStyle)
     try:
-        present(events, target, tagLib, style, indentationStep)
+        present(events, target, tagLib, options)
     except YamlStreamError:
         # serializing object does not raise any errors, so we can ignore this
         assert false, "Can never happen"

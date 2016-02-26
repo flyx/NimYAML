@@ -205,6 +205,22 @@ type
         ##                 object is referenced again afterwards
         asNone, asTidy, asAlways
     
+    NewLineStyle* = enum
+        ## What kind of newline sequence is used when presenting.
+        ##
+        ## - ``nlLF``: Use a single linefeed char as newline.
+        ## - ``nlCRLF``: Use a sequence of carriage return and linefeed as
+        ##               newline.
+        ## - ``nlOSDefault``: Use the target operation system's default newline
+        ##                    sequence (CRLF on Windows, LF everywhere else).
+        nlLF, nlCRLF, nlOSDefault
+            
+    PresentationOptions* = object
+        ## Options for generating a YAML character stream
+        style*: PresentationStyle
+        indentationStep*: int
+        newlines*: NewLineStyle
+    
     RefNodeData = object
         p: pointer
         count: int
@@ -361,6 +377,10 @@ const
     
     yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
     
+    defaultPresentationOptions* =
+            PresentationOptions(style: psDefault, indentationStep: 2,
+                                newlines: nlOSDefault)
+    
 # interface
 
 proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].}
@@ -495,6 +515,13 @@ proc getLineContent*(p: YamlParser, marker: bool = true): string {.raises: [].}
 proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [].}
     ## Parse the given stream as YAML character stream. 
 
+proc defineOptions*(style: PresentationStyle = psDefault,
+                    indentationStep: int = 2, newlines:
+                    NewLineStyle = nlOSDefault): PresentationOptions
+            {.raises: [].}
+    ## Define a set of options for presentation. Convenience proc that requires
+    ## you to only set those values that should not equal the default.
+
 proc constructJson*(s: var YamlStream): seq[JsonNode]
         {.raises: [YamlConstructionError, YamlStreamError].}
     ## Construct an in-memory JSON tree from a YAML event stream. The stream may
@@ -516,16 +543,15 @@ proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [].}
     ## from a YAML character stream.
     
 proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
-              style: PresentationStyle = psDefault,
-              indentationStep: int = 2) {.raises: [YamlPresenterJsonError,
-                                                   YamlPresenterOutputError,
-                                                   YamlStreamError].}
+              options: PresentationOptions = defaultPresentationOptions)
+            {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                       YamlStreamError].}
     ## Convert ``s`` to a YAML character stream and write it to ``target``.
     
-proc transform*(input: Stream, output: Stream, style: PresentationStyle,
-                indentationStep: int = 2) {.raises: [IOError, YamlParserError,
-                                                     YamlPresenterJsonError,
-                                                     YamlPresenterOutputError].}
+proc transform*(input: Stream, output: Stream,
+                options: PresentationOptions = defaultPresentationOptions)
+            {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
+                       YamlPresenterOutputError].}
     ## Parser ``input`` as YAML character stream and then dump it to ``output``
     ## while resolving non-specific tags to the ones in the YAML core tag
     ## library.
@@ -564,9 +590,9 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream {.raises: [].}
     ## Represents a Nim value as ``YamlStream``
 
-proc dump*[K](value: K, target: Stream, style: PresentationStyle = psDefault,
-              tagStyle: TagStyle = tsRootOnly,
-              anchorStyle: AnchorStyle = asTidy, indentationStep: int = 2)
+proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions)
             {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].}
     ## Dump a Nim value as YAML character stream.
 

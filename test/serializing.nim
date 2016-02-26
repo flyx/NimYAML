@@ -55,6 +55,11 @@ proc newNode(v: string): ref Node =
     result.next = nil
 
 suite "Serialization":
+    setup:
+        let
+            blockOnly = defineOptions(style=psBlockOnly)
+            
+
     test "Serialization: Load string sequence":
         let input = newStringStream(" - a\n - b")
         var result: seq[string]
@@ -66,7 +71,7 @@ suite "Serialization":
     test "Serialization: Represent string sequence":
         var input = @["a", "b"]
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsNone)
+        dump(input, output, tsNone, asTidy, blockOnly)
         assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output.data
     
     test "Serialization: Load Table[int, string]":
@@ -82,7 +87,7 @@ suite "Serialization":
         input[23] = "dreiundzwanzig"
         input[42] = "zweiundvierzig"
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsNone)
+        dump(input, output, tsNone, asTidy, blockOnly)
         assertStringEqual(
                 "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig",
                 output.data)
@@ -100,7 +105,7 @@ suite "Serialization":
         let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32],
                       @[6.int32]]
         var output = newStringStream()
-        dump(input, output, psDefault, tsNone)
+        dump(input, output, tsNone)
         assertStringEqual "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]",
                           output.data
     
@@ -116,7 +121,7 @@ suite "Serialization":
     test "Serialization: Represent Enum":
         let input = @[tlRed, tlGreen, tlYellow]
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsNone)
+        dump(input, output, tsNone, asTidy, blockOnly)
         assertStringEqual "%YAML 1.2\n--- \n- tlRed\n- tlGreen\n- tlYellow",
                           output.data
     
@@ -131,7 +136,7 @@ suite "Serialization":
     test "Serialization: Represent Tuple":
         let input = (str: "value", i: 42.int32, b: true)
         var output = newStringStream()
-        dump(input, output, psDefault, tsNone)
+        dump(input, output, tsNone)
         assertStringEqual "%YAML 1.2\n--- \nstr: value\ni: 42\nb: y",
                           output.data
     
@@ -146,7 +151,7 @@ suite "Serialization":
     test "Serialization: Represent custom object":
         let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsNone)
+        dump(input, output, tsNone, asTidy, blockOnly)
         assertStringEqual(
                 "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12",
                 output.data)
@@ -162,7 +167,7 @@ suite "Serialization":
     test "Serialization: Represent sequence with explicit tags":
         let input = @["one", "two"]
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsAll)
+        dump(input, output, tsAll, asTidy, blockOnly)
         assertStringEqual("%YAML 1.2\n--- !nim:system:seq(" &
                 "tag:yaml.org,2002:str) \n- !!str one\n- !!str two",
                 output.data)
@@ -179,7 +184,7 @@ suite "Serialization":
     test "Serialization: Represent custom object with explicit root tag":
         let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsRootOnly)
+        dump(input, output, tsRootOnly, asTidy, blockOnly)
         assertStringEqual("%YAML 1.2\n" &
                 "--- !nim:custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12",
                 output.data)
@@ -193,7 +198,7 @@ suite "Serialization":
         b.next = c
         c.next = a
         var output = newStringStream()
-        dump(a, output, psBlockOnly, tsRootOnly)
+        dump(a, output, tsRootOnly, asTidy, blockOnly)
         assertStringEqual """%YAML 1.2
 --- !example.net:Node &a 
 value: a
@@ -252,7 +257,7 @@ next:
         input.add(new string)
         input[1][] = "~"
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsRootOnly)
+        dump(input, output, tsRootOnly, asTidy, blockOnly)
         assertStringEqual "%YAML 1.2\n--- !nim:system:seq(tag:yaml.org,2002:str) \n- !!null ~\n- !!str ~",
                 output.data
     
@@ -267,7 +272,7 @@ next:
     test "Serialization: Custom representObject":
         let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
         var output = newStringStream()
-        dump(input, output, psBlockOnly, tsAll)
+        dump(input, output, tsAll, asTidy, blockOnly)
         assertStringEqual """%YAML 1.2
 --- !nim:system:seq(test:BetterInt) 
 - !test:BetterInt 1
