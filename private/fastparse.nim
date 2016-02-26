@@ -28,8 +28,8 @@ type
   
 const
   space          = [' ', '\t']
-  lineEnd        = ['\x0A', '\c', EndOfFile]
-  spaceOrLineEnd = [' ', '\t', '\x0A', '\c', EndOfFile]
+  lineEnd        = ['\l', '\c', EndOfFile]
+  spaceOrLineEnd = [' ', '\t', '\l', '\c', EndOfFile]
   digits         = '0'..'9'
   flowIndicators = ['[', ']', '{', '}', ',']
   
@@ -95,7 +95,7 @@ template yieldLevelEnd() {.dirty.} =
 
 template handleLineEnd(insideDocument: bool) {.dirty.} =
   case p.lexer.buf[p.lexer.bufpos]
-  of '\x0A':
+  of '\l':
     p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
   of '\c':
     p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
@@ -326,7 +326,7 @@ template handlePossibleMapStart() {.dirty.} =
         if p.lexer.buf[pos - 1] in space: break
       of '"':
         pos.inc()
-        while p.lexer.buf[pos] notin {'"', EndOfFile, '\x0A', '\c'}:
+        while p.lexer.buf[pos] notin {'"', EndOfFile, '\l', '\c'}:
           if p.lexer.buf[pos] == '\\': pos.inc()
           pos.inc()
         if p.lexer.buf[pos] != '"': break
@@ -372,7 +372,7 @@ template skipWhitespaceAndNewlines(lexer: BaseLexer) =
     case lexer.buf[lexer.bufpos]
     of space:
       lexer.bufpos.inc()
-    of '\x0A':
+    of '\l':
       lexer.bufpos = lexer.handleLF(lexer.bufpos)
     of '\c':
       lexer.bufpos = lexer.handleCR(lexer.bufpos)
@@ -403,7 +403,7 @@ template directiveName(lexer: BaseLexer, directive: var LexedDirective) =
       lexer.bufpos.inc()
       if lexer.buf[lexer.bufpos] == 'G':
         lexer.bufpos.inc()
-        if lexer.buf[lexer.bufpos] in [' ', '\t', '\x0A', '\c', EndOfFile]:
+        if lexer.buf[lexer.bufpos] in [' ', '\t', '\l', '\c', EndOfFile]:
           directive = ldTag
   while lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
     lexer.bufpos.inc()
@@ -577,7 +577,7 @@ template processDoubleQuotedWhitespace(newlines: var int) {.dirty.} =
       case p.lexer.buf[p.lexer.bufpos]
       of ' ', '\t':
         after.add(p.lexer.buf[p.lexer.bufpos])
-      of '\x0A':
+      of '\l':
         p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         break
       of '\c':
@@ -591,7 +591,7 @@ template processDoubleQuotedWhitespace(newlines: var int) {.dirty.} =
       case p.lexer.buf[p.lexer.bufpos]
       of ' ', '\t':
         discard
-      of '\x0A':
+      of '\l':
         p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         newlines.inc()
       of '\c':
@@ -603,7 +603,7 @@ template processDoubleQuotedWhitespace(newlines: var int) {.dirty.} =
         elif newlines == 1:
           content.add(' ')
         else:
-          content.add(repeat('\x0A', newlines - 1))
+          content.add(repeat('\l', newlines - 1))
         break
       p.lexer.bufpos.inc()
 
@@ -624,7 +624,7 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
       of 'a':       content.add('\x07')
       of 'b':       content.add('\x08')
       of '\t', 't': content.add('\t')
-      of 'n':       content.add('\x0A')
+      of 'n':       content.add('\l')
       of 'v':       content.add('\v')
       of 'f':       content.add('\f')
       of 'r':       content.add('\r')
@@ -640,7 +640,7 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
       of 'x':       content.add(lexer.unicodeSequence(2))
       of 'u':       content.add(lexer.unicodeSequence(4))
       of 'U':       content.add(lexer.unicodeSequence(8))
-      of '\x0A', '\c':
+      of '\l', '\c':
         var newlines = 0
         processDoubleQuotedWhitespace(newlines)
         continue
@@ -649,7 +649,7 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
     of '"':
       lexer.bufpos.inc()
       break
-    of '\x0A', '\c', '\t', ' ':
+    of '\l', '\c', '\t', ' ':
       var newlines = 1
       processdoubleQuotedWhitespace(newlines)
       continue
@@ -721,7 +721,7 @@ template plainScalar(lexer: BaseLexer, content: var string,
         content.add(c)
 
 template continueMultilineScalar() {.dirty.} =
-  content.add(if newlines == 1: " " else: repeat('\x0A', newlines - 1))
+  content.add(if newlines == 1: " " else: repeat('\l', newlines - 1))
   startToken()
   p.lexer.plainScalar(content, cBlock)
   state = fpBlockAfterPlainScalar
@@ -751,7 +751,7 @@ template handleFlowPlainScalar() {.dirty.} =
           parserError("Multiline scalar is not allowed as implicit key")
       of '#', EndOfFile:
         break
-      of '\x0A':
+      of '\l':
         p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         newlines.inc()
       of '\c':
@@ -871,7 +871,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
       lexerError(lexer, "Illegal character in block scalar header")
   lexer.lineEnding()
   case lexer.buf[lexer.bufpos]
-  of '\x0A':
+  of '\l':
     lexer.bufpos = lexer.handleLF(lexer.bufpos)
   of '\c':
     lexer.bufpos = lexer.handleCR(lexer.bufpos)
@@ -890,7 +890,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
           case lexer.buf[lexer.bufpos]
           of ' ':
             discard
-          of '\x0A':
+          of '\l':
             lexer.bufpos = lexer.handleLF(lexer.bufpos)
             newlines.inc()
             break inner
@@ -907,7 +907,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
             case lexer.buf[lexer.bufpos]
             of ' ':
               discard
-            of '\x0A':
+            of '\l':
               lexer.bufpos = lexer.handleLF(lexer.bufpos)
               newlines.inc()
               break inner
@@ -921,7 +921,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
             of '#':
               lexer.lineEnding()
               case lexer.buf[lexer.bufpos]
-              of '\x0A':
+              of '\l':
                 lexer.bufpos = lexer.handleLF(lexer.bufpos)
               of '\c':
                 lexer.bufpos = lexer.handleCR(lexer.bufpos)
@@ -937,7 +937,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
             case lexer.buf[lexer.bufpos]
             of ' ':
               discard
-            of '\x0A':
+            of '\l':
               lexer.bufpos = lexer.handleLF(lexer.bufpos)
               newlines.inc()
               break inner
@@ -954,7 +954,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
               break
             lexer.bufpos.inc()
         case lexer.buf[lexer.bufpos]
-        of '\x0A':
+        of '\l':
           lexer.bufpos = lexer.handleLF(lexer.bufpos)
           newlines.inc()
           break inner
@@ -969,16 +969,16 @@ template blockScalar(lexer: BaseLexer, content: var string,
           discard
         if newlines > 0:
           if literal:
-            content.add(repeat('\x0A', newlines))
+            content.add(repeat('\l', newlines))
           elif newlines == 1:
             content.add(' ')
           else:
-            content.add(repeat('\x0A', newlines - 1))
+            content.add(repeat('\l', newlines - 1))
           newlines = 0
         while true:
           let c = lexer.buf[lexer.bufpos]
           case c
-          of '\x0A':
+          of '\l':
             lexer.bufpos = lexer.handleLF(lexer.bufpos)
             newlines.inc()
             break
@@ -994,9 +994,9 @@ template blockScalar(lexer: BaseLexer, content: var string,
           lexer.bufpos.inc()
   case chomp
   of ctClip:
-    content.add('\x0A')
+    content.add('\l')
   of ctKeep:
-    content.add(repeat('\x0A', newlines))
+    content.add(repeat('\l', newlines))
   of ctStrip:
     discard
 
@@ -1062,7 +1062,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             case p.lexer.buf[p.lexer.bufpos]
             of ' ', '\t':
               discard
-            of '\x0A':
+            of '\l':
               p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
               break
             of '\c':
@@ -1077,7 +1077,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               yield startDocEvent()
               state = fpBlockObjectStart
               break
-        of '\x0A':
+        of '\l':
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         of '\c':
           p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
@@ -1169,7 +1169,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of ' ':
           p.lexer.skipIndentation()
           if p.lexer.buf[p.lexer.bufpos] in
-              ['\t', '\x0A', '\c', '#', EndOfFile]:
+              ['\t', '\l', '\c', '#', EndOfFile]:
             p.lexer.lineEnding()
             handleLineEnd(true)
           else:
@@ -1190,7 +1190,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of EndOfFile:
           closeEverything()
           break
-        of '\t', '\x0A', '\c', '#':
+        of '\t', '\l', '\c', '#':
           p.lexer.lineEnding()
           handleLineEnd(true)
         else:
@@ -1208,7 +1208,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         debug("state: blockAfterPlainScalar")
         p.lexer.skipWhitespace()
         case p.lexer.buf[p.lexer.bufpos]
-        of '\x0A':
+        of '\l':
           newlines.inc()
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
           state = fpBlockLineStart
@@ -1232,7 +1232,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         debug("state: blockAfterPlainScalar")
         p.lexer.skipWhitespace()
         case p.lexer.buf[p.lexer.bufpos]
-        of '\x0A':
+        of '\l':
           if level.kind notin [fplUnknown, fplScalar]:
             startToken()
             parserError("Unexpected scalar")
@@ -1258,7 +1258,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of EndOfFile:
           closeEverything()
           break
-        of '\x0A':
+        of '\l':
           state = fpBlockLineStart
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         of '\c':
@@ -1299,7 +1299,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         p.lexer.skipWhitespace()
         indentation = p.lexer.getColNumber(p.lexer.bufpos)
         case p.lexer.buf[p.lexer.bufpos]
-        of '\x0A':
+        of '\l':
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
           state = fpBlockLineStart
           level.indentation = -1
@@ -1420,7 +1420,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of ' ', '\t', '#':
           p.lexer.lineEnding()
           handleLineEnd(true)
-        of '\x0A':
+        of '\l':
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         of '\c':
           p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
