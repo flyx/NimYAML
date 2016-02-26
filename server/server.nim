@@ -40,7 +40,8 @@ routes:
                 tokens = true
             if not tokens:
                 var output = newStringStream()
-                transform(newStringStream(@"input"), output, style)
+                transform(newStringStream(@"input"), output,
+                          defineOptions(style))
                 resultNode["code"] = %0
                 resultNode["output"] = %output.data
                 resp resultNode.pretty, "application/json"
