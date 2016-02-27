@@ -28,14 +28,14 @@ task documentation, "Generate documentation":
     setCommand "nop"
 
 task bench, "Benchmarking":
-    --d:release
+    #--d:release
     --r
     --w:off
     --hints:off
-    setCommand "c", "bench/json"
+    setCommand "c", "bench/jsonBench"
 
 task clean, "Remove all generated files":
-    exec "rm -f libyaml.* test/tests test/parsing test/lexing docout"
+    exec "rm -rf libyaml.* test/tests test/parsing test/lexing bench/json docout"
     setCommand "nop"
 
 task server, "Compile server daemon":

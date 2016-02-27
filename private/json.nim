@@ -125,8 +125,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
                 else:
                     let jsonScalar = jsonFromScalar(event.scalarContent,
                                                     event.scalarTag)
-                    levels[levels.high].node.fields.add(
-                            levels[levels.high].key, jsonScalar)
+                    levels[levels.high].node[levels[levels.high].key] =
+                            jsonScalar
                     levels[levels.high].key = nil
                     if event.scalarAnchor != yAnchorNone:
                         anchors[event.scalarAnchor] = jsonScalar
@@ -140,12 +140,11 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
                     levels[levels.high].node.elems.add(level.node)
                 of JObject:
                     if isNil(levels[levels.high].key):
-                        echo level.node.pretty()
                         raise newException(YamlConstructionError,
                                 "non-scalar as key not allowed in JSON")
                     else:
-                        levels[levels.high].node.fields.add(
-                            levels[levels.high].key, level.node)
+                        levels[levels.high].node[
+                            levels[levels.high].key] = level.node
                         levels[levels.high].key = nil
                 else:
                     discard # will never happen

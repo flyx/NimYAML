@@ -157,6 +157,21 @@ var
     parser = newYamlParser(initCoreTagLibrary())
     
 block:
+    multibench(cJson1k, 100):
+        let res = parseJson(json1k)
+        assert res.kind == JObject
+
+block:
+    multibench(cJson10k, 100):
+        let res = parseJson(json10k)
+        assert res.kind == JObject
+
+block:
+    multibench(cJson100k, 100):
+        let res = parseJson(json100k)
+        assert res.kind == JObject    
+
+block:
     multibench(cYaml1k, 100):
         var
             s = newStringStream(json1k)
@@ -179,21 +194,6 @@ block:
             events = parser.parse(s)
         let res = constructJson(events)
         assert res[0].kind == JObject
-
-block:
-    multibench(cJson1k, 100):
-        let res = parseJson(json1k)
-        assert res.kind == JObject
-
-block:
-    multibench(cJson10k, 100):
-        let res = parseJson(json10k)
-        assert res.kind == JObject
-
-block:
-    multibench(cJson100k, 100):
-        let res = parseJson(json100k)
-        assert res.kind == JObject
 
 block:
     multibench(cLibYaml1k, 100):
@@ -221,10 +221,12 @@ writeStyled "1k input\n--------\n"
 writeResult "NimYAML: ", cYaml1k div 1000
 writeResult "JSON:    ", cJson1k div 1000
 writeResult "LibYAML: ", cLibYaml1k div 1000
+setForegroundColor(fgWhite)
 writeStyled "10k input\n---------\n"
 writeResult "NimYAML: ", cYaml10k div 1000
 writeResult "JSON:    ", cJson10k div 1000
 writeResult "LibYAML: ", cLibYaml10k div 1000
+setForegroundColor(fgWhite)
 writeStyled "100k input\n----------\n"
 writeResult "NimYAML: ", cYaml100k div 1000
 writeResult "JSON:    ", cJson100k div 1000
