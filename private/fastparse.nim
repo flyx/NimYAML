@@ -107,6 +107,7 @@ template handleLineEnd(insideDocument: bool) {.dirty.} =
     return
   else:
     discard
+  newlines.inc()
 
 template handleObjectEnd(nextState: FastParseState) {.dirty.} =
   if ancestry.len == 0:
@@ -879,7 +880,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
     assert(false)
   var newlines = 0
   let parentIndent = if ancestry.len > 0:
-          ancestry[ancestry.high].indentation else: -1
+          ancestry[ancestry.high].indentation else: 0
   content = ""
   block outer:
     while true:
@@ -946,10 +947,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
               stateAfter = fpBlockLineStart
               break outer
             else:
-              if parentIndent == -1:
-                blockIndent = lexer.getColNumber(lexer.bufpos)
-              else:
-                blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
+              blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
               detectedIndent = true
               break
             lexer.bufpos.inc()
