@@ -63,6 +63,8 @@ template parserError(message: string) {.dirty.} =
   e.line = p.lexer.lineNumber
   e.column = p.tokenstart + 1
   e.lineContent = p.getLineContent(true)
+  echo "line ", e.line, ", column ", e.column, ": ", message
+  echo e.lineContent
   raise e
 
 template lexerError(lx: BaseLexer, message: string) {.dirty.} =
@@ -921,8 +923,12 @@ template blockScalar(lexer: BaseLexer, content: var string,
               stateAfter = fpBlockLineStart
               break outer
             else:
-              startToken()
-              parserError("The text is less indented than expected")
+              if lexer.getColNumber(lexer.bufpos) > parentIndent:
+                startToken()
+                parserError("The text is less indented than expected ")
+              else:
+                stateAfter = fpBlockLineStart
+                break outer
             lexer.bufpos.inc()
         else:
           while true:
@@ -1191,7 +1197,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             ensureCorrectIndentation()
             state = fpBlockObjectStart
       of fpBlockContinueScalar:
-        debug("state: blockAfterPlainScalar")
+        debug("state: fpBlockContinueScalar")
         p.lexer.skipWhitespace()
         case p.lexer.buf[p.lexer.bufpos]
         of '\l':
@@ -1276,7 +1282,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of '#':
           p.lexer.lineEnding()
           handleLineEnd(true)
-          handleObjectEnd(fpBlockLineStart)
+          state = fpBlockLineStart
         else:
           startToken()
           parserError("Illegal token (expected ':', comment or line end)")
@@ -1324,6 +1330,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           var stateAfter: FastParseState
           content = ""
           p.lexer.blockScalar(content, stateAfter)
+          if tag == yTagQuestionMark: tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(stateAfter)
         of '-':
