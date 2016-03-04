@@ -4,7 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import os, terminal
+import os, terminal, strutils
 import tmlParser, common
 import "../yaml"
 
@@ -28,7 +28,7 @@ try:
     for kind, dirPath in walkDir("yaml-dev-kit"):
         block curTest:
             if kind == pcDir:
-                if dirPath[^4..^1] in [".git", "name", "tags"]: continue
+                if dirPath[^4..^1] in [".git", "name", "tags", "meta"]: continue
                 var
                     tagLib = initExtendedTagLibrary()
                     parser = newYamlParser(tagLib)
@@ -36,7 +36,7 @@ try:
                     expected = parseTmlStream(
                             newFileStream(dirPath / "test.event"), tagLib)
                 styledWriteLine(stdout, fgGreen, "[test] ", fgWhite,
-                                expandSymlink(dirPath / "==="), resetStyle)
+                                strip(readFile(dirPath / "===")), resetStyle)
                 while not actual.finished():
                     let actualEvent = actual.next()
                     if expected.finished():
