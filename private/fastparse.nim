@@ -842,12 +842,9 @@ template blockScalar(lexer: BaseLexer, content: var string,
     detectedIndent = false
   
   case lexer.buf[lexer.bufpos]
-  of '|':
-    literal = true
-  of '>':
-    literal = false
-  else:
-    assert(false)
+  of '|': literal = true
+  of '>': literal = false
+  else: assert(false)
   
   while true:
     lexer.bufpos.inc()
@@ -871,25 +868,23 @@ template blockScalar(lexer: BaseLexer, content: var string,
       lexerError(lexer, "Illegal character in block scalar header")
   lexer.lineEnding()
   case lexer.buf[lexer.bufpos]
-  of '\l':
-    lexer.bufpos = lexer.handleLF(lexer.bufpos)
-  of '\c':
-    lexer.bufpos = lexer.handleCR(lexer.bufpos)
+  of '\l': lexer.bufpos = lexer.handleLF(lexer.bufpos)
+  of '\c': lexer.bufpos = lexer.handleCR(lexer.bufpos)
   of EndOfFile:
     lexerError(lexer, "Missing content of block scalar")
         # TODO: is this correct?
   else:
     assert(false)
   var newlines = 0
-  let parentIndent = ancestry[ancestry.high].indentation
+  let parentIndent = if ancestry.len > 0:
+          ancestry[ancestry.high].indentation else: -1
   content = ""
   block outer:
     while true:
       block inner:
         for i in countup(1, parentIndent):
           case lexer.buf[lexer.bufpos]
-          of ' ':
-            discard
+          of ' ': discard
           of '\l':
             lexer.bufpos = lexer.handleLF(lexer.bufpos)
             newlines.inc()
@@ -905,8 +900,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
         if detectedIndent:
           for i in countup(1, blockIndent):
             case lexer.buf[lexer.bufpos]
-            of ' ':
-              discard
+            of ' ': discard
             of '\l':
               lexer.bufpos = lexer.handleLF(lexer.bufpos)
               newlines.inc()
@@ -921,10 +915,8 @@ template blockScalar(lexer: BaseLexer, content: var string,
             of '#':
               lexer.lineEnding()
               case lexer.buf[lexer.bufpos]
-              of '\l':
-                lexer.bufpos = lexer.handleLF(lexer.bufpos)
-              of '\c':
-                lexer.bufpos = lexer.handleCR(lexer.bufpos)
+              of '\l': lexer.bufpos = lexer.handleLF(lexer.bufpos)
+              of '\c': lexer.bufpos = lexer.handleCR(lexer.bufpos)
               else: discard
               stateAfter = fpBlockLineStart
               break outer
@@ -935,8 +927,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
         else:
           while true:
             case lexer.buf[lexer.bufpos]
-            of ' ':
-              discard
+            of ' ': discard
             of '\l':
               lexer.bufpos = lexer.handleLF(lexer.bufpos)
               newlines.inc()
@@ -949,7 +940,10 @@ template blockScalar(lexer: BaseLexer, content: var string,
               stateAfter = fpBlockLineStart
               break outer
             else:
-              blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
+              if parentIndent == -1:
+                blockIndent = lexer.getColNumber(lexer.bufpos)
+              else:
+                blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
               detectedIndent = true
               break
             lexer.bufpos.inc()
@@ -965,15 +959,11 @@ template blockScalar(lexer: BaseLexer, content: var string,
         of EndOfFile:
           stateAfter = fpBlockLineStart
           break outer
-        else:
-          discard
+        else: discard
         if newlines > 0:
-          if literal:
-            content.add(repeat('\l', newlines))
-          elif newlines == 1:
-            content.add(' ')
-          else:
-            content.add(repeat('\l', newlines - 1))
+          if literal: content.add(repeat('\l', newlines))
+          elif newlines == 1: content.add(' ')
+          else: content.add(repeat('\l', newlines - 1))
           newlines = 0
         while true:
           let c = lexer.buf[lexer.bufpos]
@@ -989,16 +979,12 @@ template blockScalar(lexer: BaseLexer, content: var string,
           of EndOfFile:
             stateAfter = fpBlockLineStart
             break outer
-          else:
-            content.add(c)
+          else: content.add(c)
           lexer.bufpos.inc()
   case chomp
-  of ctClip:
-    content.add('\l')
-  of ctKeep:
-    content.add(repeat('\l', newlines))
-  of ctStrip:
-    discard
+  of ctClip: content.add('\l')
+  of ctKeep: content.add(repeat('\l', newlines))
+  of ctStrip: discard
 
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   var backend = iterator(): YamlStreamEvent =
@@ -1338,8 +1324,6 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           var stateAfter: FastParseState
           content = ""
           p.lexer.blockScalar(content, stateAfter)
-          if tag == yTagQuestionMark:
-            tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(stateAfter)
         of '-':
