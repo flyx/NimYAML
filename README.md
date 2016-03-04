@@ -28,6 +28,7 @@ nim server # builds the REST server used for the testing ground
 nim bench # runs benchmarks, requires libyaml
 nim clean # guess
 nim build # build a library
+nim yamlTestSuite # execute YAML test suite (git-clones yaml-dev-kit)
 ```
 
 Project is tested against current develop branch of Nim. Older Nim versions

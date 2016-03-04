@@ -56,6 +56,7 @@ proc finished*(s: var YamlStream): bool =
             raise e
         except Exception:
             let cur = getCurrentException()
+            echo cur.getStackTrace()
             var e = newException(YamlStreamError, cur.msg)
             e.parent = cur
             raise e

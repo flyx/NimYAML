@@ -3,11 +3,16 @@ test/tests
 test/parsing
 test/lexing
 test/serializing
+test/constructingJson
+test/yamlTestSuite
 test/*.exe
 test/*.pdb
 test/*.ilk
+server/server
+bench/jsonBench
 yaml.html
 libyaml.dylib
 libyaml.so
 bench/json
 docout
+yaml-dev-kit

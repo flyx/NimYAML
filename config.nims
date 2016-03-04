@@ -8,6 +8,11 @@ task tests, "Run all tests":
     --verbosity:0
     setCommand "c", "test/tests"
 
+task yamlTestSuite, "Run YAML 1.2 test suite":
+    --r
+    --verbosity:0
+    setCommand "c", "test/yamlTestSuite"
+
 task parserTests, "Run parser tests":
     --r
     --verbosity:0
