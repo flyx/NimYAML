@@ -407,7 +407,7 @@ template directiveName(lexer: BaseLexer, directive: var LexedDirective) =
       lexer.bufpos.inc()
       if lexer.buf[lexer.bufpos] == 'G':
         lexer.bufpos.inc()
-        if lexer.buf[lexer.bufpos] in [' ', '\t', '\l', '\c', EndOfFile]:
+        if lexer.buf[lexer.bufpos] in {' ', '\t', '\l', '\c', EndOfFile}:
           directive = ldTag
   while lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
     lexer.bufpos.inc()
@@ -734,7 +734,7 @@ template handleFlowPlainScalar() {.dirty.} =
   content = ""
   startToken()
   p.lexer.plainScalar(content, cFlow)
-  if p.lexer.buf[p.lexer.bufpos] in ['{', '}', '[', ']', ',', ':', '#']:
+  if p.lexer.buf[p.lexer.bufpos] in {'{', '}', '[', ']', ',', ':', '#'}:
     discard
   else:
     var newlines = 0
@@ -1160,7 +1160,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of ' ':
           p.lexer.skipIndentation()
           if p.lexer.buf[p.lexer.bufpos] in
-              ['\t', '\l', '\c', '#', EndOfFile]:
+              {'\t', '\l', '\c', '#', EndOfFile}:
             p.lexer.lineEnding()
             handleLineEnd(true)
           else:
@@ -1224,7 +1224,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         p.lexer.skipWhitespace()
         case p.lexer.buf[p.lexer.bufpos]
         of '\l':
-          if level.kind notin [fplUnknown, fplScalar]:
+          if level.kind notin {fplUnknown, fplScalar}:
             startToken()
             parserError("Unexpected scalar")
           newlines = 1
@@ -1232,7 +1232,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
           state = fpBlockLineStart
         of '\c':
-          if level.kind notin [fplUnknown, fplScalar]:
+          if level.kind notin {fplUnknown, fplScalar}:
             startToken()
             parserError("Unexpected scalar")
           newlines = 1
@@ -1568,7 +1568,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           leaveFlowLevel()
         of '}':
           case level.kind
-          of [fplMapKey, fplMapValue]:
+          of fplMapKey, fplMapValue:
             discard
           of fplSequence:
             startToken()
