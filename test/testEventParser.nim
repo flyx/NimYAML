@@ -10,17 +10,18 @@ import lexbase
 type
     LexerToken = enum
         plusStr, minusStr, plusDoc, minusDoc, plusMap, minusMap, plusSeq,
-        minusSeq, eqVal, chevTag, quotContent, colonContent, noToken
+        minusSeq, eqVal, eqAli, chevTag, andAnchor, quotContent, colonContent,
+        noToken
     
     StreamPos = enum
         beforeStream, inStream, afterStream
 
-    TmlLexer = object of BaseLexer
+    EventLexer = object of BaseLexer
         content: string
     
-    TmlError = object of Exception
+    EventStreamError = object of Exception
 
-proc nextToken(lex: var TmlLexer): LexerToken =
+proc nextToken(lex: var EventLexer): LexerToken =
     while true:
         case lex.buf[lex.bufpos]
         of ' ', '\t': lex.bufpos.inc()
@@ -49,7 +50,7 @@ proc nextToken(lex: var TmlLexer): LexerToken =
                 of 'r': lex.content.add('\r')
                 of '0': lex.content.add('\0')
                 of '\\': lex.content.add('\\')
-                else: raise newException(TmlError,
+                else: raise newException(EventStreamError,
                         "Unknown escape character: " & lex.buf[lex.bufpos])
             else: lex.content.add(lex.buf[lex.bufpos])
             lex.bufpos.inc()
@@ -62,9 +63,16 @@ proc nextToken(lex: var TmlLexer): LexerToken =
             lex.bufpos.inc()
         result = chevTag
         lex.bufpos.inc()
+    of '&':
+        lex.content = ""
+        lex.bufpos.inc()
+        while lex.buf[lex.bufpos] notin {' ', '\t', '\r', '\l', EndOfFile}:
+            lex.content.add(lex.buf[lex.bufpos])
+            lex.bufpos.inc()
+        result = andAnchor
     else:
         lex.content = ""
-        while lex.buf[lex.bufpos] notin {' ', '\t', '\r', '\l', '\0'}:
+        while lex.buf[lex.bufpos] notin {' ', '\t', '\r', '\l', EndOfFile}:
             lex.content.add(lex.buf[lex.bufpos])
             lex.bufpos.inc()
         case lex.content
@@ -77,13 +85,17 @@ proc nextToken(lex: var TmlLexer): LexerToken =
         of "+SEQ": result = plusSeq
         of "-SEQ": result = minusSeq
         of "=VAL": result = eqVal
-        else: raise newException(TmlError, "Invalid token: " & lex.content)
+        of "=ALI": result = eqAli
+        else: raise newException(EventStreamError,
+                                 "Invalid token: " & lex.content)
 
 template assertInStream() {.dirty.} =
-    if streamPos != inStream: raise newException(TmlError, "Missing +STR")
+    if streamPos != inStream:
+        raise newException(EventStreamError, "Missing +STR")
 
 template assertInEvent(name: string) {.dirty.} =
-    if not inEvent: raise newException(TmlError, "Illegal token: " & name)
+    if not inEvent:
+        raise newException(EventStreamError, "Illegal token: " & name)
 
 template yieldEvent() {.dirty.} =
     if inEvent:
@@ -102,6 +114,7 @@ template setAnchor(a: AnchorId) {.dirty.} =
     of yamlStartSequence: curEvent.seqAnchor = a
     of yamlStartMap: curEvent.mapAnchor = a
     of yamlScalar: curEvent.scalarAnchor = a
+    of yamlAlias: curEvent.aliasTarget = a
     else: discard
 
 template curTag(): TagId =
@@ -110,7 +123,8 @@ template curTag(): TagId =
     of yamlStartSequence: foo = curEvent.seqTag
     of yamlStartMap: foo = curEvent.mapTag
     of yamlScalar: foo = curEvent.scalarTag
-    else: raise newException(TmlError, $curEvent.kind & " may not have a tag")
+    else: raise newException(EventStreamError,
+                             $curEvent.kind & " may not have a tag")
     foo
 
 template setCurTag(val: TagId) =
@@ -118,8 +132,29 @@ template setCurTag(val: TagId) =
     of yamlStartSequence: curEvent.seqTag = val
     of yamlStartMap: curEvent.mapTag = val
     of yamlScalar: curEvent.scalarTag = val
-    else: raise newException(TmlError, $curEvent.kind & " may not have a tag")
-        
+    else: raise newException(EventStreamError,
+                             $curEvent.kind & " may not have a tag")
+
+template curAnchor(): AnchorId =
+    var foo: AnchorId
+    case curEvent.kind
+    of yamlStartSequence: foo = curEvent.seqAnchor
+    of yamlStartMap: foo = curEvent.mapAnchor
+    of yamlScalar: foo = curEvent.scalarAnchor
+    of yamlAlias: foo = curEvent.aliasTarget
+    else: raise newException(EventStreamError,
+                             $curEvent.kind & "may not have an anchor")
+    foo
+
+template setCurAnchor(val: AnchorId) =
+    case curEvent.kind
+    of yamlStartSequence: curEvent.seqAnchor = val
+    of yamlStartMap: curEvent.mapAnchor = val
+    of yamlScalar: curEvent.scalarAnchor = val
+    of yamlAlias: curEvent.aliasTarget = val
+    else: raise newException(EventStreamError,
+                             $curEvent.kind & " may not have an anchor")
+ 
 template eventStart(k: YamlStreamEventKind) {.dirty.} =
     assertInStream()
     yieldEvent()
@@ -129,24 +164,26 @@ template eventStart(k: YamlStreamEventKind) {.dirty.} =
     setAnchor(yAnchorNone)
     inEvent = true
 
-proc parseTmlStream*(input: Stream, tagLib: TagLibrary): YamlStream =
+proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
     var backend = iterator(): YamlStreamEvent =
-        var lex: TmlLexer
+        var lex: EventLexer
         lex.open(input)
         var
             inEvent = false
             curEvent: YamlStreamEvent
             streamPos = beforeStream
+            anchors = initTable[string, AnchorId]()
+            nextAnchorId = 0.AnchorId
         while lex.buf[lex.bufpos] != EndOfFile:
             let token = lex.nextToken()
             case token
             of plusStr:
                 if streamPos != beforeStream:
-                    raise newException(TmlError, "Illegal +STR")
+                    raise newException(EventStreamError, "Illegal +STR")
                 streamPos = inStream
             of minusStr:
                 if streamPos != inStream:
-                    raise newException(TmlError, "Illegal -STR")
+                    raise newException(EventStreamError, "Illegal -STR")
                 if inEvent: yield curEvent
                 inEvent = false
                 streamPos = afterStream
@@ -157,25 +194,38 @@ proc parseTmlStream*(input: Stream, tagLib: TagLibrary): YamlStream =
             of plusSeq: eventStart(yamlStartSequence)
             of minusSeq: eventStart(yamlEndSequence)
             of eqVal: eventStart(yamlScalar)
+            of eqAli: eventStart(yamlAlias)
             of chevTag:
                 assertInEvent("tag")
                 if curTag() != yTagQuestionMark:
-                    raise newException(TmlError, "Duplicate tag")
+                    raise newException(EventStreamError,
+                                       "Duplicate tag in " & $curEvent.kind)
                 try:
                   setCurTag(tagLib.tags[lex.content])
                 except KeyError: setCurTag(tagLib.registerUri(lex.content))
+            of andAnchor:
+                assertInEvent("anchor")
+                if curAnchor() != yAnchorNone:
+                    raise newException(EventStreamError,
+                                       "Duplicate anchor in " & $curEvent.kind)
+                if curEvent.kind == yamlAlias:
+                    curEvent.aliasTarget = anchors[lex.content]
+                else:
+                    anchors[lex.content] = nextAnchorId
+                    setCurAnchor(nextAnchorId)
+                    nextAnchorId = (AnchorId)(((int)nextAnchorId) + 1)
             of quotContent:
                 assertInEvent("scalar content")
                 if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
                 if curEvent.kind != yamlScalar:
-                    raise newException(TmlError,
+                    raise newException(EventStreamError,
                             "scalar content in non-scalar tag")
                 curEvent.scalarContent = lex.content
             of colonContent:
                 assertInEvent("scalar content")
                 curEvent.scalarContent = lex.content
                 if curEvent.kind != yamlScalar:
-                    raise newException(TmlError,
+                    raise newException(EventStreamError,
                             "scalar content in non-scalar tag")
             of noToken: discard
     result = initYamlStream(backend)
