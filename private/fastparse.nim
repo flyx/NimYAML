@@ -152,7 +152,8 @@ template closeMoreIndentedLevels(atSequenceItem: bool = false) {.dirty.} =
     if parent.indentation >= indentation:
       when atSequenceItem:
         if (indentation == level.indentation and level.kind == fplSequence) or
-           (indentation == parent.indentation and level.kind == fplUnknown):
+           (indentation == parent.indentation and level.kind == fplUnknown and
+            parent.kind != fplSequence):
           break
       debug("Closing because parent.indentation (" & $parent.indentation &
             ") >= indentation(" & $indentation & ")")
