@@ -334,6 +334,15 @@ template handlePossibleMapStart() {.dirty.} =
           if p.lexer.buf[pos] == '\\': pos.inc()
           pos.inc()
         if p.lexer.buf[pos] != '"': break
+      of '\'':
+        pos.inc()
+        while p.lexer.buf[pos] notin {'\'', '\l', '\c', EndOfFile}:
+          pos.inc()
+      of '&', '*', '!':
+        pos.inc()
+        while p.lexer.buf[pos] notin {' ', '\t', '\l', '\c', EndOfFile}:
+          pos.inc()
+        continue
       else: discard
       pos.inc()
     if level.indentation == -1:
