@@ -853,6 +853,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
     blockIndent = 0
     chomp: ChompType = ctClip
     detectedIndent = false
+    recentLineMoreIndented = false
   
   case lexer.buf[lexer.bufpos]
   of '|': literal = true
@@ -973,7 +974,16 @@ template blockScalar(lexer: BaseLexer, content: var string,
         of EndOfFile:
           stateAfter = fpBlockLineStart
           break outer
-        else: discard
+        of ' ':
+          if not literal:
+            if not recentLineMoreIndented:
+              recentLineMoreIndented = true
+            newlines.inc()
+        else:
+          if not literal:
+            if recentLineMoreIndented:
+              recentLineMoreIndented = false
+              newlines.inc()
         if newlines > 0:
           if literal: content.add(repeat('\l', newlines))
           elif newlines == 1: content.add(' ')
