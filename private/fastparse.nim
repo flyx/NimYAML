@@ -696,42 +696,33 @@ template plainScalar(lexer: BaseLexer, content: var string,
           lexer.bufpos.inc()
           let c2 = lexer.buf[lexer.bufpos]
           case c2
-          of ' ', '\t':
-            after.add(c2)
-          of lineEnd:
-            break outer
+          of ' ', '\t': after.add(c2)
+          of lineEnd: break outer
           of ':':
             if lexer.isPlainSafe(lexer.bufpos + 1, context):
               content.add(after & ':')
-            else:
-              break outer
-          of '#':
-            break outer
+              break
+            else: break outer
+          of '#': break outer
           of flowIndicators:
             if context == cBlock:
               content.add(after)
               content.add(c2)
               break
-            else:
-              break outer
+            else: break outer
           else:
             content.add(after)
             content.add(c2)
             break
       of flowIndicators:
-        if context == cBlock:
-          content.add(c)
-        else:
-          break
+        if context == cBlock: content.add(c)
+        else: break
       of ':':
-        if lexer.isPlainSafe(lexer.bufpos + 1, context):
-          content.add(':')
-        else:
-          break outer
-      of '#':
-        break outer
-      else:
-        content.add(c)
+        if lexer.isPlainSafe(lexer.bufpos + 1, context): content.add(':')
+        else: break outer
+      of '#': break outer
+      else: content.add(c)
+  debug("lex: \"" & content & '\"')
 
 template continueMultilineScalar() {.dirty.} =
   content.add(if newlines == 1: " " else: repeat('\l', newlines - 1))
@@ -846,6 +837,7 @@ template anchorName(lexer: BaseLexer, content: var string) =
 
 template blockScalar(lexer: BaseLexer, content: var string,
                      stateAfter: var FastParseState) =
+  debug("lex: blockScalar")
   type ChompType = enum
     ctKeep, ctClip, ctStrip
   var
@@ -935,12 +927,13 @@ template blockScalar(lexer: BaseLexer, content: var string,
               stateAfter = fpBlockLineStart
               break outer
             else:
-              if lexer.getColNumber(lexer.bufpos) > parentIndent:
+              if i == 1:
+                stateAfter = if parentIndent == 0: fpBlockLineStart else:
+                    fpBlockObjectStart
+                break outer
+              else:
                 startToken()
                 parserError("The text is less indented than expected ")
-              else:
-                stateAfter = fpBlockLineStart
-                break outer
             lexer.bufpos.inc()
         else:
           while true:
@@ -1009,6 +1002,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
   of ctClip: content.add('\l')
   of ctKeep: content.add(repeat('\l', newlines))
   of ctStrip: discard
+  debug("lex: \"" & content & '\"')
 
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   var backend = iterator(): YamlStreamEvent =
