@@ -158,9 +158,8 @@ template closeMoreIndentedLevels(atSequenceItem: bool = false) {.dirty.} =
       debug("Closing because parent.indentation (" & $parent.indentation &
             ") >= indentation(" & $indentation & ")")
       yieldLevelEnd()
-      handleObjectEnd(fpBlockAfterObject)
-    else:
-      break
+      handleObjectEnd(state)
+    else: break
 
 template closeEverything() {.dirty.} =
   indentation = 0
@@ -1345,6 +1344,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           if tag == yTagQuestionMark: tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(stateAfter)
+          if stateAfter == fpBlockObjectStart:
+            indentation = p.lexer.getColNumber(p.lexer.bufpos)
+            closeMoreIndentedLevels()
         of '-':
           if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlock):
             handleBlockItemStart()
