@@ -49,6 +49,8 @@ proc nextToken(lex: var EventLexer): LexerToken =
                 of 'n': lex.content.add('\l')
                 of 'r': lex.content.add('\r')
                 of '0': lex.content.add('\0')
+                of 'b': lex.content.add('\b')
+                of 't': lex.content.add('\t')
                 of '\\': lex.content.add('\\')
                 else: raise newException(EventStreamError,
                         "Unknown escape character: " & lex.buf[lex.bufpos])
