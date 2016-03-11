@@ -63,8 +63,6 @@ template parserError(message: string) {.dirty.} =
   e.line = p.lexer.lineNumber
   e.column = p.tokenstart + 1
   e.lineContent = p.getLineContent(true)
-  echo "line ", e.line, ", column ", e.column, ": ", message
-  echo e.lineContent
   raise e
 
 template lexerError(lx: BaseLexer, message: string) {.dirty.} =
@@ -485,7 +483,7 @@ template tagShorthand(lexer: BaseLexer, shorthand: var string) =
       else:
         lexerError(lexer, "Illegal character in tag shorthand")
     shorthand.add(c)
-  lexer.bufpos.inc()
+    lexer.bufpos.inc()
   if lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
     lexerError(lexer, "Missing space after tag shorthand")
 
@@ -1050,7 +1048,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             startToken()
             p.lexer.tagShorthand(shorthand)
             p.lexer.tagUri(uri)
-            shorthands.add(shorthand, uri)
+            shorthands[shorthand] = uri
             p.lexer.lineEnding()
             handleLineEnd(false)
           of ldUnknown:
