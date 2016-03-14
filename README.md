@@ -12,6 +12,7 @@ an overview of already available features.
    - Support for more standard library types
    - Support polymorphism
    - Support variant objects
+   - Support generic objects
    - Support transient fields (i.e. fields that will not be (de-)serialized on
      objects and tuples)
    - Check for and avoid name clashes when generating local tags for custom
@@ -20,8 +21,8 @@ an overview of already available features.
 ## Developers
 
 ```bash
-nim tests # runs all tests
-nim parserTests # runs parser tests
+nim tests # runs unit tests (serialization, dom, json)
+          # for parser tests, see yamlTestSuite
 nim serializationTests # runs serialization tests
 nim documentation # builds documentation to folder docout
 nim server # builds the REST server used for the testing ground

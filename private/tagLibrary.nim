@@ -10,7 +10,7 @@ proc `$`*(id: TagId): string =
     of yTagExclamationMark: "!"
     of yTagString: "!!str"
     of yTagSequence: "!!seq"
-    of yTagMap: "!!map"
+    of yTagMapping: "!!map"
     of yTagNull: "!!null"
     of yTagBoolean: "!!bool"
     of yTagInteger: "!!int"
@@ -49,7 +49,7 @@ proc initFailsafeTagLibrary(): TagLibrary =
     result.tags["?"] = yTagQuestionMark
     result.tags["tag:yaml.org,2002:str"] = yTagString
     result.tags["tag:yaml.org,2002:seq"] = yTagSequence
-    result.tags["tag:yaml.org,2002:map"] = yTagMap
+    result.tags["tag:yaml.org,2002:map"] = yTagMapping
 
 proc initCoreTagLibrary(): TagLibrary =
     result = initFailsafeTagLibrary()

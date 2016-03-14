@@ -20,8 +20,7 @@ import streams, unicode, lexbase, tables, strutils, json, hashes, queues,
        macros, typetraits, parseutils
 export streams, tables, json
 
-when defined(yamlDebug):
-  import terminal
+when defined(yamlDebug): import terminal
 
 type
     TypeHint* = enum
@@ -50,9 +49,9 @@ type
     
     YamlStreamEventKind* = enum
         ## Kinds of YAML events that may occur in an ``YamlStream``. Event kinds
-        ## are discussed in ``YamlStreamEvent``.
-        yamlStartDocument, yamlEndDocument, yamlStartMap, yamlEndMap,
-        yamlStartSequence, yamlEndSequence, yamlScalar, yamlAlias
+        ## are discussed in `YamlStreamEvent <#YamlStreamEvent>`_.
+        yamlStartDoc, yamlEndDoc, yamlStartMap, yamlEndMap,
+        yamlStartSeq, yamlEndSeq, yamlScalar, yamlAlias
     
     TagId* = distinct int ## \
         ## A ``TagId`` identifies a tag URI, like for example 
@@ -76,7 +75,7 @@ type
     
     YamlStreamEvent* = object
         ## An element from a `YamlStream <#YamlStream>`_. Events that start an
-        ## object (``yamlStartMap``, ``yamlStartSequence``, ``yamlScalar``) have
+        ## object (``yamlStartMap``, ``yamlStartSeq``, ``yamlScalar``) have
         ## an optional anchor and a tag associated with them. The anchor will be
         ## set to ``yAnchorNone`` if it doesn't exist.
         ## 
@@ -89,32 +88,31 @@ type
         of yamlStartMap:
             mapAnchor* : AnchorId
             mapTag*    : TagId
-        of yamlStartSequence:
+        of yamlStartSeq:
             seqAnchor* : AnchorId
             seqTag*    : TagId
         of yamlScalar:
             scalarAnchor* : AnchorId
             scalarTag*    : TagId
             scalarContent*: string # may not be nil (but empty)
-        of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
+        of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc:
             discard
         of yamlAlias:
             aliasTarget* : AnchorId
     
     YamlStream* = object ## \
         ## A ``YamlStream`` is an iterator-like object that yields a
-        ## well-formed stream of
-        ## ``YamlStreamEvents``. Well-formed means that every ``yamlStartMap``
-        ## is terminated by a ``yamlEndMap``, every ``yamlStartSequence`` is
-        ## terminated by a ``yamlEndSequence`` and every ``yamlStartDocument``
-        ## is terminated by a ``yamlEndDocument``. Moreover, every emitted map
-        ## has an even number of children.
+        ## well-formed stream of ``YamlStreamEvents``. Well-formed means that
+        ## every ``yamlStartMap`` is terminated by a ``yamlEndMap``, every
+        ## ``yamlStartSeq`` is terminated by a ``yamlEndSeq`` and every
+        ## ``yamlStartDoc`` is terminated by a ``yamlEndDoc``. Moreover, every
+        ## emitted mapping has an even number of children.
         ##
         ## The creator of a ``YamlStream`` is responsible for it being
         ## well-formed. A user of the stream may assume that it is well-formed
         ## and is not required to check for it. The procs in this module will
         ## always yield a well-formed ``YamlStream`` and expect it to be
-        ## well-formed if it's an input.
+        ## well-formed if they take it as input parameter.
         ##
         ## 
         backend: iterator(): YamlStreamEvent
@@ -168,9 +166,9 @@ type
         ##   for the non-specific tags ``?`` and ``!``, uses flow style, quotes
         ##   all string scalars.
         ## - ``ypsDefault``: Tries to be as human-readable as possible. Uses
-        ##   block style by default, but tries to condense maps and sequences
-        ##   which only contain scalar nodes into a single line using flow
-        ##   style.
+        ##   block style by default, but tries to condense mappings and
+        ##   sequences which only contain scalar nodes into a single line using
+        ##   flow style.
         ## - ``ypsJson``: Omits the ``%YAML`` directive and the ``---``
         ##   marker. Uses flow style. Flattens anchors and aliases, omits tags.
         ##   Output will be parseable as JSON. ``YamlStream`` to dump may only
@@ -333,7 +331,7 @@ const
         ## `!!str <http://yaml.org/type/str.html >`_ tag
     yTagSequence*       : TagId = 3.TagId ## \
         ## `!!seq <http://yaml.org/type/seq.html>`_ tag
-    yTagMap*            : TagId = 4.TagId ## \
+    yTagMapping*        : TagId = 4.TagId ## \
         ## `!!map <http://yaml.org/type/map.html>`_ tag
     
     # json & core schema

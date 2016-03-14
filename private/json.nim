@@ -86,14 +86,14 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
         anchors = initTable[AnchorId, JsonNode]()
     for event in s:
         case event.kind
-        of yamlStartDocument:
+        of yamlStartDoc:
             # we don't need to do anything here; root node will be created
             # by first scalar, sequence or map event
             discard
-        of yamlEndDocument:
+        of yamlEndDoc:
             # we can savely assume that levels has e length of exactly 1.
             result.add(levels.pop().node)
-        of yamlStartSequence:
+        of yamlStartSeq:
             levels.add(initLevel(newJArray()))
             if event.seqAnchor != yAnchorNone:
                 anchors[event.seqAnchor] = levels[levels.high].node
@@ -130,9 +130,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
                     levels[levels.high].key = nil
                     if event.scalarAnchor != yAnchorNone:
                         anchors[event.scalarAnchor] = jsonScalar
-            else:
-                discard # will never happen
-        of yamlEndSequence, yamlEndMap:
+            else: discard # will never happen
+        of yamlEndSeq, yamlEndMap:
             if levels.len > 1:
                 let level = levels.pop()
                 case levels[levels.high].node.kind
@@ -146,10 +145,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
                         levels[levels.high].node[
                             levels[levels.high].key] = level.node
                         levels[levels.high].key = nil
-                else:
-                    discard # will never happen
-            else:
-                discard # wait for yamlEndDocument
+                else: discard # will never happen
+            else: discard # wait for yamlEndDocument
         of yamlAlias:
             # we can savely assume that the alias exists in anchors
             # (else the parser would have already thrown an exception)
@@ -176,8 +173,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
                         # have resulted in a parser error earlier.
                         assert(false)
                     levels[levels.high].key = nil
-            else:
-                discard # will never happen
+            else: discard # will never happen
 
 proc loadToJson*(s: Stream): seq[JsonNode] =
     var

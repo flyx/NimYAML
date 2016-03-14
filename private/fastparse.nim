@@ -169,7 +169,7 @@ template handleBlockSequenceIndicator() {.dirty.} =
   startToken()
   case level.kind
   of fplUnknown:
-    handleObjectStart(yamlStartSequence)
+    handleObjectStart(yamlStartSeq)
   of fplSequence:
     if level.indentation != indentation:
       parserError("Invalid indentation of block sequence indicator")
@@ -1443,7 +1443,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           p.lexer.bufpos.inc()
           explicitFlowKey = false
         of '[':
-          handleObjectStart(yamlStartSequence)
+          handleObjectStart(yamlStartSeq)
           flowdepth.inc()
           p.lexer.bufpos.inc()
         of '}':

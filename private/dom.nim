@@ -47,11 +47,11 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
             if start.mapAnchor != yAnchorNone:
                 assert(not c.refs.hasKey(start.mapAnchor))
                 c.refs[start.mapAnchor] = cast[pointer](result)
-        of yamlStartSequence:
+        of yamlStartSeq:
             result.tag = tagLib.uri(start.seqTag)
             result.kind = ySequence
             result.children = newSeq[YamlNode]()
-            while s.peek().kind != yamlEndSequence:
+            while s.peek().kind != yamlEndSeq:
                 result.children.add(composeNode(s, tagLib, c))
             if start.seqAnchor != yAnchorNone:
                 assert(not c.refs.hasKey(start.seqAnchor))
@@ -74,9 +74,9 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
 proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
         {.raises: [YamlStreamError, YamlConstructionError].} =
     var context = newConstructionContext()
-    assert s.next().kind == yamlStartDocument
+    assert s.next().kind == yamlStartDoc, "Malformed YamlStream"
     result.root = composeNode(s, tagLib, context)
-    assert s.next().kind == yamlEndDocument
+    assert s.next().kind == yamlEndDoc, "Malformed YamlStream"
 
 proc loadDOM*(s: Stream): YamlDocument
         {.raises: [IOError, YamlParserError, YamlConstructionError].} =
@@ -126,8 +126,7 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
     except KeyError: assert false, "Can never happen"
     result = iterator(): YamlStreamEvent =
         case n.kind
-        of yScalar:
-            yield scalarEvent(n.content, tagId, anchor)
+        of yScalar: yield scalarEvent(n.content, tagId, anchor)
         of ySequence:
             yield startSeqEvent(tagId, anchor)
             for item in n.children:
@@ -155,8 +154,7 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
 template processAnchoredEvent(target: expr, c: SerializationContext): stmt =
     try:
         let anchorId = c.refs[cast[pointer](target)]
-        if anchorId != yAnchorNone:
-            target = anchorId
+        if anchorId != yAnchorNone: target = anchorId
         else: target = yAnchorNone
     except KeyError: assert false, "Can never happen"
     yield event
@@ -179,7 +177,7 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
                 of yamlScalar:
                     processAnchoredEvent(event.scalarAnchor, context)
                 of yamlStartMap: processAnchoredEvent(event.mapAnchor, context)
-                of yamlStartSequence:
+                of yamlStartSeq:
                     processAnchoredEvent(event.seqAnchor, context)
                 else: yield event
             yield endDocEvent()

@@ -8,12 +8,12 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
     if left.kind != right.kind:
         return false
     case left.kind
-    of yamlStartDocument, yamlEndDocument, yamlEndMap, yamlEndSequence:
+    of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlEndSeq:
         result = true
     of yamlStartMap:
         result = left.mapAnchor == right.mapAnchor and
                  left.mapTag == right.mapTag
-    of yamlStartSequence:
+    of yamlStartSeq:
         result = left.seqAnchor == right.seqAnchor and
                  left.seqTag == right.seqTag
     of yamlScalar:
@@ -26,13 +26,13 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
 proc `$`*(event: YamlStreamEvent): string =
     result = $event.kind & '('
     case event.kind
-    of yamlEndMap, yamlEndSequence, yamlStartDocument, yamlEndDocument:
+    of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc:
         discard
     of yamlStartMap:
         result &= "tag=" & $event.mapTag
         if event.mapAnchor != yAnchorNone:
             result &= ", anchor=" & $event.mapAnchor
-    of yamlStartSequence:
+    of yamlStartSeq:
         result &= "tag=" & $event.seqTag
         if event.seqAnchor != yAnchorNone:
             result &= ", anchor=" & $event.seqAnchor
@@ -46,10 +46,10 @@ proc `$`*(event: YamlStreamEvent): string =
     result &= ")"
 
 proc startDocEvent*(): YamlStreamEvent =
-    result = YamlStreamEvent(kind: yamlStartDocument)
+    result = YamlStreamEvent(kind: yamlStartDoc)
     
 proc endDocEvent*(): YamlStreamEvent =
-    result = YamlStreamEvent(kind: yamlEndDocument)
+    result = YamlStreamEvent(kind: yamlEndDoc)
     
 proc startMapEvent*(tag: TagId = yTagQuestionMark,
                     anchor: AnchorId = yAnchorNone): YamlStreamEvent =
@@ -60,11 +60,11 @@ proc endMapEvent*(): YamlStreamEvent =
     
 proc startSeqEvent*(tag: TagId = yTagQuestionMark,
                     anchor: AnchorId = yAnchorNone): YamlStreamEvent =
-    result = YamlStreamEvent(kind: yamlStartSequence, seqTag: tag,
+    result = YamlStreamEvent(kind: yamlStartSeq, seqTag: tag,
                              seqAnchor: anchor)
                              
 proc endSeqEvent*(): YamlStreamEvent =
-    result = YamlStreamEvent(kind: yamlEndSequence)
+    result = YamlStreamEvent(kind: yamlEndSeq)
     
 proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
                   anchor: AnchorId = yAnchorNone): YamlStreamEvent =

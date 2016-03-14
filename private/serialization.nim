@@ -285,10 +285,10 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
         {.raises: [YamlConstructionError, YamlStreamError].} =
     ## constructs a Nim seq from a YAML sequence
     let event = s.next()
-    if event.kind != yamlStartSequence:
+    if event.kind != yamlStartSeq:
         raise newException(YamlConstructionError, "Expected sequence start")
     result = newSeq[T]()
-    while s.peek().kind != yamlEndSequence:
+    while s.peek().kind != yamlEndSeq:
         var item: T
         constructChild(s, c, item)
         result.add(item)
@@ -299,7 +299,7 @@ proc representObject*[T](value: seq[T], ts: TagStyle,
     ## represents a Nim seq as YAML sequence
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-        yield YamlStreamEvent(kind: yamlStartSequence,
+        yield YamlStreamEvent(kind: yamlStartSeq,
                               seqTag: presentTag(seq[T], ts),
                               seqAnchor: yAnchorNone)
         for item in value:
@@ -308,7 +308,7 @@ proc representObject*[T](value: seq[T], ts: TagStyle,
                 let event = events()
                 if finished(events): break
                 yield event
-        yield YamlStreamEvent(kind: yamlEndSequence)
+        yield YamlStreamEvent(kind: yamlEndSeq)
 
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
     try:
@@ -456,7 +456,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                                typetraits.name(T))
         elif item.mapAnchor != yAnchorNone:
             raise newException(YamlConstructionError, "Anchor on non-ref type")
-    of yamlStartSequence:
+    of yamlStartSeq:
         if item.seqTag notin [yTagQuestionMark, yamlTag(T)]:
             raise newException(YamlConstructionError, "Wrong tag for " &
                                typetraits.name(T))
@@ -492,7 +492,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     case e.kind
     of yamlScalar: removeAnchor(e.scalarAnchor)
     of yamlStartMap: removeAnchor(e.mapAnchor)
-    of yamlStartSequence: removeAnchor(e.seqAnchor)
+    of yamlStartSeq: removeAnchor(e.seqAnchor)
     else: assert(false)
     s.peek = e
     try:
@@ -542,7 +542,7 @@ proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
                 of yamlStartMap:
                     first.mapAnchor = a
                     if ts == tsNone: first.mapTag = yTagQuestionMark
-                of yamlStartSequence:
+                of yamlStartSeq:
                     first.seqAnchor = a
                     if ts == tsNone: first.seqTag = yTagQuestionMark
                 of yamlScalar:
@@ -562,11 +562,11 @@ proc construct*[T](s: var YamlStream, target: var T) =
         context = newConstructionContext()
     try:
         var e = s.next()
-        assert(e.kind == yamlStartDocument)
+        assert(e.kind == yamlStartDoc)
         
         constructChild(s, context, target)
         e = s.next()
-        assert(e.kind == yamlEndDocument)
+        assert(e.kind == yamlEndDoc)
     except YamlConstructionError:
         raise (ref YamlConstructionError)(getCurrentException())
     except YamlStreamError:
@@ -611,13 +611,13 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
     var
         context = newSerializationContext(a)
         objStream = iterator(): YamlStreamEvent =
-            yield YamlStreamEvent(kind: yamlStartDocument)
+            yield YamlStreamEvent(kind: yamlStartDoc)
             var events = representObject(value, ts, context)
             while true:
                 let e = events()
                 if finished(events): break
                 yield e
-            yield YamlStreamEvent(kind: yamlEndDocument)
+            yield YamlStreamEvent(kind: yamlEndDoc)
     if a == asTidy:
         var objQueue = newSeq[YamlStreamEvent]()
         try:
@@ -631,7 +631,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                 case event.kind
                 of yamlStartMap:
                     event.mapAnchor.setAnchor(context.refs)
-                of yamlStartSequence:
+                of yamlStartSeq:
                     event.seqAnchor.setAnchor(context.refs)
                 of yamlScalar:
                     event.scalarAnchor.setAnchor(context.refs)

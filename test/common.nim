@@ -33,8 +33,7 @@ proc printDifference*(expected, actual: YamlStreamEvent) =
                                     ", got ",
                                     cast[int](actual.scalarContent[i]), ")"
                             break
-            else:
-                echo "[scalarEvent] Unknown difference"
+            else: echo "[scalarEvent] Unknown difference"
         of yamlStartMap:
             if expected.mapTag != actual.mapTag:
                 echo "[map.tag] expected ", expected.mapTag, ", got ",
@@ -42,25 +41,21 @@ proc printDifference*(expected, actual: YamlStreamEvent) =
             elif expected.mapAnchor != actual.mapAnchor:
                 echo "[map.anchor] expected ", expected.mapAnchor, ", got ",
                         actual.mapAnchor
-            else:
-                echo "[map.tag] Unknown difference"
-        of yamlStartSequence:
+            else: echo "[map.tag] Unknown difference"
+        of yamlStartSeq:
             if expected.seqTag != actual.seqTag:
                 echo "[seq.tag] expected ", expected.seqTag, ", got ",
                      actual.seqTag
             elif expected.seqAnchor != actual.seqAnchor:
                 echo "[seq.anchor] expected ", expected.seqAnchor, ", got ",
                         actual.seqAnchor
-            else:
-                echo "[seq] Unknown difference"
+            else: echo "[seq] Unknown difference"
         of yamlAlias:
             if expected.aliasTarget != actual.aliasTarget:
                 echo "[alias] expected ", expected.aliasTarget, ", got ",
                      actual.aliasTarget
-            else:
-                echo "[alias] Unknown difference"
-        else:
-            echo "Unknown difference in event kind " & $expected.kind
+            else: echo "[alias] Unknown difference"
+        else: echo "Unknown difference in event kind " & $expected.kind
 
 template ensure*(input: var YamlStream,
                  expected: varargs[YamlStreamEvent]) {.dirty.} =
