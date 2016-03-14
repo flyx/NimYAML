@@ -106,14 +106,14 @@ template yieldEvent() {.dirty.} =
 
 template setTag(t: TagId) {.dirty.} =
     case curEvent.kind
-    of yamlStartSequence: curEvent.seqTag = t
+    of yamlStartSeq: curEvent.seqTag = t
     of yamlStartMap: curEvent.mapTag = t
     of yamlScalar: curEvent.scalarTag = t
     else: discard
 
 template setAnchor(a: AnchorId) {.dirty.} =
     case curEvent.kind
-    of yamlStartSequence: curEvent.seqAnchor = a
+    of yamlStartSeq: curEvent.seqAnchor = a
     of yamlStartMap: curEvent.mapAnchor = a
     of yamlScalar: curEvent.scalarAnchor = a
     of yamlAlias: curEvent.aliasTarget = a
@@ -122,7 +122,7 @@ template setAnchor(a: AnchorId) {.dirty.} =
 template curTag(): TagId =
     var foo: TagId
     case curEvent.kind
-    of yamlStartSequence: foo = curEvent.seqTag
+    of yamlStartSeq: foo = curEvent.seqTag
     of yamlStartMap: foo = curEvent.mapTag
     of yamlScalar: foo = curEvent.scalarTag
     else: raise newException(EventStreamError,
@@ -131,7 +131,7 @@ template curTag(): TagId =
 
 template setCurTag(val: TagId) =
     case curEvent.kind
-    of yamlStartSequence: curEvent.seqTag = val
+    of yamlStartSeq: curEvent.seqTag = val
     of yamlStartMap: curEvent.mapTag = val
     of yamlScalar: curEvent.scalarTag = val
     else: raise newException(EventStreamError,
@@ -140,7 +140,7 @@ template setCurTag(val: TagId) =
 template curAnchor(): AnchorId =
     var foo: AnchorId
     case curEvent.kind
-    of yamlStartSequence: foo = curEvent.seqAnchor
+    of yamlStartSeq: foo = curEvent.seqAnchor
     of yamlStartMap: foo = curEvent.mapAnchor
     of yamlScalar: foo = curEvent.scalarAnchor
     of yamlAlias: foo = curEvent.aliasTarget
@@ -150,7 +150,7 @@ template curAnchor(): AnchorId =
 
 template setCurAnchor(val: AnchorId) =
     case curEvent.kind
-    of yamlStartSequence: curEvent.seqAnchor = val
+    of yamlStartSeq: curEvent.seqAnchor = val
     of yamlStartMap: curEvent.mapAnchor = val
     of yamlScalar: curEvent.scalarAnchor = val
     of yamlAlias: curEvent.aliasTarget = val
@@ -189,12 +189,12 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
                 if inEvent: yield curEvent
                 inEvent = false
                 streamPos = afterStream
-            of plusDoc: eventStart(yamlStartDocument)
-            of minusDoc: eventStart(yamlEndDocument)
+            of plusDoc: eventStart(yamlStartDoc)
+            of minusDoc: eventStart(yamlEndDoc)
             of plusMap: eventStart(yamlStartMap)
             of minusMap: eventStart(yamlEndMap)
-            of plusSeq: eventStart(yamlStartSequence)
-            of minusSeq: eventStart(yamlEndSequence)
+            of plusSeq: eventStart(yamlStartSeq)
+            of minusSeq: eventStart(yamlEndSeq)
             of eqVal: eventStart(yamlScalar)
             of eqAli: eventStart(yamlAlias)
             of chevTag:
