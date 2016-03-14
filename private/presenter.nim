@@ -4,8 +4,6 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import typetraits
-
 type
     DumperState = enum
         dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
