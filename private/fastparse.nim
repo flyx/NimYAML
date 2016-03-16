@@ -376,18 +376,19 @@ template skipWhitespace(lexer: BaseLexer) =
   debug("lex: skipWhitespace")
   while lexer.buf[lexer.bufpos] in space: lexer.bufpos.inc()
 
-template skipWhitespaceAndNewlines(lexer: BaseLexer) =
-  debug("lex: skipWhitespaceAndNewLines")
-  while true:
-    case lexer.buf[lexer.bufpos]
-    of space:
-      lexer.bufpos.inc()
-    of '\l':
-      lexer.bufpos = lexer.handleLF(lexer.bufpos)
-    of '\c':
-      lexer.bufpos = lexer.handleCR(lexer.bufpos)
-    else:
-      break
+template skipWhitespaceCommentsAndNewlines(lexer: BaseLexer) =
+  debug("lex: skipWhitespaceCommentsAndNewlines")
+  if lexer.buf[lexer.bufpos] != '#':
+    while true:
+      case lexer.buf[lexer.bufpos]
+      of space: lexer.bufpos.inc()
+      of '\l': lexer.bufpos = lexer.handleLF(lexer.bufpos)
+      of '\c': lexer.bufpos = lexer.handleCR(lexer.bufpos)
+      of '#': # also skip comments
+        lexer.bufpos.inc()
+        while lexer.buf[lexer.bufpos] notin {'\l', '\c', EndOfFile}:
+          lexer.bufpos.inc()
+      else: break
 
 template skipIndentation(lexer: BaseLexer) =
   debug("lex: skipIndentation")
@@ -1439,7 +1440,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           parserError("Unexpected content (expected document end)")
       of fpFlow:
         debug("state: flow")
-        p.lexer.skipWhitespaceAndNewlines()
+        p.lexer.skipWhitespaceCommentsAndNewlines()
         case p.lexer.buf[p.lexer.bufpos]
         of '{':
           handleObjectStart(yamlStartMap)
@@ -1570,7 +1571,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           handleFlowPlainScalar()
       of fpFlowAfterObject:
         debug("state: flowAfterObject")
-        p.lexer.skipWhitespaceAndNewlines()
+        p.lexer.skipWhitespaceCommentsAndNewlines()
         case p.lexer.buf[p.lexer.bufpos]
         of ']':
           case level.kind
