@@ -492,6 +492,10 @@ template tagUri(lexer: BaseLexer, uri: var string) =
   while lexer.buf[lexer.bufpos] in space:
     lexer.bufpos.inc()
   var c = lexer.buf[lexer.bufpos]
+  if c == '!':
+    uri.add(c)
+    lexer.bufpos.inc()
+    c = lexer.buf[lexer.bufpos]
   while c notin spaceOrLineEnd:
     case c
     of 'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', ':', '@', '&',
@@ -964,7 +968,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
         of EndOfFile:
           stateAfter = fpBlockLineStart
           break outer
-        of ' ':
+        of ' ', '\t':
           if not literal:
             if not recentLineMoreIndented:
               recentLineMoreIndented = true

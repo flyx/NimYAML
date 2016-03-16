@@ -63,6 +63,8 @@ proc nextToken(lex: var EventLexer): LexerToken =
         while lex.buf[lex.bufpos] != '>':
             lex.content.add(lex.buf[lex.bufpos])
             lex.bufpos.inc()
+            if lex.buf[lex.bufpos] == EndOfFile:
+                raise newException(EventStreamError, "Unclosed tag URI!")
         result = chevTag
         lex.bufpos.inc()
     of '&':
