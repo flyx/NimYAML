@@ -526,19 +526,6 @@ template documentEnd(lexer: var BaseLexer, isDocumentEnd: var bool) =
     else: isDocumentEnd = false
   else: isDocumentEnd = false
 
-template singleQuotedScalar(lexer: BaseLexer, content: var string) =
-  debug("lex: singleQuotedScalar")
-  lexer.bufpos.inc()
-  while true:
-    case lexer.buf[lexer.bufpos]
-    of '\'':
-      lexer.bufpos.inc()
-      if lexer.buf[lexer.bufpos] == '\'': content.add('\'')
-      else: break
-    of EndOfFile: lexerError(lexer, "Unfinished single quoted string")
-    else: content.add(lexer.buf[lexer.bufpos])
-    lexer.bufpos.inc()
-
 proc unicodeSequence(lexer: var BaseLexer, length: int):
       string {.raises: [YamlParserError].} =
   debug("lex: unicodeSequence")
@@ -549,7 +536,7 @@ proc unicodeSequence(lexer: var BaseLexer, length: int):
       digitPosition = length - i - 1
       c = lexer.buf[lexer.bufpos]
     case c
-    of EndOFFile, '\l', '\r':
+    of EndOFFile, '\l', '\c':
         lexerError(lexer, "Unfinished unicode escape sequence")
     of '0' .. '9':
         unicodeChar = unicodechar or
@@ -583,7 +570,7 @@ proc byteSequence(lexer: var BaseLexer): char {.raises: [YamlParserError].} =
     else: lexerError(lexer, "Invalid character in octet escape sequence")
   return char(charCode)
 
-template processDoubleQuotedWhitespace(newlines: var int) {.dirty.} =
+template processQuotedWhitespace(newlines: var int) {.dirty.} =
   var after = ""
   block outer:
     while true:
@@ -637,7 +624,7 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
       of 'n':       content.add('\l')
       of 'v':       content.add('\v')
       of 'f':       content.add('\f')
-      of 'r':       content.add('\r')
+      of 'r':       content.add('\c')
       of 'e':       content.add('\e')
       of ' ':       content.add(' ')
       of '"':       content.add('"')
@@ -652,7 +639,7 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
       of 'U':       content.add(lexer.unicodeSequence(8))
       of '\l', '\c':
         var newlines = 0
-        processDoubleQuotedWhitespace(newlines)
+        processQuotedWhitespace(newlines)
         continue
       else: lexerError(lexer, "Illegal character in escape sequence")
     of '"':
@@ -660,10 +647,27 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
       break
     of '\l', '\c', '\t', ' ':
       var newlines = 1
-      processdoubleQuotedWhitespace(newlines)
+      processQuotedWhitespace(newlines)
       continue
     else:
       content.add(c)
+    lexer.bufpos.inc()
+
+template singleQuotedScalar(lexer: BaseLexer, content: var string) =
+  debug("lex: singleQuotedScalar")
+  lexer.bufpos.inc()
+  while true:
+    case lexer.buf[lexer.bufpos]
+    of '\'':
+      lexer.bufpos.inc()
+      if lexer.buf[lexer.bufpos] == '\'': content.add('\'')
+      else: break
+    of EndOfFile: lexerError(lexer, "Unfinished single quoted string")
+    of '\l', '\c', '\t', ' ':
+      var newlines = 1
+      processQuotedWhitespace(newlines)
+      continue
+    else: content.add(lexer.buf[lexer.bufpos])
     lexer.bufpos.inc()
 
 proc isPlainSafe(lexer: BaseLexer, index: int, context: YamlContext): bool =
@@ -1150,14 +1154,26 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               p.lexer.plainScalar(content, cBlock)
               state = fpBlockAfterPlainScalar
         of ' ':
+          let c = p.lexer.buf[p.lexer.bufpos]
           p.lexer.skipIndentation()
-          if p.lexer.buf[p.lexer.bufpos] in
-              {'\t', '\l', '\c', '#', EndOfFile}:
+          if c in {'\l', '\c', '#', EndOfFile}:
             p.lexer.lineEnding()
             handleLineEnd(true)
+          elif c == '\t':
+            indentation = p.lexer.getColNumber(p.lexer.bufpos)
+            p.lexer.bufpos.inc()
+            while p.lexer.buf[p.lexer.bufpos] in {'\t', ' '}:
+              p.lexer.bufpos.inc()
+            if p.lexer.buf[p.lexer.bufpos] in {'\l', '\c', '#', EndOfFile}:
+              p.lexer.lineEnding()
+              handleLineEnd(true)
+            else:
+              closeMoreIndentedLevels(true)
+              if level.kind == fplScalar: state = fpBlockContinueScalar
+              else: lexerError(p.lexer, "tabular not allowed here")
           else:
             indentation = p.lexer.getColNumber(p.lexer.bufpos)
-            if p.lexer.buf[p.lexer.bufpos] == '-' and not
+            if c == '-' and not
                 p.lexer.isPlainSafe(p.lexer.bufpos + 1, if flowdepth == 0:
                                     cBlock else: cFlow):
               closeMoreIndentedLevels(true)
@@ -1171,7 +1187,18 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of EndOfFile:
           closeEverything()
           break
-        of '\t', '\l', '\c', '#':
+        of '\t':
+          indentation = 0
+          p.lexer.bufpos.inc()
+          while p.lexer.buf[p.lexer.bufpos] in {'\t', ' '}: p.lexer.bufpos.inc()
+          if p.lexer.buf[p.lexer.bufpos] in {'\l', '\c', '#', EndOfFile}:
+            p.lexer.lineEnding()
+            handleLineEnd(true)
+          else:
+            closeMoreIndentedLevels(true)
+            if level.kind == fplScalar: state = fpBlockContinueScalar
+            else: lexerError(p.lexer, "tabular not allowed here")
+        of '\l', '\c', '#':
           p.lexer.lineEnding()
           handleLineEnd(true)
         else:
