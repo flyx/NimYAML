@@ -1539,6 +1539,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of ':':
           assert(level.kind == fplUnknown)
           if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
+            handleFlowPlainScalar()
+          else:
             level = ancestry.pop()
             case level.kind
             of fplSequence, fplMapValue:
@@ -1554,8 +1556,6 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             ancestry.add(level)
             level = FastParseLevel(kind: fplUnknown, indentation: -1)
             p.lexer.bufpos.inc()
-          else:
-            handleFlowPlainScalar()
         of '\'':
           content = ""
           startToken()
@@ -1572,10 +1572,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(fpFlowAfterObject)
-        of '!':
-          handleTagHandle()
-        of '&':
-          handleAnchor()
+        of '!': handleTagHandle()
+        of '&': handleAnchor()
         of '*':
           handleAlias()
           state = fpFlowAfterObject
@@ -1588,16 +1586,14 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           else:
             explicitFlowKey = true
             p.lexer.bufpos.inc()
-        else:
-          handleFlowPlainScalar()
+        else: handleFlowPlainScalar()
       of fpFlowAfterObject:
         debug("state: flowAfterObject")
         p.lexer.skipWhitespaceCommentsAndNewlines()
         case p.lexer.buf[p.lexer.bufpos]
         of ']':
           case level.kind
-          of fplSequence:
-            discard
+          of fplSequence: discard
           of fplMapKey, fplMapValue:
             startToken()
             parserError("Unexpected token (expected '}')")
@@ -1607,27 +1603,22 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           leaveFlowLevel()
         of '}':
           case level.kind
-          of fplMapKey, fplMapValue:
-            discard
+          of fplMapKey, fplMapValue: discard
           of fplSequence:
             startToken()
             parserError("Unexpected token (expected ']')")
-          of fplUnknown, fplScalar:
-            assert(false)
+          of fplUnknown, fplScalar: assert(false)
           p.lexer.bufpos.inc()
           leaveFlowLevel()
         of ',':
           case level.kind
-          of fplSequence:
-            discard
+          of fplSequence: discard
           of fplMapValue:
             yield scalarEvent("", yTagQuestionMark, yAnchorNone)
             level.kind = fplMapKey
             explicitFlowKey = false
-          of fplMapKey:
-            explicitFlowKey = false
-          of fplUnknown, fplScalar:
-            assert(false)
+          of fplMapKey: explicitFlowKey = false
+          of fplUnknown, fplScalar: assert(false)
           ancestry.add(level)
           level = FastParseLevel(kind: fplUnknown, indentation: -1)
           state = fpFlow
@@ -1637,10 +1628,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           of fplSequence, fplMapKey:
             startToken()
             parserError("Unexpected token (expected ',')")
-          of fplMapValue:
-            level.kind = fplMapValue
-          of fplUnknown, fplScalar:
-            assert(false)
+          of fplMapValue: level.kind = fplMapValue
+          of fplUnknown, fplScalar: assert(false)
           ancestry.add(level)
           level = FastParseLevel(kind: fplUnknown, indentation: -1)
           state = fpFlow
@@ -1654,6 +1643,5 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         else:
           startToken()
           parserError("Unexpected content (expected flow indicator)")
-  try:
-    result = initYamlStream(backend)
+  try: result = initYamlStream(backend)
   except Exception: assert(false) # compiler error
