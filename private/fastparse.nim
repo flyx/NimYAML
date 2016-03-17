@@ -307,14 +307,17 @@ template leaveFlowLevel() {.dirty.} =
     yieldLevelEnd()
     handleObjectEnd(fpFlowAfterObject)
   
-template handlePossibleMapStart(single: bool = false) {.dirty.} =
+template handlePossibleMapStart(flow: bool = false,
+                                single: bool = false) {.dirty.} =
   if level.indentation == -1:
     var flowDepth = 0
     var pos = p.lexer.bufpos
+    var recentJsonStyle = false
     while pos < p.lexer.bufpos + 1024:
       case p.lexer.buf[pos]
       of ':':
-        if flowDepth == 0 and p.lexer.buf[pos + 1] in spaceOrLineEnd:
+        if flowDepth == 0 and (p.lexer.buf[pos + 1] in spaceOrLineEnd or
+            recentJsonStyle):
           handleObjectStart(yamlStartMap, single)
           break
       of lineEnd: break
@@ -342,6 +345,8 @@ template handlePossibleMapStart(single: bool = false) {.dirty.} =
           pos.inc()
         continue
       else: discard
+      if flow and p.lexer.buf[pos] notin {' ', '\t'}:
+        recentJsonStyle = p.lexer.buf[pos] in {']', '}', '\'', '"'}
       pos.inc()
     if level.indentation == -1: level.indentation = indentation
 
@@ -365,7 +370,7 @@ template handleBlockItemStart() {.dirty.} =
 template handleFlowItemStart() {.dirty.} =
   if level.kind == fplUnknown and ancestry.len > 0 and
       ancestry[ancestry.high].kind == fplSequence:
-    handlePossibleMapStart(true)
+    handlePossibleMapStart(true, true)
 
 template startToken() {.dirty.} =
   p.tokenstart = p.lexer.getColNumber(p.lexer.bufpos)
@@ -716,7 +721,6 @@ template plainScalar(lexer: BaseLexer, content: var string,
       of ':':
         if lexer.isPlainSafe(lexer.bufpos + 1, context): content.add(':')
         else: break outer
-      of '#': break outer
       else: content.add(c)
   debug("lex: \"" & content & '\"')
 
@@ -1529,14 +1533,23 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           level = FastParseLevel(kind: fplUnknown, indentation: -1)
           p.lexer.bufpos.inc()
         of ':':
-          assert(level.kind == fplUnknown)
           if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
             handleFlowItemStart()
             handleFlowPlainScalar()
           else:
             level = ancestry.pop()
             case level.kind
-            of fplSequence, fplMapValue, fplSinglePairValue:
+            of fplSequence:
+              yield startMapEvent(tag, anchor)
+              debug("started single-pair map at " & (if level.indentation == -1:
+                  $indentation else: $level.indentation))
+              tag = yTagQuestionMark
+              anchor = yAnchorNone
+              if level.indentation == -1: level.indentation = indentation
+              ancestry.add(level)
+              level = FastParseLevel(kind: fplSinglePairValue, indentation: -1)
+              yield scalarEvent("")
+            of fplMapValue, fplSinglePairValue:
               startToken()
               parserError("Unexpected token (expected ',')")
             of fplMapKey:
@@ -1586,6 +1599,16 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           elif explicitFlowKey:
             startToken()
             parserError("Duplicate '?' in flow mapping")
+          elif level.kind == fplUnknown:
+            if ancestry.len > 0:
+              case ancestry[ancestry.high].kind
+              of fplMapKey, fplMapValue: discard
+              of fplSequence: handleObjectStart(yamlStartMap, true)
+              else:
+                startToken()
+                parserError("Unexpected token")
+            explicitFlowKey = true
+            p.lexer.bufpos.inc()
           else:
             explicitFlowKey = true
             p.lexer.bufpos.inc()
