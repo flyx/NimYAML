@@ -569,7 +569,7 @@ proc unicodeSequence(lexer: var BaseLexer, length: int):
       digitPosition = length - i - 1
       c = lexer.buf[lexer.bufpos]
     case c
-    of EndOFFile:
+    of EndOFFile, '\l', '\r':
         lexerError(lexer, "Unfinished unicode escape sequence")
     of '0' .. '9':
         unicodeChar = unicodechar or
@@ -580,9 +580,28 @@ proc unicodeSequence(lexer: var BaseLexer, length: int):
     of 'a' .. 'f':
         unicodeChar = unicodechar or
                 (cast[int](c) - 0x57) shl (digitPosition * 4)
-    else:
-      lexerError(lexer, "Invalid character in unicode escape sequence")
+    else: lexerError(lexer, "Invalid character in unicode escape sequence")
   return toUTF8(cast[Rune](unicodeChar))
+
+proc byteSequence(lexer: var BaseLexer): char {.raises: [YamlParserError].} =
+  debug("lex: byteSequence")
+  var charCode = 0.int8
+  for i in 0 .. 1:
+    lexer.bufpos.inc()
+    let
+      digitPosition = int8(1 - i)
+      c = lexer.buf[lexer.bufpos]
+    case c
+    of EndOfFile, '\l', 'r':
+      lexerError(lexer, "Unfinished octet escape sequence")
+    of '0' .. '9':
+      charCode = charCode or (int8(c) - 0x30.int8) shl (digitPosition * 4)
+    of 'A' .. 'F':
+      charCode = charCode or (int8(c) - 0x37.int8) shl (digitPosition * 4)
+    of 'a' .. 'f':
+      charCode = charCode or (int8(c) - 0x57.int8) shl (digitPosition * 4)
+    else: lexerError(lexer, "Invalid character in octet escape sequence")
+  return char(charCode)
 
 template processDoubleQuotedWhitespace(newlines: var int) {.dirty.} =
   var
@@ -802,6 +821,7 @@ template tagHandle(lexer: var BaseLexer, content: var string,
     of '!':
       if shorthandEnd == -1 and i == 2:
         content.add(c)
+        continue
       elif shorthandEnd != 0:
         lexerError(lexer, "Illegal character in tag suffix")
       shorthandEnd = i
@@ -813,18 +833,19 @@ template tagHandle(lexer: var BaseLexer, content: var string,
       if i == 1:
         shorthandEnd = -1
         content = ""
-      else:
-        lexerError(lexer, "Illegal character in tag handle")
+      else: lexerError(lexer, "Illegal character in tag handle")
     of '>':
       if shorthandEnd == -1:
         lexer.bufpos.inc()
         if lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
           lexerError(lexer, "Missing space after verbatim tag handle")
         break
-      else:
-        lexerError(lexer, "Illegal character in tag handle")
-    else:
-      lexerError(lexer, "Illegal character in tag handle")
+      else: lexerError(lexer, "Illegal character in tag handle")
+    of '%':
+      if shorthandEnd != 0:
+        content.add(lexer.byteSequence())
+      else: lexerError(lexer, "Illegal character in tag handle")
+    else: lexerError(lexer, "Illegal character in tag handle")
 
 template anchorName(lexer: BaseLexer, content: var string) =
   debug("lex: anchorName")

@@ -32,7 +32,7 @@ proc initTagLibrary*(): TagLibrary =
     result.secondaryPrefix = yamlTagRepositoryPrefix
     result.nextCustomTagId = yFirstCustomTagId
 
-proc registerUri*(tagLib: TagLibrary, uri: string): TagId =  
+proc registerUri*(tagLib: TagLibrary, uri: string): TagId =
     tagLib.tags[uri] = tagLib.nextCustomTagId
     result = tagLib.nextCustomTagId
     tagLib.nextCustomTagId = cast[TagId](cast[int](tagLib.nextCustomTagId) + 1)
