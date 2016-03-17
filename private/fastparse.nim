@@ -779,7 +779,10 @@ template tagHandle(lexer: var BaseLexer, content: var string,
       shorthandEnd = i
       content.add(c)
     of 'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', ':', '@', '&',
-       '-', '=', '+', '$', ',', '_', '.', '~', '*', '\'', '(', ')':
+       '-', '=', '+', '$', '_', '.', '~', '*', '\'', '(', ')':
+      content.add(c)
+    of ',':
+      if shortHandEnd > 0: break # ',' after shorthand is flow indicator
       content.add(c)
     of '<':
       if i == 1:
