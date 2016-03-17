@@ -39,8 +39,7 @@ proc `peek=`*(s: var YamlStream, value: YamlStreamEvent) =
     s.peeked = true
     
 proc finished*(s: var YamlStream): bool =
-    if s.peeked:
-        result = false
+    if s.peeked: result = false
     else:
         try:
             s.cached = s.backend()

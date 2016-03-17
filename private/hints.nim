@@ -48,12 +48,9 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
             var stateBranch = newNimNode(nnkOfBranch, rule)
             case rule[1].kind
             of nnkBracket:
-                for item in rule[1].children:
-                    stateBranch.add(item)
-            of nnkIdent:
-                stateBranch.add(rule[1])
-            else:
-                assert false
+                for item in rule[1].children: stateBranch.add(item)
+            of nnkIdent: stateBranch.add(rule[1])
+            else: assert false
             if rule[2].kind == nnkNilLit:
                 stateBranch.add(newStmtList(newNimNode(nnkDiscardStmt).add(
                         newEmptyNode())))
@@ -70,8 +67,7 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
 
 template advanceTypeHint(ch: char) {.dirty.} =
     typeHintStateMachine ch:
-    of '~':
-        ythInitial => ythNULL
+    of '~': ythInitial => ythNULL
     of '.':
         [yth0, ythInt]         => ythDecimal
         [ythInitial, ythMinus] => ythPoint
@@ -155,24 +151,14 @@ template advanceTypeHint(ch: char) {.dirty.} =
     of 'y', 'Y': ythInitial => ythY
 
 proc guessType*(scalar: string): TypeHint =
-    var
-        typeHintState: YamlTypeHintState = ythInitial
-    for c in scalar:
-        advanceTypeHint(c)
+    var typeHintState: YamlTypeHintState = ythInitial
+    for c in scalar: advanceTypeHint(c)
     case typeHintState
-    of ythNULL:
-        result = yTypeNull
-    of ythTRUE, ythON, ythYES, ythY:
-        result = yTypeBoolTrue
-    of ythFALSE, ythOFF, ythNO, ythN:
-        result = yTypeBoolFalse
-    of ythInt, yth0:
-        result = yTypeInteger
-    of ythDecimal, ythExponent:
-        result = yTypeFloat
-    of ythPointINF:
-        result = yTypeFloatInf
-    of ythPointNAN:
-        result = yTypeFloatNaN
-    else:
-        result = yTypeUnknown
+    of ythNULL: result = yTypeNull
+    of ythTRUE, ythON, ythYES, ythY: result = yTypeBoolTrue
+    of ythFALSE, ythOFF, ythNO, ythN: result = yTypeBoolFalse
+    of ythInt, yth0: result = yTypeInteger
+    of ythDecimal, ythExponent: result = yTypeFloat
+    of ythPointINF: result = yTypeFloatInf
+    of ythPointNAN: result = yTypeFloatNaN
+    else: result = yTypeUnknown

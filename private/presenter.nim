@@ -149,10 +149,8 @@ proc writeDoubleQuotedJson(scalar: string, s: Stream)
             of '\f': s.write("\\f")
             of '\b': s.write("\\b")
             else:
-                if ord(c) < 32:
-                    s.write("\\u" & toHex(ord(c), 4))
-                else:
-                    s.write(c)
+                if ord(c) < 32: s.write("\\u" & toHex(ord(c), 4))
+                else: s.write(c)
         s.write('"')
     except:
         var e = newException(YamlPresenterOutputError,
@@ -205,8 +203,7 @@ proc writeFolded(scalar: string, indentation, indentStep: int, s: Stream,
         raise e
 
 template safeWrite(s: string or char) {.dirty.} =
-    try:
-        target.write(s)
+    try: target.write(s)
     except:
         var e = newException(YamlPresenterOutputError, "")
         e.parent = getCurrentException()
@@ -223,10 +220,8 @@ proc startItem(target: Stream, style: PresentationStyle, indentation: int,
             if isObject or style == psCanonical:
                 target.write("? ")
                 state = dBlockExplicitMapKey
-            else:
-                state = dBlockImplicitMapKey
-        of dBlockInlineMap:
-            state = dBlockImplicitMapKey
+            else: state = dBlockImplicitMapKey
+        of dBlockInlineMap: state = dBlockImplicitMapKey
         of dBlockExplicitMapKey:
             target.write(newline)
             target.write(repeat(' ', indentation))
@@ -245,8 +240,7 @@ proc startItem(target: Stream, style: PresentationStyle, indentation: int,
             if (isObject and style != psMinimal) or
                     style in [psJson, psCanonical]:
                 target.write(',' & newline & repeat(' ', indentation))
-                if style == psJson:
-                    state = dFlowImplicitMapKey
+                if style == psJson: state = dFlowImplicitMapKey
                 else:
                     target.write("? ")
                     state = dFlowExplicitMapKey
@@ -260,8 +254,7 @@ proc startItem(target: Stream, style: PresentationStyle, indentation: int,
             if (isObject and style != psMinimal) or
                     style in [psJson, psCanonical]:
                 target.write(newline & repeat(' ', indentation))
-                if style == psJson:
-                    state = dFlowImplicitMapKey
+                if style == psJson: state = dFlowImplicitMapKey
                 else:
                     target.write("? ")
                     state = dFlowExplicitMapKey
@@ -276,23 +269,19 @@ proc startItem(target: Stream, style: PresentationStyle, indentation: int,
             target.write("- ")
         of dFlowSequenceStart:
             case style
-            of psMinimal, psDefault:
-                discard
+            of psMinimal, psDefault: discard
             of psCanonical, psJson:
                 target.write(newline)
                 target.write(repeat(' ', indentation))
-            of psBlockOnly:
-                discard # can never happen
+            of psBlockOnly: discard # can never happen
             state = dFlowSequenceItem
         of dFlowSequenceItem:
             case style
-            of psMinimal, psDefault:
-                target.write(", ")
+            of psMinimal, psDefault: target.write(", ")
             of psCanonical, psJson:
                 target.write(',' & newline)
                 target.write(repeat(' ', indentation))
-            of psBlockOnly:
-                discard # can never happen
+            of psBlockOnly: discard # can never happen
     except:
         var e = newException(YamlPresenterOutputError, "")
         e.parent = getCurrentException()
@@ -358,8 +347,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                     raise e
         of yamlScalar:
             if levels.len == 0:
-                if options.style != psJson:
-                    safeWrite(newline)
+                if options.style != psJson: safeWrite(newline)
             else:
                 startItem(target, options.style, indentation,
                           levels[levels.high], false, newline)
@@ -442,10 +430,8 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                     raise newException(YamlPresenterJsonError,
                             "Cannot have sequence as map key in JSON output!")
                 nextState = dFlowSequenceStart
-            of psMinimal, psCanonical:
-                nextState = dFlowSequenceStart
-            of psBlockOnly:
-                nextState = dBlockSequenceItem 
+            of psMinimal, psCanonical: nextState = dFlowSequenceStart
+            of psBlockOnly: nextState = dBlockSequenceItem 
             
             if levels.len == 0:
                 if nextState == dBlockSequenceItem:
@@ -487,10 +473,8 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                         of mpInitial: mps = mpKey
                         of mpKey: mps = mpValue
                         else: mps = mpNeedBlock
-                    of yamlEndMap:
-                        break
-                    else:
-                        mps = mpNeedBlock
+                    of yamlEndMap: break
+                    else: mps = mpNeedBlock
                 nextState = if mps == mpNeedBlock: dBlockMapValue else:
                         dBlockInlineMap
             of psMinimal: nextState = dFlowMapStart

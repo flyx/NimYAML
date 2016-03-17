@@ -8,8 +8,7 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
     if left.kind != right.kind:
         return false
     case left.kind
-    of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlEndSeq:
-        result = true
+    of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlEndSeq: result = true
     of yamlStartMap:
         result = left.mapAnchor == right.mapAnchor and
                  left.mapTag == right.mapTag
@@ -20,14 +19,12 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool =
         result = left.scalarAnchor == right.scalarAnchor and
                  left.scalarTag == right.scalarTag and
                  left.scalarContent == right.scalarContent
-    of yamlAlias:
-        result = left.aliasTarget == right.aliasTarget
+    of yamlAlias: result = left.aliasTarget == right.aliasTarget
 
 proc `$`*(event: YamlStreamEvent): string =
     result = $event.kind & '('
     case event.kind
-    of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc:
-        discard
+    of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc: discard
     of yamlStartMap:
         result &= "tag=" & $event.mapTag
         if event.mapAnchor != yAnchorNone:

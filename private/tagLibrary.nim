@@ -23,8 +23,7 @@ proc `$`*(id: TagId): string =
     of yTagTimestamp: "!!timestamp"
     of yTagValue: "!!value"
     of yTagYaml: "!!yaml"
-    else:
-        "<" & $cast[int](id) & ">"
+    else: "<" & $cast[int](id) & ">"
 
 proc initTagLibrary*(): TagLibrary =
     new(result)
@@ -39,8 +38,7 @@ proc registerUri*(tagLib: TagLibrary, uri: string): TagId =
     
 proc uri*(tagLib: TagLibrary, id: TagId): string =
     for iUri, iId in tagLib.tags.pairs:
-        if iId == id:
-            return iUri
+        if iId == id: return iUri
     raise newException(KeyError, "Unknown tag id: " & $id)
 
 proc initFailsafeTagLibrary(): TagLibrary =

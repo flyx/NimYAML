@@ -84,8 +84,7 @@ proc loadDOM*(s: Stream): YamlDocument
         tagLib = initExtendedTagLibrary()
         parser = newYamlParser(tagLib)
         events = parser.parse(s)
-    try:
-        result = compose(events, tagLib)
+    try: result = compose(events, tagLib)
     except YamlStreamError:
         let e = getCurrentException()
         if e.parent of YamlParserError:

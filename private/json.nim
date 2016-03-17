@@ -16,36 +16,26 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
     var mappedType: TypeHint
     
     case tag
-    of yTagQuestionMark:
-        mappedType = guessType(content)
-    of yTagExclamationMark, yTagString:
-        mappedType = yTypeUnknown
+    of yTagQuestionMark: mappedType = guessType(content)
+    of yTagExclamationMark, yTagString: mappedType = yTypeUnknown
     of yTagBoolean:
         case guessType(content)
-        of yTypeBoolTrue:
-            mappedType = yTypeBoolTrue
-        of yTypeBoolFalse:
-            mappedType = yTypeBoolFalse
+        of yTypeBoolTrue: mappedType = yTypeBoolTrue
+        of yTypeBoolFalse: mappedType = yTypeBoolFalse
         else:
             raise newException(YamlConstructionError,
                                "Invalid boolean value: " & content)
-    of yTagInteger:
-        mappedType = yTypeInteger
-    of yTagNull:
-        mappedType = yTypeNull
+    of yTagInteger: mappedType = yTypeInteger
+    of yTagNull: mappedType = yTypeNull
     of yTagFloat:
         case guessType(content)
-        of yTypeFloat:
-            mappedType = yTypeFloat
-        of yTypeFloatInf:
-            mappedType = yTypeFloatInf
-        of yTypeFloatNaN:
-            mappedType = yTypeFloatNaN
+        of yTypeFloat: mappedType = yTypeFloat
+        of yTypeFloatInf: mappedType = yTypeFloatInf
+        of yTypeFloatNaN: mappedType = yTypeFloatNaN
         else:
             raise newException(YamlConstructionError,
                                "Invalid float value: " & content)
-    else:
-        mappedType = yTypeUnknown
+    else: mappedType = yTypeUnknown
     
     try:
         case mappedType
@@ -135,8 +125,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
             if levels.len > 1:
                 let level = levels.pop()
                 case levels[levels.high].node.kind
-                of JArray:
-                    levels[levels.high].node.elems.add(level.node)
+                of JArray: levels[levels.high].node.elems.add(level.node)
                 of JObject:
                     if isNil(levels[levels.high].key):
                         raise newException(YamlConstructionError,

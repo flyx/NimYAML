@@ -72,10 +72,8 @@ setTagUriForType(float32, "!nim:system:float32", yTagNimFloat32)
 setTagUriForType(float64, "!nim:system:float64", yTagNimFloat64)
 
 proc lazyLoadTag(uri: string): TagId {.inline, raises: [].} =
-    try:
-        result = serializationTagLibrary.tags[uri]
-    except KeyError:
-        result = serializationTagLibrary.registerUri(uri)
+    try: result = serializationTagLibrary.tags[uri]
+    except KeyError: result = serializationTagLibrary.registerUri(uri)
 
 proc safeTagUri(id: TagId): string {.raises: [].} =
     try:
@@ -151,12 +149,9 @@ template representObject*(value: int, tagStyle: TagStyle,
 proc parseBiggestUInt(s: string): uint64 =
     result = 0
     for c in s:
-        if c in {'0'..'9'}:
-            result *= 10.uint64 + (uint64(c) - uint64('0'))
-        elif c == '_':
-            discard
-        else:
-            raise newException(ValueError, "Invalid char in uint: " & c)
+        if c in {'0'..'9'}: result *= 10.uint64 + (uint64(c) - uint64('0'))
+        elif c == '_': discard
+        else: raise newException(ValueError, "Invalid char in uint: " & c)
 {.pop.}
 
 proc constructObject*[T: uint8|uint16|uint32|uint64](
@@ -196,15 +191,11 @@ proc constructObject*[T: float32|float64](
     constructScalarItem(s, item, T):
         let hint = guessType(item.scalarContent)
         case hint
-        of yTypeFloat:
-            result = T(parseBiggestFloat(item.scalarContent))
+        of yTypeFloat: result = T(parseBiggestFloat(item.scalarContent))
         of yTypeFloatInf:
-            if item.scalarContent[0] == '-':
-                result = NegInf
-            else:
-                result = Inf
-        of yTypeFloatNaN:
-            result = NaN
+            if item.scalarContent[0] == '-': result = NegInf
+            else: result = Inf
+        of yTypeFloatNaN: result = NaN
         else:
             raise newException(YamlConstructionError,
                     "Cannot construct to float: " & item.scalarContent)
@@ -220,8 +211,7 @@ proc representObject*[T: float32|float64](value: T, ts: TagStyle,
         RawYamlStream {.raises: [].} =
     ## represents a float value as YAML scalar
     result = iterator(): YamlStreamEvent =
-        var
-            asString: string
+        var asString: string
         case value
         of Inf: asString = ".inf"
         of NegInf: asString = "-.inf"
@@ -243,10 +233,8 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
     ## constructs a bool value from a YAML scalar
     constructScalarItem(s, item, bool):
         case guessType(item.scalarContent)
-        of yTypeBoolTrue:
-            result = true
-        of yTypeBoolFalse:
-            result = false
+        of yTypeBoolTrue: result = true
+        of yTypeBoolFalse: result = false
         else:
             raise newException(YamlConstructionError,
                     "Cannot construct to bool: " & item.scalarContent)
@@ -361,10 +349,8 @@ proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
 template yamlTag*(T: typedesc[object|enum]): expr =
     var uri = when compiles(yamlTagId(T)): yamlTagId(T) else:
             "!nim:custom:" & (typetraits.name(type(T)))
-    try:
-        serializationTagLibrary.tags[uri]
-    except KeyError:
-        serializationTagLibrary.registerUri(uri)
+    try: serializationTagLibrary.tags[uri]
+    except KeyError: serializationTagLibrary.registerUri(uri)
 
 template yamlTag*(T: typedesc[tuple]): expr =
     var
@@ -480,8 +466,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
             result = cast[ref O](c.refs[e.aliasTarget])
             discard s.next()
             return
-        except KeyError:
-            assert(false)
+        except KeyError: assert(false)
     new(result)
     template removeAnchor(anchor: var AnchorId) {.dirty.} =
         if anchor != yAnchorNone:
@@ -495,10 +480,8 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     of yamlStartSeq: removeAnchor(e.seqAnchor)
     else: assert(false)
     s.peek = e
-    try:
-        constructChild(s, c, result[])
-    except YamlConstructionError, YamlStreamError, AssertionError:
-        raise
+    try: constructChild(s, c, result[])
+    except YamlConstructionError, YamlStreamError, AssertionError: raise
     except Exception:
         var e = newException(YamlStreamError,
                              getCurrentExceptionMsg())
@@ -597,8 +580,7 @@ proc load*[K](input: Stream, target: var K) =
             raise (ref IOError)(e.parent)
         elif e.parent of YamlParserError:
             raise (ref YamlParserError)(e.parent)
-        else:
-            assert(false)
+        else: assert(false)
 
 proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
         {.inline.} =
@@ -621,8 +603,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
     if a == asTidy:
         var objQueue = newSeq[YamlStreamEvent]()
         try:
-            for event in objStream():
-                objQueue.add(event)
+            for event in objStream(): objQueue.add(event)
         except Exception:
             assert(false)
         var backend = iterator(): YamlStreamEvent =
@@ -638,8 +619,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                 else: discard
                 yield event
         result = initYamlStream(backend)
-    else:
-        result = initYamlStream(objStream)
+    else: result = initYamlStream(objStream)
 
 proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
@@ -647,8 +627,7 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
     var events = represent(value,
             if options.style == psCanonical: tsAll else: tagStyle,
             if options.style == psJson: asNone else: anchorStyle)
-    try:
-        present(events, target, serializationTagLibrary, options)
+    try: present(events, target, serializationTagLibrary, options)
     except YamlStreamError:
         # serializing object does not raise any errors, so we can ignore this
         assert false, "Can never happen"
