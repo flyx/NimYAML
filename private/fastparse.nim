@@ -844,6 +844,8 @@ template blockScalar(lexer: BaseLexer, content: var string,
     chomp: ChompType = ctClip
     detectedIndent = false
     recentLineMoreIndented = false
+  let parentIndent = if ancestry.len > 0:
+          ancestry[ancestry.high].indentation else: 0
   
   case lexer.buf[lexer.bufpos]
   of '|': literal = true
@@ -877,8 +879,6 @@ template blockScalar(lexer: BaseLexer, content: var string,
         # TODO: is this correct?
   else: assert(false)
   var newlines = 0
-  let parentIndent = if ancestry.len > 0:
-          ancestry[ancestry.high].indentation else: 0
   content = ""
   block outer:
     while true:
@@ -947,6 +947,10 @@ template blockScalar(lexer: BaseLexer, content: var string,
               break outer
             else:
               blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
+              if blockIndent == 0:
+                stateAfter = if blockIndent + parentIndent > 0:
+                    fpBlockObjectStart else: fpBlockLineStart
+                break outer
               detectedIndent = true
               break
             lexer.bufpos.inc()
@@ -964,9 +968,9 @@ template blockScalar(lexer: BaseLexer, content: var string,
           break outer
         of ' ', '\t':
           if not literal:
-            if not recentLineMoreIndented:
+            if content.len > 0:
               recentLineMoreIndented = true
-            newlines.inc()
+              newlines.inc()
         else:
           if not literal:
             if recentLineMoreIndented:
@@ -974,8 +978,12 @@ template blockScalar(lexer: BaseLexer, content: var string,
               newlines.inc()
         if newlines > 0:
           if literal: content.add(repeat('\l', newlines))
-          elif newlines == 1: content.add(' ')
-          else: content.add(repeat('\l', newlines - 1))
+          elif newlines == 1:
+            if content.len == 0: content.add('\l')
+            else: content.add(' ')
+          else:
+            if content.len == 0: content.add(repeat('\l', newlines))
+            else: content.add(repeat('\l', newlines - 1))
           newlines = 0
         while true:
           let c = lexer.buf[lexer.bufpos]
@@ -994,8 +1002,11 @@ template blockScalar(lexer: BaseLexer, content: var string,
           else: content.add(c)
           lexer.bufpos.inc()
   case chomp
-  of ctClip: content.add('\l')
-  of ctKeep: content.add(repeat('\l', newlines))
+  of ctClip:
+    if content.len > 0: content.add('\l')
+  of ctKeep: 
+    if content.len > 0: content.add(repeat('\l', newlines))
+    else: content.add(repeat('\l', newlines - 1))
   of ctStrip: discard
   debug("lex: \"" & content & '\"')
 
@@ -1158,8 +1169,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               p.lexer.plainScalar(content, cBlock)
               state = fpBlockAfterPlainScalar
         of ' ':
-          let c = p.lexer.buf[p.lexer.bufpos]
           p.lexer.skipIndentation()
+          let c = p.lexer.buf[p.lexer.bufpos]
           if c in {'\l', '\c', '#', EndOfFile}:
             p.lexer.lineEnding()
             handleLineEnd(true)
@@ -1350,7 +1361,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           if tag == yTagQuestionMark: tag = yTagExclamationMark
           yield scalarEvent(content, tag, anchor)
           handleObjectEnd(stateAfter)
-          if stateAfter == fpBlockObjectStart:
+          if stateAfter == fpBlockObjectStart and
+              p.lexer.buf[p.lexer.bufpos] != '#':
             indentation = p.lexer.getColNumber(p.lexer.bufpos)
             closeMoreIndentedLevels()
         of '-':

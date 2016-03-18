@@ -31,9 +31,10 @@ for kind, dirPath in walkDir("yaml-dev-kit"):
             var
                 tagLib = initExtendedTagLibrary()
                 parser = newYamlParser(tagLib)
-                actual = parser.parse(newFileStream(dirPath / "in.yaml"))
-                expected = parseEventStream(
-                        newFileStream(dirPath / "test.event"), tagLib)
+                actualIn = newFileStream(dirPath / "in.yaml")
+                actual = parser.parse(actualIn)
+                expectedIn = newFileStream(dirPath / "test.event")
+                expected = parseEventStream(expectedIn, tagLib)
             styledWriteLine(stdout, fgBlue, "[test] ", fgWhite, dirPath[^4..^1],
                             ": ", strip(readFile(dirPath / "===")), resetStyle)
             try:
@@ -45,6 +46,8 @@ for kind, dirPath in walkDir("yaml-dev-kit"):
                                   ": Expected stream end, got " &
                                   $actualEvent.kind)
                         gotErrors = true
+                        actualIn.close()
+                        expectedIn.close()
                         break curTest
                     let expectedEvent = expected.next()
                     if expectedEvent != actualEvent:
@@ -52,6 +55,8 @@ for kind, dirPath in walkDir("yaml-dev-kit"):
                         echoError("At token #" & $i &
                                 ": Actual tokens do not match expected tokens")
                         gotErrors = true
+                        actualIn.close()
+                        expectedIn.close()
                         break curTest
                     i.inc()
                 if not expected.finished():
@@ -68,6 +73,8 @@ for kind, dirPath in walkDir("yaml-dev-kit"):
                          pe.msg
                     echo pe.lineContent
                 else: echo e.msg
+            actualIn.close()
+            expectedIn.close()
 
 if gotErrors:
     echoError("There were errors while running the tests")
