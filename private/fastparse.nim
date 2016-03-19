@@ -8,7 +8,7 @@ type
   FastParseState = enum
     fpInitial, fpBlockLineStart, fpBlockAfterObject, fpBlockAfterPlainScalar,
     fpBlockObjectStart, fpBlockContinueScalar, fpExpectDocEnd, fpFlow,
-    fpFlowAfterObject
+    fpFlowAfterObject, fpAfterDocument
   
   FastParseLevelKind = enum
     fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
@@ -872,7 +872,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
   block outer:
     while true:
       block inner:
-        for i in countup(1, parentIndent):
+        for i in countup(1, parentIndent + 1):
           case lexer.buf[lexer.bufpos]
           of ' ': discard
           of '\l':
@@ -887,8 +887,15 @@ template blockScalar(lexer: BaseLexer, content: var string,
             stateAfter = if i == 1: fpBlockLineStart else: fpBlockObjectStart
             break outer
           lexer.bufpos.inc()
+        if parentIndent == -1 and lexer.buf[lexer.bufpos] == '.':
+          var isDocumentEnd: bool
+          startToken()
+          lexer.documentEnd(isDocumentEnd)
+          if isDocumentEnd:
+            stateAfter = fpExpectDocEnd
+            break outer
         if detectedIndent:
-          for i in countup(1, blockIndent):
+          for i in countup(1, blockIndent - 1 + max(0, -parentIndent)):
             case lexer.buf[lexer.bufpos]
             of ' ': discard
             of '\l':
@@ -911,13 +918,8 @@ template blockScalar(lexer: BaseLexer, content: var string,
               stateAfter = fpBlockLineStart
               break outer
             else:
-              if i == 1:
-                stateAfter = if parentIndent <= 0: fpBlockLineStart else:
-                    fpBlockObjectStart
-                break outer
-              else:
-                startToken()
-                parserError("The text is less indented than expected ")
+              startToken()
+              parserError("The text is less indented than expected ")
             lexer.bufpos.inc()
         else:
           while true:
@@ -937,8 +939,8 @@ template blockScalar(lexer: BaseLexer, content: var string,
             else:
               blockIndent =
                   lexer.getColNumber(lexer.bufpos) - max(0, parentIndent)
-              if blockIndent == 0:
-                stateAfter = if blockIndent + max(0, parentIndent) > 0:
+              if blockIndent == 0 and parentIndent >= 0:
+                stateAfter = if blockIndent + parentIndent > 0:
                     fpBlockObjectStart else: fpBlockLineStart
                 break outer
               detectedIndent = true
@@ -1000,6 +1002,27 @@ template blockScalar(lexer: BaseLexer, content: var string,
   of ctStrip: discard
   debug("lex: \"" & content & '\"')
 
+template consumeLineIfEmpty(lex: BaseLexer): bool =
+  var result = true
+  while true:
+    lex.bufpos.inc()
+    case lex.buf[lex.bufpos]
+    of ' ', '\t': discard
+    of '\l':
+      lex.bufpos = lex.handleLF(lex.bufpos)
+      break
+    of '\c':
+      lex.bufpos = lex.handleCR(lex.bufpos)
+      break
+    of '#', EndOfFile:
+      lex.lineEnding()
+      handleLineEnd(false)
+      break
+    else:
+      result = false
+      break
+  result
+
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   var backend = iterator(): YamlStreamEvent =
     var
@@ -1057,25 +1080,10 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             p.lexer.finishLine()
             handleLineEnd(false)
         of ' ', '\t':
-          while true:
-            p.lexer.bufpos.inc()
-            case p.lexer.buf[p.lexer.bufpos]
-            of ' ', '\t': discard
-            of '\l':
-              p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
-              break
-            of '\c':
-              p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
-              break
-            of '#', EndOfFile:
-              p.lexer.lineEnding()
-              handleLineEnd(false)
-              break
-            else:
-              indentation = p.lexer.getColNumber(p.lexer.bufpos)
-              yield startDocEvent()
-              state = fpBlockObjectStart
-              break
+          if not p.lexer.consumeLineIfEmpty():
+            indentation = p.lexer.getColNumber(p.lexer.bufpos)
+            yield startDocEvent()
+            state = fpBlockObjectStart
         of '\l': p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         of '\c': p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
         of EndOfFile: return
@@ -1139,12 +1147,11 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           startToken()
           p.lexer.documentEnd(isDocumentEnd)
           if isDocumentEnd:
+            closeEverything()
             p.lexer.bufpos.inc(3)
             p.lexer.lineEnding()
-            handleLineEnd(true)
-            closeEverything()
-            initDocValues()
-            state = fpInitial
+            handleLineEnd(false)
+            state = fpAfterDocument
           else:
             indentation = 0
             closeMoreIndentedLevels()
@@ -1407,6 +1414,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           p.lexer.plainScalar(content, cBlock)
           state = fpBlockAfterPlainScalar
       of fpExpectDocEnd:
+        debug("state: expectDocEnd")
         case p.lexer.buf[p.lexer.bufpos]
         of '-':
           var token: LexedPossibleDirectivesEnd
@@ -1425,12 +1433,12 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           startToken()
           p.lexer.documentEnd(isDocumentEnd)
           if isDocumentEnd:
+            closeEverything()
             p.lexer.bufpos.inc(3)
-            yield endDocEvent()
-            initDocValues()
-            state = fpInitial
-          else:
-            parserError("Unexpected content (expected document end)")
+            p.lexer.lineEnding()
+            handleLineEnd(false)
+            state = fpAfterDocument
+          else: parserError("Unexpected content (expected document end)")
         of ' ', '\t', '#':
           p.lexer.lineEnding()
           handleLineEnd(true)
@@ -1442,6 +1450,34 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         else:
           startToken()
           parserError("Unexpected content (expected document end)")
+      of fpAfterDocument:
+        debug("state: afterDocument")
+        case p.lexer.buf[p.lexer.bufpos]
+        of '.':
+          var isDocumentEnd: bool
+          startToken()
+          p.lexer.documentEnd(isDocumentEnd)
+          if isDocumentEnd:
+            p.lexer.bufpos.inc(3)
+            p.lexer.lineEnding()
+            handleLineEnd(false)
+          else:
+            initDocValues()
+            yield startDocEvent()
+            state = fpBlockLineStart
+        of '#':
+          p.lexer.lineEnding()
+          handleLineEnd(false)
+        of '\t', ' ':
+          if not p.lexer.consumeLineIfEmpty():
+            indentation = p.lexer.getColNumber(p.lexer.bufpos)
+            initDocValues()
+            yield startDocEvent()
+            state = fpBlockObjectStart
+        of EndOfFile: break
+        else:
+          initDocValues()
+          state = fpInitial
       of fpFlow:
         debug("state: flow")
         p.lexer.skipWhitespaceCommentsAndNewlines()
