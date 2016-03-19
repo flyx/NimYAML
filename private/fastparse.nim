@@ -106,7 +106,9 @@ template handleLineEnd(insideDocument: bool) {.dirty.} =
   newlines.inc()
 
 template handleObjectEnd(nextState: FastParseState) {.dirty.} =
-  if ancestry.len == 0: state = fpExpectDocEnd
+  if ancestry.len == 0:
+    level.kind = fplUnknown
+    state = fpExpectDocEnd
   else:
     level = ancestry.pop()
     if level.kind == fplSinglePairValue:
@@ -738,10 +740,7 @@ template handleFlowPlainScalar() {.dirty.} =
             content.add(repeat(' ', newlines - 1))
             newlines = 0
           p.lexer.plainScalar(content, cFlow)
-        elif explicitFlowKey:
-          break
-        else:
-          parserError("Multiline scalar is not allowed as implicit key")
+        break
       of '#', EndOfFile: break
       of '\l':
         p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
@@ -1333,6 +1332,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           p.lexer.lineEnding()
           handleLineEnd(true)
           state = fpBlockLineStart
+          level.indentation = -1
         of '\'':
           handleBlockItemStart()
           content = ""
