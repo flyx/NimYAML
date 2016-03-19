@@ -37,8 +37,8 @@ for kind, dirPath in walkDir("yaml-dev-kit"):
                 expected = parseEventStream(expectedIn, tagLib)
             styledWriteLine(stdout, fgBlue, "[test] ", fgWhite, dirPath[^4..^1],
                             ": ", strip(readFile(dirPath / "===")), resetStyle)
+            var i = 1
             try:
-                var i = 1
                 while not actual.finished():
                     let actualEvent = actual.next()
                     if expected.finished():
@@ -73,6 +73,8 @@ for kind, dirPath in walkDir("yaml-dev-kit"):
                          pe.msg
                     echo pe.lineContent
                 else: echo e.msg
+                echoError("Catched an exception at token #" & $i &
+                          " test was not successful")
             actualIn.close()
             expectedIn.close()
 
