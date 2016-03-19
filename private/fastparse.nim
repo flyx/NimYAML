@@ -97,16 +97,12 @@ template yieldLevelEnd() {.dirty.} =
 
 template handleLineEnd(insideDocument: bool) {.dirty.} =
   case p.lexer.buf[p.lexer.bufpos]
-  of '\l':
-    p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
-  of '\c':
-    p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
+  of '\l': p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
+  of '\c': p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
   of EndOfFile:
-    when insideDocument:
-      closeEverything()
+    when insideDocument: closeEverything()
     return
-  else:
-    discard
+  else: discard
   newlines.inc()
 
 template handleObjectEnd(nextState: FastParseState) {.dirty.} =
@@ -175,15 +171,13 @@ template closeEverything() {.dirty.} =
 template handleBlockSequenceIndicator() {.dirty.} =
   startToken()
   case level.kind
-  of fplUnknown:
-    handleObjectStart(yamlStartSeq)
+  of fplUnknown: handleObjectStart(yamlStartSeq)
   of fplSequence:
     if level.indentation != indentation:
       parserError("Invalid indentation of block sequence indicator")
     ancestry.add(level)
     level = FastParseLevel(kind: fplUnknown, indentation: -1)
-  else:
-      parserError("Illegal sequence item in map")
+  else: parserError("Illegal sequence item in map")
   p.lexer.skipWhitespace()
   indentation = p.lexer.getColNumber(p.lexer.bufpos)
 
@@ -1335,6 +1329,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of '#':
           p.lexer.lineEnding()
           handleLineEnd(true)
+          state = fpBlockLineStart
         of '\'':
           handleBlockItemStart()
           content = ""
