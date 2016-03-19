@@ -165,7 +165,7 @@ template closeMoreIndentedLevels(atSequenceItem: bool = false) {.dirty.} =
 template closeEverything() {.dirty.} =
   indentation = 0
   closeMoreIndentedLevels()
-  yieldLevelEnd()
+  if level.kind != fplUnknown: yieldLevelEnd()
   yield endDocEvent()
 
 template handleBlockSequenceIndicator() {.dirty.} =
@@ -834,7 +834,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
     detectedIndent = false
     recentLineMoreIndented = false
   let parentIndent = if ancestry.len > 0:
-          ancestry[ancestry.high].indentation else: 0
+          ancestry[ancestry.high].indentation else: -1
   
   case lexer.buf[lexer.bufpos]
   of '|': literal = true
@@ -912,7 +912,7 @@ template blockScalar(lexer: BaseLexer, content: var string,
               break outer
             else:
               if i == 1:
-                stateAfter = if parentIndent == 0: fpBlockLineStart else:
+                stateAfter = if parentIndent <= 0: fpBlockLineStart else:
                     fpBlockObjectStart
                 break outer
               else:
@@ -935,9 +935,10 @@ template blockScalar(lexer: BaseLexer, content: var string,
               stateAfter = fpBlockLineStart
               break outer
             else:
-              blockIndent = lexer.getColNumber(lexer.bufpos) - parentIndent
+              blockIndent =
+                  lexer.getColNumber(lexer.bufpos) - max(0, parentIndent)
               if blockIndent == 0:
-                stateAfter = if blockIndent + parentIndent > 0:
+                stateAfter = if blockIndent + max(0, parentIndent) > 0:
                     fpBlockObjectStart else: fpBlockLineStart
                 break outer
               detectedIndent = true
