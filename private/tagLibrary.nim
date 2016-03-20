@@ -65,3 +65,15 @@ proc initExtendedTagLibrary(): TagLibrary =
     result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
     result.tags["tag:yaml.org,2002:value"]     = yTagValue
     result.tags["tag:yaml.org,2002:yaml"]      = yTagYaml
+
+proc initSerializationTagLibrary(): TagLibrary =
+    result = initTagLibrary()
+    result.tags["!"] = yTagExclamationMark
+    result.tags["?"] = yTagQuestionMark
+    result.tags["tag:yaml.org,2002:str"]       = yTagString
+    result.tags["tag:yaml.org,2002:null"]      = yTagNull
+    result.tags["tag:yaml.org,2002:bool"]      = yTagBoolean
+    result.tags["tag:yaml.org,2002:float"]     = yTagFloat
+    result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
+    result.tags["tag:yaml.org,2002:value"]     = yTagValue
+    result.tags["tag:yaml.org,2002:binary"]    = yTagBinary

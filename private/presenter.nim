@@ -366,7 +366,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
             if options.style == psJson:
                 let hint = guessType(item.scalarContent)
                 if item.scalarTag in [yTagQuestionMark, yTagBoolean] and
-                        hint in [yTypeBoolTrue, yTypeBoolFalse]:
+                        hint in {yTypeBoolTrue, yTypeBoolFalse}:
                     if hint == yTypeBoolTrue:
                         safeWrite("true")
                     else:
@@ -374,11 +374,15 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                 elif item.scalarTag in [yTagQuestionMark, yTagNull] and
                         hint == yTypeNull:
                     safeWrite("null")
-                elif item.scalarTag in [yTagQuestionMark, yTagInteger] and
+                elif item.scalarTag in [yTagQuestionMark, yTagInteger,
+                        yTagNimInt8, yTagNimInt16, yTagNimInt32, yTagNimInt64,
+                        yTagNimUInt8, yTagNimUInt16, yTagNimUInt32,
+                        yTagNimUInt64] and
                         hint == yTypeInteger:
                     safeWrite(item.scalarContent)
-                elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
-                        hint in [yTypeFloatInf, yTypeFloatNaN]:
+                elif item.scalarTag in [yTagQuestionMark, yTagFloat,
+                        yTagNimFloat32, yTagNimFloat64] and
+                        hint in {yTypeFloatInf, yTypeFloatNaN}:
                     raise newException(YamlPresenterJsonError,
                             "Infinity and not-a-number values cannot be presented as JSON!")
                 elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
