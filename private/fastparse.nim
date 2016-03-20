@@ -346,10 +346,11 @@ template handlePossibleMapStart(flow: bool = false,
         while p.lexer.buf[pos] notin {'\'', '\l', '\c', EndOfFile}:
           pos.inc()
       of '&', '*', '!':
-        pos.inc()
-        while p.lexer.buf[pos] notin {' ', '\t', '\l', '\c', EndOfFile}:
+        if pos == p.lexer.bufpos or p.lexer.buf[p.lexer.bufpos] in {'\t', ' '}:
           pos.inc()
-        continue
+          while p.lexer.buf[pos] notin {' ', '\t', '\l', '\c', EndOfFile}:
+            pos.inc()
+          continue
       else: discard
       if flow and p.lexer.buf[pos] notin {' ', '\t'}:
         recentJsonStyle = p.lexer.buf[pos] in {']', '}', '\'', '"'}
@@ -776,8 +777,8 @@ template handleFlowPlainScalar() {.dirty.} =
 template ensureCorrectIndentation() {.dirty.} =
   if level.indentation != indentation:
     startToken()
-    parserError("Invalid indentation (expected indentation of " &
-                $level.indentation & ")")
+    parserError("Invalid indentation: " & $indentation &
+                " (expected indentation of " & $level.indentation & ")")
 
 template tagHandle(lexer: var BaseLexer, content: var string,
                    shorthandEnd: var int) =
@@ -868,7 +869,8 @@ template blockScalar(lexer: BaseLexer, content: var string,
       blockIndent = int(lexer.buf[lexer.bufpos]) - int('\x30')
       detectedIndent = true
     of spaceOrLineEnd: break
-    else: lexerError(lexer, "Illegal character in block scalar header")
+    else: lexerError(lexer, "Illegal character in block scalar header: '" &
+                     lexer.buf[lexer.bufpos] & "'")
   lexer.lineEnding()
   case lexer.buf[lexer.bufpos]
   of '\l': lexer.bufpos = lexer.handleLF(lexer.bufpos)

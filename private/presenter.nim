@@ -15,10 +15,12 @@ type
         sLiteral, sFolded, sPlain, sDoubleQuoted
 
 proc defineOptions*(style: PresentationStyle = psDefault,
-                    indentationStep: int = 2, newlines:
-                    NewLineStyle = nlOSDefault): PresentationOptions =
-    result = PresentationOptions(style: style, indentationStep: indentationStep,
-                                 newlines: newlines)
+                    indentationStep: int = 2,
+                    newlines: NewLineStyle = nlOSDefault,
+                    outputVersion: OutputYamlVersion = ov1_2):
+        PresentationOptions =
+    PresentationOptions(style: style, indentationStep: indentationStep,
+                        newlines: newlines, outputVersion: outputVersion)
 
 proc inspect(scalar: string, indentation: int,
              words, lines: var seq[tuple[start, finish: int]]):
@@ -30,7 +32,8 @@ proc inspect(scalar: string, indentation: int,
         curWord, curLine: tuple[start, finish: int]
         canUseFolded = true
         canUseLiteral = true
-        canUsePlain = scalar.len > 0 and scalar[0] notin {'@', '`'}
+        canUsePlain = scalar.len > 0 and
+                scalar[0] notin {'@', '`', '|', '>', '&', '*', '!', ' ', '\t'}
     for i, c in scalar:
         case c
         of ' ':
@@ -338,7 +341,10 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
             if options.style != psJson:
                 # TODO: tag directives
                 try:
-                    target.write("%YAML 1.2" & newline)
+                    case options.outputVersion
+                    of ov1_2: target.write("%YAML 1.2" & newline)
+                    of ov1_1: target.write("%YAML 1.1" & newLine)
+                    of ovNone: discard
                     if tagLib.secondaryPrefix != yamlTagRepositoryPrefix:
                         target.write("%TAG !! " &
                                 tagLib.secondaryPrefix & newline)

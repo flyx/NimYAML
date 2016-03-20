@@ -210,12 +210,24 @@ type
         ## - ``nlOSDefault``: Use the target operation system's default newline
         ##   sequence (CRLF on Windows, LF everywhere else).
         nlLF, nlCRLF, nlOSDefault
+    
+    OutputYamlVersion* = enum
+        ## Specify which YAML version number the presenter shall emit. The
+        ## presenter will always emit content that is valid YAML 1.1, but by
+        ## default will write a directive ``%YAML 1.2``. For compatibility with
+        ## other YAML implementations, it is possible to change this here.
+        ##
+        ## It is also possible to specify that the presenter shall not emit any
+        ## YAML version. The generated content is then guaranteed to be valid
+        ## YAML 1.1 and 1.2 (but not 1.0 or any newer YAML version).
+        ov1_2, ov1_1, ovNone
             
     PresentationOptions* = object
         ## Options for generating a YAML character stream
         style*: PresentationStyle
         indentationStep*: int
         newlines*: NewLineStyle
+        outputVersion*: OutputYamlVersion
     
     RefNodeData = object
         p: pointer
@@ -512,9 +524,10 @@ proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [].}
     ## Parse the given stream as YAML character stream. 
 
 proc defineOptions*(style: PresentationStyle = psDefault,
-                    indentationStep: int = 2, newlines:
-                    NewLineStyle = nlOSDefault): PresentationOptions
-            {.raises: [].}
+                    indentationStep: int = 2,
+                    newlines: NewLineStyle = nlOSDefault,
+                    outputVersion: OutputYamlVersion = ov1_2):
+        PresentationOptions {.raises: [].}
     ## Define a set of options for presentation. Convenience proc that requires
     ## you to only set those values that should not equal the default.
 
