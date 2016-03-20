@@ -6,9 +6,8 @@
 
 type
   FastParseState = enum
-    fpInitial, fpBlockAfterObject, fpBlockAfterPlainScalar,
-    fpBlockObjectStart, fpBlockContinueScalar, fpExpectDocEnd, fpFlow,
-    fpFlowAfterObject, fpAfterDocument
+    fpInitial, fpBlockAfterObject, fpBlockAfterPlainScalar, fpBlockObjectStart,
+    fpExpectDocEnd, fpFlow, fpFlowAfterObject, fpAfterDocument
   
   FastParseLevelKind = enum
     fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
@@ -92,7 +91,6 @@ template yieldShallowScalar(content: string) {.dirty.} =
   var e = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
                           scalarAnchor: anchor)
   shallowCopy(e.scalarContent, content)
-  shallow(e.scalarContent)
   yield e
 
 template yieldLevelEnd() {.dirty.} =
@@ -1130,30 +1128,6 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         else:
           yield startDocEvent()
           state = fpBlockObjectStart
-      of fpBlockContinueScalar:
-        debug("state: fpBlockContinueScalar")
-        p.lexer.skipWhitespace()
-        case p.lexer.buf[p.lexer.bufpos]
-        of '\l':
-          newlines.inc()
-          p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
-          state = fpBlockObjectStart
-        of '\c':
-          newlines.inc()
-          p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
-        of ':':
-          if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cBlock):
-            continueMultilineScalar()
-          else:
-            startToken()
-            parserError("Unexpected token")
-        of '#':
-          yieldShallowScalar(content)
-          p.lexer.lineEnding()
-          handleLineEnd(true)
-          handleObjectEnd(fpBlockObjectStart)
-        else:
-          continueMultilineScalar()
       of fpBlockAfterPlainScalar:
         debug("state: blockAfterPlainScalar")
         p.lexer.skipWhitespace()
