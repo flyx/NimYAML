@@ -14,66 +14,322 @@ Source code can be found on `GitHub <https://github.com/flyx/NimYAML>`_. You can
 install it with `Nimble <https://github.com/nim-lang/nimble>`_:
 
 .. code-block:: bash
-
-    nimble install nimyaml
+  nimble install nimyaml
 
 Quickstart
-----------
+==========
 
-Data used in quickstart code may not be accurate and is solely used to showcase
-NimYAML's features.
+Dumping Nim objects as YAML
+--------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>out.yaml</th></tr></thead><tbody><tr><td>
 
 .. code-block:: nim
-    import yaml
-    type
-        GenderKind* = enum
-            male, female, other
-        
-        Person* = object
-            name*: string
-            gender*: GenderKind
-            age*: int32
-            spouse*: ref Person
-            offspring*: seq[ref Person]
+  import yaml
+  type Person = object
+    name : string
+    age  : int32
+    
+  var personList = newSeq[Person]()
+  personList.add(Person(name: "Karl Koch", age: 23))
+  personList.add(Person(name: "Peter Pan", age: 12))
+  
+  var s = newFileStream("out.yaml", fmWrite)
+  dump(personList, s)
+  s.close()
 
-    let input = newStringStream("""
-    %YAML 1.2
-    ---
-    - &a
-      name: Luke Skywalker
-      gender: male
-      age: 19
-      spouse: ~
-      offspring: []
-    - &b
-      name: Han Solo
-      gender: male
-      age: 35
-      spouse: &c
-        name: Leia Organa
-        gender: female
-        age: 19
-        spouse: *b
-        offspring: []
-      offspring: []
-    - *c
-    - 
-      name: Anakin Skywalker
-      gender: male
-      age: 42
-      spouse: ~
-      offspring: [*a, *c]
-    """)
-    var persons: seq[ref Person]
-    load(input, persons)
-    for person in persons:
-      echo person.name, "\nage ", person.age
-      if person.spouse != nil:
-        echo "spouse: ", person.spouse.name
-      for child in person.offspring:
-        case child.gender
-        of male: echo "son: ", child.name
-        of female: echo "daughter: ", child.name
-        of other: echo "child: ", child.name
-      echo "------------------------"
-    dump(persons, newFileStream(stdout))
+.. raw:: html
+  </td>
+  <td>
+
+.. code-block:: yaml
+  %YAML 1.2
+  --- !nim:system:seq(nim:custom:Person)
+  -
+    name: Karl Koch
+    age: 23
+  -
+    name: Peter Pan
+    age: 12    
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Loading Nim objects from YAML
+----------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>in.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type Person = object
+    name : string                                   
+    age  : int32
+  
+  var personList: seq[Person]
+  var s = newFileStream("in.yaml")
+  load(s, personList)
+  s.close()
+
+.. raw:: html
+  </td>
+  <td>
+
+.. code-block:: yaml
+  %YAML 1.2                             
+  ---
+  - { name: Karl Koch, age: 23 }
+  - { name: Peter Pan, age: 12 }
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Customizing output style
+----------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>out.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type Person = object
+    name: string
+    age: int32
+  
+  var personList: seq[Person]
+  personList.add(Person(name: "Karl Koch", age: 23))
+  personList.add(Person(name: "Peter Pan", age: 12))
+  
+  var s = newFileStream("out.yaml")
+  dump(personList, s, options = defineOptions(
+      style = psCanonical,
+      indentationStep = 3,
+      newlines = nlLF,
+      outputVersion = ov1_1))
+  s.close()
+
+.. raw:: html
+  </td><td>
+
+.. code-block:: yaml
+  %YAML 1.1
+  --- !nim:system:seq(nim:custom:Person)
+  [
+     !nim:custom:Person {
+        ? !!str "name"
+        : !!str "Karl Koch",
+        ? !!str "age"
+        : !nim:system:int32 "23"
+     },
+     !nim:custom:Person {
+        ? !!str "name"
+        : !!str "Peter Pan",
+        ? !!str "age"
+        : !nim:system:int32 "12"
+     }
+  ]
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Dumping reference types and cyclic structures
+---------------------------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>out.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type
+    Node = ref NodeObj
+    NodeObj = object
+      name: string
+      left, right: Node
+  
+  var node1, node2, node3: Node
+  new(node1); new(node2); new(node3)
+  node1.name = "Node 1"
+  node2.name = "Node 2"
+  node3.name = "Node 3"
+  node1.left = node2
+  node1.right = node3
+  node2.right = node3
+  node3.left = node1
+  
+  var s = newFileStream("out.yaml", fmWrite)
+  dump(node1, s)
+  s.close()
+
+.. raw:: html
+  </td><td>
+
+.. code-block:: yaml
+  %YAML 1.2
+  --- !nim:custom:NodeObj &a
+  name: Node 1
+  left:
+    name: Node 2
+    left: !!null ~
+    right: &b
+      name: Node 3
+      left: *a
+      right: !!null ~
+  right: *b
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Loading reference types and cyclic structures
+---------------------------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>in.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type
+    Node = ref NodeObj
+    NodeObj = object
+      name: string
+      left, right: Node
+  
+  var node1: Node
+  
+  var s = newFileStream("in.yaml")
+  load(s, node1)
+  s.close()
+
+.. raw:: html
+  </td><td>
+
+.. code-block:: yaml
+  %YAML 1.2
+  --- !nim:custom:NodeObj &a
+  name: Node 1
+  left:
+    name: Node 2
+    left: ~
+    right: &b
+      name: Node 3
+      left: *a
+      right: ~
+  right: *b
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Defining a custom tag uri for a type
+------------------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>out.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type Mob = object
+      level, experience: int32
+  
+  setTagUriForType(Mob, "!Mob")
+  
+  var mob = Mob(level: 42, experience: 1800)
+  var s = newFileStream("out.yaml", fmWrite)
+  dump(mob, s)
+  s.close()
+
+.. raw:: html
+  </td><td>
+
+.. code-block:: yaml
+  %YAML 1.2
+  --- !Mob
+  level: 42
+  experience: 1800
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Dumping Nim objects as JSON
+---------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>out.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type Person = object
+    name : string
+    age  : int32
+    
+  var personList = newSeq[Person]()
+  personList.add(Person(name: "Karl Koch", age: 23))
+  personList.add(Person(name: "Peter Pan", age: 12))
+  
+  var s = newFileStream("out.yaml", fmWrite)
+  dump(personList, s, options = defineOptions(style = psJson))
+  s.close()
+
+.. raw:: html
+  </td>
+  <td>
+
+.. code-block:: yaml
+  [
+    {
+      "name": "Karl Koch",
+      "age": 23
+    },
+    {
+      "name": "Peter Pan",
+      "age": 12
+    }
+  ]
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+Loading Nim objects from JSON
+-----------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>in.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type Person = object
+    name : string
+    age  : int32
+    
+  var personList: seq[Person]
+  
+  var s = newFileStream("in.yaml")
+  load(s, personList)
+  s.close()
+
+.. raw:: html
+  </td>
+  <td>
+
+.. code-block:: yaml
+  [
+    {
+      "name": "Karl Koch",
+      "age": 23
+    },
+    {
+      "name": "Peter Pan",
+      "age": 12
+    }
+  ]
+
+.. raw:: html
+  </td></tr></tbody></table>
