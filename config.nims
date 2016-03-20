@@ -32,7 +32,7 @@ task bench, "Benchmarking":
     --r
     --w:off
     --hints:off
-    setCommand "c", "bench/jsonBench"
+    setCommand "c", "bench/bench"
 
 task clean, "Remove all generated files":
     exec "rm -rf libyaml.* test/tests test/parsing test/lexing bench/json docout"

@@ -10,6 +10,8 @@ test/*.pdb
 test/*.ilk
 server/server
 bench/jsonBench
+bench/yamlBench
+bench/bench
 yaml.html
 libyaml.dylib
 libyaml.so

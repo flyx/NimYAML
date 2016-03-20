@@ -117,7 +117,7 @@ proc events(self: LoadContext): iterator(): yaml_event_t =
     var event: yaml_event_t
     while true:
       if yaml_parser_parse(addr self.parser, addr event) != 1:
-        raise newException(Exception, "Malformed input: " & $self.parser.error)
+        raise newException(Exception, $self.parser.error & ": " & $self.parser.problem)
 
       if event.typ == YAML_NO_EVENT:
         break
@@ -148,12 +148,11 @@ recognize[YAML_SCALAR_EVENT] = proc(self: LoadContext, event: yaml_event_t): Yam
   of YAML_NULL_TAG: return YamlObj(kind : YamlObjKind.Null)
   of YAML_BOOL_TAG:
     result = YamlObj(kind : YamlObjKind.Bool)
-    if event.data.scalar.value == "true":
-      result.boolVal = true
-    elif event.data.scalar.value == "false":
-      result.boolVal = false
-    else:
-      assert(false, "Unknown boolean value " & $event.data.scalar.value)
+    case $event.data.scalar.value
+    of "true": result.boolVal = true
+    of "false": result.boolVal = false
+    else: assert(false,
+                 "Unknown boolean value \"" & $event.data.scalar.value & '\"')
   of YAML_INT_TAG:
     return YamlObj(kind : YamlObjKind.Int, intVal : parseInt($event.data.scalar.value))
   of YAML_FLOAT_TAG:
