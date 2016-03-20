@@ -59,7 +59,7 @@ proc inspect(scalar: string, indentation: int,
             if not inLine: curLine.start = i
             inLine = false
             curLine.finish = i - 1
-            if curLine.start - curLine.finish + 1 > 80 - indentation:
+            if curLine.finish - curLine.start + 1 > 80 - indentation:
                 canUseLiteral = false
             lines.add(curLine)
         else:
@@ -180,7 +180,9 @@ proc writeFolded(scalar: string, indentation, indentStep: int, s: Stream,
                  words: seq[tuple[start, finish: int]], newline: string)
         {.raises: [YamlPresenterOutputError].} =
     try:
-        s.write("|-")
+        s.write(">")
+        if scalar[^1] != '\l': s.write('-')
+        if scalar[0] in [' ', '\t']: s.write($indentStep)
         var curPos = 80
         for word in words:
             if word.start > 0 and scalar[word.start - 1] == '\l':
@@ -579,7 +581,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                     indentation -= options.indentationStep
                 safeWrite('}')
             of dBlockMapValue, dBlockInlineMap: discard
-            else: assert false
+            else: assert(false)
             indentation -= options.indentationStep
         of yamlEndDoc:
             if finished(s): break
