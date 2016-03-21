@@ -235,13 +235,17 @@ Defining a custom tag uri for a type
 .. code-block:: nim
   import yaml
   type Mob = object
-      level, experience: int32
+    level, experience: int32
+    drops: seq[string]
   
   setTagUriForType(Mob, "!Mob")
+  setTagUriForType(seq[string], "!Drops")
   
-  var mob = Mob(level: 42, experience: 1800)
+  var mob = Mob(level: 42, experience: 1800, drops:
+      @["Sword of Mob Slaying"])
   var s = newFileStream("out.yaml", fmWrite)
-  dump(mob, s)
+  dump(mob, s,
+       options = defineOptions(tagStyle = tsAll))
   s.close()
 
 .. raw:: html
@@ -250,8 +254,9 @@ Defining a custom tag uri for a type
 .. code-block:: yaml
   %YAML 1.2
   --- !Mob
-  level: 42
-  experience: 1800
+  !!str level: !nim:system:int32 42
+  !!str experience: !nim:system:int32 1800
+  !!str drops: !Drops [!!str Sword of Mob Slaying]
 
 .. raw:: html
   </td></tr></tbody></table>
@@ -274,7 +279,8 @@ Dumping Nim objects as JSON
   personList.add(Person(name: "Peter Pan", age: 12))
   
   var s = newFileStream("out.yaml", fmWrite)
-  dump(personList, s, options = defineOptions(style = psJson))
+  dump(personList, s,
+       options = defineOptions(style = psJson))
   s.close()
 
 .. raw:: html
