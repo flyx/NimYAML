@@ -376,6 +376,10 @@ const
     yTagYaml*       : TagId = 16.TagId ## \
         ## `!!yaml <http://yaml.org/type/yaml.html>`_ tag
     
+    yTagNimField*   : TagId = 100.TagId ## \
+        ## This tag is used in serialization for the name of a field of an
+        ## object. It may contain any string scalar that is a valid Nim symbol.
+    
     yFirstCustomTagId* : TagId = 1000.TagId ## \
         ## The first ``TagId`` which should be assigned to an URI that does not
         ## exist in the ``YamlTagLibrary`` which is used for parsing.

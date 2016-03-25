@@ -341,8 +341,9 @@ proc representObject*[O: object|tuple](value: O, ts: TagStyle,
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
         yield startMapEvent(tag, yAnchorNone)
         for name, value in fieldPairs(value):
-            yield scalarEvent(name, presentTag(string, childTagStyle),
-                              yAnchorNone)
+            yield scalarEvent(name,
+                    if childTagStyle == tsNone: yTagQuestionMark else:
+                    yTagNimField, yAnchorNone)
             var events = representChild(value, childTagStyle, c)
             while true:
                 let event = events()

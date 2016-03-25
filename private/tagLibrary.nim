@@ -23,6 +23,7 @@ proc `$`*(id: TagId): string =
     of yTagTimestamp: "!!timestamp"
     of yTagValue: "!!value"
     of yTagYaml: "!!yaml"
+    of yTagNimField: "!nim:field"
     else: "<" & $cast[int](id) & ">"
 
 proc initTagLibrary*(): TagLibrary =
@@ -77,3 +78,4 @@ proc initSerializationTagLibrary(): TagLibrary =
     result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
     result.tags["tag:yaml.org,2002:value"]     = yTagValue
     result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
+    result.tags["!nim:field"]                  = yTagNimField

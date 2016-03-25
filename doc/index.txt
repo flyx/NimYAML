@@ -252,11 +252,11 @@ Defining a custom tag uri for a type
   </td><td>
 
 .. code-block:: yaml
-  %YAML 1.2
+  YAML 1.2
   --- !Mob
-  !!str level: !nim:system:int32 42
-  !!str experience: !nim:system:int32 1800
-  !!str drops: !Drops [!!str Sword of Mob Slaying]
+  !nim:field level: !nim:system:int32 42
+  !nim:field experience: !nim:system:int32 1800
+  !nim:field drops: !Drops [!!str Sword of Mob Slaying]
 
 .. raw:: html
   </td></tr></tbody></table>
