@@ -9,11 +9,11 @@ proc initRefNodeData(p: pointer): RefNodeData =
     result.count = 1
     result.anchor = yAnchorNone
 
-proc newConstructionContext(): ConstructionContext =
+proc newConstructionContext*(): ConstructionContext =
     new(result)
     result.refs = initTable[AnchorId, pointer]()
 
-proc newSerializationContext(s: AnchorStyle): SerializationContext =
+proc newSerializationContext*(s: AnchorStyle): SerializationContext =
     new(result)
     result.refs = initTable[pointer, AnchorId]()
     result.style = s

@@ -401,6 +401,8 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].}
 proc `$`*(event: YamlStreamEvent): string {.raises: [].}
     ## outputs a human-readable string describing the given event
 
+proc tag*(event: YamlStreamEvent): TagId {.raises: [FieldError].}
+
 proc startDocEvent*(): YamlStreamEvent {.inline, raises: [].}
 proc endDocEvent*(): YamlStreamEvent {.inline, raises: [].}
 proc startMapEvent*(tag: TagId = yTagQuestionMark,

@@ -42,6 +42,13 @@ proc `$`*(event: YamlStreamEvent): string =
         result &= "aliasTarget=" & $event.aliasTarget
     result &= ")"
 
+proc tag*(event: YamlStreamEvent): TagId =
+    case event.kind
+    of yamlStartMap: result = event.mapTag
+    of yamlStartSeq: result = event.seqTag
+    of yamlScalar: result = event.scalarTag
+    else: raise newException(FieldError, "Event " & $event.kind & " has no tag")
+
 proc startDocEvent*(): YamlStreamEvent =
     result = YamlStreamEvent(kind: yamlStartDoc)
     

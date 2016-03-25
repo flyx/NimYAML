@@ -339,3 +339,83 @@ Loading Nim objects from JSON
 
 .. raw:: html
   </td></tr></tbody></table>
+
+Processing a Sequence of Heterogeneous Items
+--------------------------------------------
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>in.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type Person = object
+    name: string
+
+  setTagUriForType(Person, "!nim:demo:Person",
+                   yTagPerson)
+
+  var
+    s = newFileStream("in.yaml", fmRead)
+    context = newConstructionContext()
+    parser = newYamlParser(serializationTagLibrary)
+    events = parser.parse(s)
+
+  assert events.next().kind == yamlStartDoc
+  assert events.next().kind == yamlStartSeq
+  var nextEvent = events.peek()
+  while nextEvent.kind != yamlEndSeq:
+    var curTag = nextEvent.tag()
+    if curTag == yTagQuestionMark:
+      # we only support implicitly tagged scalar events
+      assert nextEvent.kind == yamlScalar
+      case guessType(nextEvent.scalarContent)
+      of yTypeInteger: curTag = yTagInteger
+      of yTypeBoolTrue, yTypeBoolFalse:
+        curTag = yTagBoolean
+      of yTypeUnknown: curTag = yTagString
+      else: assert false, "Type not supported!"
+    elif curTag == yTagExclamationMark:
+      curTag = yTagString
+    case curTag
+    of yTagString:
+      var s: string
+      events.constructChild(context, s)
+      echo "got string: ", s
+    of yTagInteger:
+      var i: int32
+      events.constructChild(context, i)
+      echo "got integer: ", i
+    of yTagBoolean:
+      var b: bool
+      events.constructChild(context, b)
+      echo "got boolean: ", b
+    else:
+      # non-standard tag ids are not available
+      # at compile time
+      if curTag == yTagPerson:
+        var p: Person
+        events.constructChild(context, p)
+        echo "got Person with name: ", p.name
+      else: assert false, "unsupported tag: " & $curTag
+    nextEvent = events.peek()
+  assert events.next().kind == yamlEndSeq
+  assert events.next().kind == yamlEndDoc
+  assert events.finished()
+  s.close()
+
+.. raw:: html
+  </td>
+  <td>
+
+.. code-block:: yaml
+  %YAML 1.2
+  --- !!seq
+  - this is a string
+  - 42
+  - false
+  - !!str 23
+  - !nim:demo:Person {name: Trillian}
+
+.. raw:: html
+  </td></tr></tbody></table>
