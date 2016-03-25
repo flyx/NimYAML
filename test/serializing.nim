@@ -32,7 +32,7 @@ setTagUriForType(Node, "!example.net:Node")
 setTagUriForType(BetterInt, "!test:BetterInt")
 
 proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
-                      c: SerializationContext): RawYamlStream {.raises: [].} =
+        c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
     result = iterator(): YamlStreamEvent =
         var
             val = $value
@@ -40,7 +40,7 @@ proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
         while i > 0:
             val.insert("_", i)
             i -= 3
-        yield scalarEvent(val, presentTag(BetterInt, ts), yAnchorNone)
+        yield scalarEvent(val, tag, yAnchorNone)
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var BetterInt)

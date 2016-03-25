@@ -583,11 +583,15 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     ## for constructing the value. The object may be constructed from an alias
     ## node which will be resolved using the ``ConstructionContext``.
 
-proc representObject*[O](value: ref O, ts: TagStyle, c: SerializationContext):
+proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
         RawYamlStream {.raises: [].}
-    ## Represents an arbitrary Nim value as YAML object. The object may be
-    ## represented as alias node if the object is already present in the
+    ## Represents an arbitrary Nim reference value as YAML object. The object
+    ## may be  represented as alias node if it is already present in the
     ## ``SerializationContext``.
+
+proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext):
+        RawYamlStream {.inline.}
+    ## Represents an arbitrary Nim object as YAML object.
 
 proc construct*[T](s: var YamlStream, target: var T)
         {.raises: [YamlConstructionError, YamlStreamError].}
