@@ -6,6 +6,15 @@
 
 import "../yaml"
 
+proc escapeNewlines(s: string): string =
+  result = ""
+  for c in s:
+    case c
+    of '\l': result.add("\\n")
+    of '\t': result.add("\\t")
+    of '\\': result.add("\\\\")
+    else: result.add(c)
+
 proc printDifference*(expected, actual: YamlStreamEvent) =
     if expected.kind != actual.kind:
         echo "expected " & $expected.kind & ", got " & $actual.kind
@@ -19,15 +28,15 @@ proc printDifference*(expected, actual: YamlStreamEvent) =
                 echo "[scalarEvent] expected anchor ", expected.scalarAnchor,
                      ", got ", actual.scalarAnchor
             elif expected.scalarContent != actual.scalarContent:
-                let msg = "[scalarEvent] expected content \"" &
-                        expected.scalarContent & "\", got \"" &
-                        actual.scalarContent & "\" "
+                let msg = "[scalarEvent] content mismatch!\nexpected: " &
+                        escapeNewlines(expected.scalarContent) &
+                        "\ngot     : " & escapeNewlines(actual.scalarContent)
                 if expected.scalarContent.len != actual.scalarContent.len:
-                    echo msg, "(length does not match)"
+                    echo msg, "\n(length does not match)"
                 else:
                     for i in 0..expected.scalarContent.high:
                         if expected.scalarContent[i] != actual.scalarContent[i]:
-                            echo msg, "(first different char at pos ", i,
+                            echo msg, "\n(first different char at pos ", i,
                                     ": expected ",
                                     cast[int](expected.scalarContent[i]),
                                     ", got ",
