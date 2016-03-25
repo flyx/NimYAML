@@ -11,16 +11,10 @@ proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
 proc next*(s: var YamlStream): YamlStreamEvent =
     if s.peeked:
         s.peeked = false
-        if s.cached.kind == yamlScalar:
-            # performance optimization
-            result = YamlStreamEvent(kind: yamlScalar,
-                                     scalarTag: s.cached.scalarTag,
-                                     scalarAnchor: s.cached.scalarAnchor)
-            shallowCopy(result.scalarContent, s.cached.scalarContent)
-        else: result = s.cached
+        shallowCopy(result, s.cached)
     else:
         try:
-            result = s.backend()
+            shallowCopy(result, s.backend())
             assert(not finished(s.backend))
         except AssertionError: raise
         except YamlStreamError:
@@ -38,7 +32,7 @@ proc peek*(s: var YamlStream): YamlStreamEvent =
     if not s.peeked:
         s.cached = s.next()
         s.peeked = true
-    result = s.cached
+    shallowCopy(result, s.cached)
 
 proc `peek=`*(s: var YamlStream, value: YamlStreamEvent) =
     s.cached = value
