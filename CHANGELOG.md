@@ -1,3 +1,17 @@
+### 0.4.0
+
+Features:
+
+ * Added option to output YAML 1.1
+ * Added benchmark for processing YAML input
+ * Serialization for OrderedMap
+ * Use !nim:field for object field names (#12)
+
+Bugfixes:
+
+ * Code refactoring (#9, #10, #11, #13)
+ * Some small improvements parsing and presenting
+
 ### 0.3.0
 
 Features:
