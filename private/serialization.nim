@@ -235,16 +235,14 @@ proc representObject*[T](value: seq[T], ts: TagStyle,
     ## represents a Nim seq as YAML sequence
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-        yield YamlStreamEvent(kind: yamlStartSeq,
-                              seqTag: tag,
-                              seqAnchor: yAnchorNone)
+        yield startSeqEvent(tag)
         for item in value:
             var events = representChild(item, childTagStyle, c)
             while true:
                 let event = events()
                 if finished(events): break
                 yield event
-        yield YamlStreamEvent(kind: yamlEndSeq)
+        yield endSeqEvent()
 
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
     try:
@@ -252,7 +250,7 @@ proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
                     safeTagUri(yamlTag(V)) & ")"
         result = lazyLoadTag(uri)
     except KeyError:
-        # cannot happen (theoretically, you known)
+        # cannot happen (theoretically, you know)
         assert(false)
 
 proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
@@ -270,6 +268,8 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
             value: V
         constructChild(s, c, key)
         constructChild(s, c, value)
+        if result.contains(key):
+            raise newException(YamlConstructionError, "Duplicate table key!")
         result[key] = value
     discard s.next()
 
@@ -278,9 +278,7 @@ proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
     ## represents a Nim Table as YAML mapping
     result = iterator(): YamlStreamEvent =
         let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-        yield YamlStreamEvent(kind: yamlStartMap,
-                              mapTag: tag,
-                              mapAnchor: yAnchorNone)
+        yield startMapEvent(tag)
         for key, value in value.pairs:
             var events = representChild(key, childTagStyle, c)
             while true:
@@ -292,7 +290,63 @@ proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
                 let event = events()
                 if finished(events): break
                 yield event
-        yield YamlStreamEvent(kind: yamlEndMap)
+        yield endMapEvent()
+
+proc yamlTag*[K, V](T: typedesc[OrderedTable[K, V]]): TagId
+        {.inline, raises: [].} =
+    try:
+        let uri = "!nim:tables:OrderedTable(" & safeTagUri(yamlTag(K)) & "," &
+                safeTagUri(yamlTag(V)) & ")"
+        result = lazyLoadTag(uri)
+    except KeyError:
+        # cannot happen (theoretically, you know)
+        assert(false)
+
+proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
+                            result: var OrderedTable[K, V])
+        {.raises: [YamlConstructionError, YamlStreamError].} =
+    ## constructs a Nim OrderedTable from a YAML mapping
+    let event = s.next()
+    if event.kind != yamlStartSeq:
+        raise newException(YamlConstructionError, "Expected seq start, got " &
+                           $event.kind)
+    result = initOrderedTable[K, V]()
+    while s.peek.kind != yamlEndSeq:
+        var
+            key: K
+            value: V
+        if s.next().kind != yamlStartMap:
+            raise newException(YamlConstructionError,
+                    "Expected map start, got " & $event.kind)
+        constructChild(s, c, key)
+        constructChild(s, c, value)
+        if s.next().kind != yamlEndMap:
+            raise newException(YamlConstructionError,
+                    "Expected map end, got " & $event.kind)
+        if result.contains(key):
+            raise newException(YamlConstructionError, "Duplicate table key!")
+        result.add(key, value)
+    discard s.next()
+
+proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
+        c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
+    result = iterator(): YamlStreamEvent =
+        let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+        yield startSeqEvent(tag)
+        for key, value in value.pairs:
+            yield startMapEvent()
+            var events = representChild(key, childTagStyle, c)
+            while true:
+                let event = events()
+                if finished(events): break
+                yield event
+            events = representChild(value, childTagStyle, c)
+            while true:
+                let event = events()
+                if finished(events): break
+                yield event
+            yield endMapEvent()
+        yield endSeqEvent()
 
 template yamlTag*(T: typedesc[object|enum]): expr =
     var uri = when compiles(yamlTagId(T)): yamlTagId(T) else:
@@ -546,13 +600,13 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
     var
         context = newSerializationContext(a)
         objStream = iterator(): YamlStreamEvent =
-            yield YamlStreamEvent(kind: yamlStartDoc)
+            yield startDocEvent()
             var events = representChild(value, ts, context)
             while true:
                 let e = events()
                 if finished(events): break
                 yield e
-            yield YamlStreamEvent(kind: yamlEndDoc)
+            yield endDocEvent()
     if a == asTidy:
         var objQueue = newSeq[YamlStreamEvent]()
         try:

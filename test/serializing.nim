@@ -51,7 +51,8 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
 template assertStringEqual(expected, actual: string) =
     for i in countup(0, min(expected.len, actual.len)):
         if expected[i] != actual[i]:
-            echo "string mismatch at character #", i, ":"
+            echo "string mismatch at character #", i, "(expected:\'",
+                    expected[i], "\', was \'", actual[i], "\'):"
             echo "expected:\n", expected, "\nactual:\n", actual
             assert(false)
 
@@ -97,6 +98,41 @@ suite "Serialization":
         assertStringEqual(
                 "%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig",
                 output.data)
+    
+    test "Serialization: Load OrderedTable[tuple[int32, int32], string]":
+        let input = newStringStream("- {a: 23, b: 42}: drzw\n- {a: 13, b: 47}: drsi")
+        var result: OrderedTable[tuple[a, b: int32], string]
+        load(input, result) 
+        var i = 0
+        for key, value in result.pairs:
+            case i
+            of 0:
+                assert key == (a: 23'i32, b: 42'i32)
+                assert value == "drzw"
+            of 1:
+                assert key == (a: 13'i32, b: 47'i32)
+                assert value == "drsi"
+            else: assert false
+            i.inc()
+    
+    test "Serialization: Represent OrderedTable[tuple[int32, int32], string]":
+        var input = initOrderedTable[tuple[a, b: int32], string]()
+        input.add((a: 23'i32, b: 42'i32), "dreiundzwanzigzweiundvierzig")
+        input.add((a: 13'i32, b: 47'i32), "dreizehnsiebenundvierzig")
+        var output = newStringStream()
+        dump(input, output, tsRootOnly, asTidy, blockOnly)
+        assertStringEqual("""%YAML 1.2
+--- !nim:tables:OrderedTable(nim:tuple(nim:system:int32,nim:system:int32),tag:yaml.org,2002:str) 
+- 
+  ? 
+    a: 23
+    b: 42
+  : dreiundzwanzigzweiundvierzig
+- 
+  ? 
+    a: 13
+    b: 47
+  : dreizehnsiebenundvierzig""", output.data)
     
     test "Serialization: Load Sequences in Sequence":
         let input = newStringStream(" - [1, 2, 3]\n - [4, 5]\n - [6]")
