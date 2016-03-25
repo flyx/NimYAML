@@ -60,7 +60,7 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
         of yamlScalar:
             result.tag = tagLib.uri(start.scalarTag)
             result.kind = yScalar
-            result.content = start.scalarContent
+            shallowCopy(result.content, start.scalarContent)
             if start.scalarAnchor != yAnchorNone:
                 assert(not c.refs.hasKey(start.scalarAnchor))
                 c.refs[start.scalarAnchor] = cast[pointer](result)

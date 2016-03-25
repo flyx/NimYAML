@@ -11,7 +11,13 @@ proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
 proc next*(s: var YamlStream): YamlStreamEvent =
     if s.peeked:
         s.peeked = false
-        result = s.cached
+        if s.cached.kind == yamlScalar:
+            # performance optimization
+            result = YamlStreamEvent(kind: yamlScalar,
+                                     scalarTag: s.cached.scalarTag,
+                                     scalarAnchor: s.cached.scalarAnchor)
+            shallowCopy(result.scalarContent, s.cached.scalarContent)
+        else: result = s.cached
     else:
         try:
             result = s.backend()

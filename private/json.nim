@@ -61,7 +61,7 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
             result.kind = JNull
         else:
             result.kind = JString
-            result.str = content
+            shallowCopy(result.str, content)
     except ValueError:
         var e = newException(YamlConstructionError,
                              "Cannot parse numeric value")
