@@ -210,7 +210,11 @@ proc representObject*(value: char, ts: TagStyle, c: SerializationContext,
     yield scalarEvent("" & value, tag, yAnchorNone)
 
 proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
-  let uri = "!nim:system:seq(" & safeTagUri(yamlTag(I)) & ")"
+  let uri = "!nim:system:seq(" & safeTagUri(yamlTag(I)) & ')'
+  result = lazyLoadTag(uri)
+
+proc yamlTag*[I](T: typedesc[set[I]]): TagId {.inline, raises: [].} =
+  let uri = "!nim:system:set(" & safeTagUri(yamlTag(I)) & ')'
   result = lazyLoadTag(uri)
 
 proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
@@ -227,7 +231,21 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
     result.add(item)
   discard s.next()
 
-proc representObject*[T](value: seq[T], ts: TagStyle,
+proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
+                         result: var set[T])
+    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ## constructs a Nim seq from a YAML sequence
+  let event = s.next()
+  if event.kind != yamlStartSeq:
+    raise newException(YamlConstructionError, "Expected sequence start")
+  result = {}
+  while s.peek().kind != yamlEndSeq:
+    var item: T
+    constructChild(s, c, item)
+    result.incl(item)
+  discard s.next()
+
+proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
     c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
   ## represents a Nim seq as YAML sequence
   result = iterator(): YamlStreamEvent =

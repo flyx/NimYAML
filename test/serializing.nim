@@ -78,6 +78,20 @@ suite "Serialization":
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output.data
+  
+  test "Serialization: Load char set":
+    let input = newStringStream("- a\n- b")
+    var result: set[char]
+    load(input, result)
+    assert result.card == 2
+    assert 'a' in result
+    assert 'b' in result
+  
+  test "Serialization: Represent char set":
+    var input = {'a', 'b'}
+    var output = newStringStream()
+    dump(input, output, tsNone, asTidy, blockOnly)
+    assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output.data
     
   test "Serialization: Load Table[int, string]":
     let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
