@@ -66,11 +66,11 @@ To support new scalar types, you must implement the ``constructObject()`` and
 Collection Types
 ----------------
 
-NimYAML supports Nim's ``seq`` and ``Table`` types out of the box. Unlike the
-native YAML types ``!!seq`` and ``!!map``, ``seq`` and ``Table`` define the type
-of all their items (or keys and values). So YAML objects with heterogeneous
-types in them cannot be loaded to Nim collection types. For example, this
-sequence:
+NimYAML supports Nim's ``array``, ``set``, ``seq``, ``Table`` and
+``OrderedTable`` types out of the box. Unlike the native YAML types ``!!seq``
+and ``!!map``, Nim's collection types define the type of all their contained
+items (or keys and values). So YAML objects with heterogeneous types in them
+cannot be loaded to Nim collection types. For example, this sequence:
 
 .. code-block:: yaml
 

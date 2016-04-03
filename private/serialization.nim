@@ -259,6 +259,42 @@ proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
         yield event
     yield endSeqEvent()
 
+proc yamlTag*[I, V](T: typedesc[array[I, V]]): TagId {.inline, raises: [].} =
+  const rangeName = name(I)
+  let uri = "!nim:system:array(" & rangeName[6..rangeName.high()] & "," &
+      safeTagUri(yamlTag(V)) & ')'
+  result = lazyLoadTag(uri)
+
+proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
+                         result: var array[I, T])
+    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ## constructs a Nim array from a YAML sequence
+  var event = s.next()
+  if event.kind != yamlStartSeq:
+    raise newException(YamlConstructionError, "Expected sequence start")
+  for index in low(I)..high(I):
+    event = s.peek()
+    if event.kind == yamlEndSeq:
+      raise newException(YamlConstructionError, "Too few array values")
+    constructChild(s, c, result[index])
+  event = s.next()
+  if event.kind != yamlEndSeq:
+    raise newException(YamlConstructionError, "Too much array values")
+
+proc representObject*[I, T](value: array[I, T], ts: TagStyle,
+    c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
+  ## represents a Nim array as YAML sequence
+  result = iterator(): YamlStreamEvent =
+    let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+    yield startSeqEvent(tag)
+    for item in value:
+      var events = representChild(item, childTagStyle, c)
+      while true:
+        let event = events()
+        if finished(events): break
+        yield event
+    yield endSeqEvent()
+    
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
   try:
     let uri = "!nim:tables:Table(" & safeTagUri(yamlTag(K)) & "," &

@@ -92,6 +92,20 @@ suite "Serialization":
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output.data
+  
+  test "Serialization: Load array":
+    let input = newStringStream("- 23\n- 42\n- 47")
+    var result: array[0..2, int32]
+    load(input, result)
+    assert result[0] == 23
+    assert result[1] == 42
+    assert result[2] == 47
+  
+  test "Serialization: Represent array":
+    let input = [23'i32, 42'i32, 47'i32]
+    var output = newStringStream()
+    dump(input, output, tsNone, asTidy, blockOnly)
+    assertStringEqual "%YAML 1.2\n--- \n- 23\n- 42\n- 47", output.data
     
   test "Serialization: Load Table[int, string]":
     let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
