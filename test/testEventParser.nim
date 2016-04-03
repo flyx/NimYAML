@@ -173,7 +173,7 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
     var
       inEvent = false
       curEvent: YamlStreamEvent
-      streamPos = beforeStream
+      streamPos: StreamPos = beforeStream
       anchors = initTable[string, AnchorId]()
       nextAnchorId = 0.AnchorId
     while lex.buf[lex.bufpos] != EndOfFile:

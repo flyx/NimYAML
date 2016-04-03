@@ -22,10 +22,7 @@ type
   
   LexedDirective = enum
     ldYaml, ldTag, ldUnknown
-  
-  LexedPossibleDirectivesEnd = enum
-    lpdeDirectivesEnd, lpdeSequenceItem, lpdeScalarContent
-  
+    
   YamlContext = enum
     cBlock, cFlow
   
@@ -805,12 +802,6 @@ template handleFlowPlainScalar() {.dirty.} =
   yieldShallowScalar(content)
   handleObjectEnd(fpFlowAfterObject)
 
-template ensureCorrectIndentation() {.dirty.} =
-  if level.indentation != indentation:
-    startToken()
-    parserError("Invalid indentation: " & $indentation &
-                " (expected indentation of " & $level.indentation & ")")
-
 template tagHandle(lexer: var BaseLexer, content: var string,
                    shorthandEnd: var int) =
   debug("lex: tagHandle")
@@ -924,7 +915,6 @@ template blockScalarHeader() {.dirty.} =
 
 template blockScalarLine() {.dirty.} =
   debug("lex: blockScalarLine")
-  let startedAt = content.len
   if indentation < level.indentation:
     if p.lexer.buf[p.lexer.bufpos] == '#':
       # skip all following comment lines
@@ -975,7 +965,6 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
       anchors: Table[string, AnchorId]
       nextAnchorId: AnchorId
       content: string = ""      
-      curContent = 1
       after: string = ""
       tagUri: string = ""
       tag: TagId

@@ -227,12 +227,7 @@ type
     indentationStep*: int
     newlines*: NewLineStyle
     outputVersion*: OutputYamlVersion
-    
-  RefNodeData = object
-    p: pointer
-    count: int
-    anchor: AnchorId
-    
+        
   ConstructionContext* = ref object
     ## Context information for the process of constructing Nim values from YAML.
     refs: Table[AnchorId, pointer]

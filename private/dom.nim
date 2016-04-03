@@ -5,24 +5,15 @@
 #    distribution, for details about the copyright.
 
 proc newYamlNode*(content: string, tag: string = "?"): YamlNode =
-  new(result)
-  result.kind = yScalar
-  result.content = content
-  result.tag = tag
+  YamlNode(kind: yScalar, content: content, tag: tag)
 
 proc newYamlNode*(children: openarray[YamlNode], tag: string = "?"):
     YamlNode =
-  new(result)
-  result.kind = ySequence
-  result.children = @children
-  result.tag = tag
+  YamlNode(kind: ySequence, children: @children, tag: tag)
 
 proc newYamlNode*(pairs: openarray[tuple[key, value: YamlNode]],
                   tag: string = "?"): YamlNode =
-  new(result)
-  result.kind = yMapping
-  result.pairs = @pairs
-  result.tag = tag
+  YamlNode(kind: yMapping, pairs: @pairs, tag: tag)
 
 proc initYamlDoc*(root: YamlNode): YamlDocument = result.root = root
 

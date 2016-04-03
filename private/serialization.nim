@@ -4,11 +4,6 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-proc initRefNodeData(p: pointer): RefNodeData =
-  result.p = p
-  result.count = 1
-  result.anchor = yAnchorNone
-
 proc newConstructionContext*(): ConstructionContext =
   new(result)
   result.refs = initTable[AnchorId, pointer]()
