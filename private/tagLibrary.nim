@@ -79,3 +79,5 @@ proc initSerializationTagLibrary(): TagLibrary =
   result.tags["tag:yaml.org,2002:value"]     = yTagValue
   result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
   result.tags["!nim:field"]                  = yTagNimField
+  result.tags["!nim:nil:string"]             = yTagNimNilString
+  result.tags["!nim:nil:seq"]                = yTagNimNilSeq

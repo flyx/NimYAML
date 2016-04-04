@@ -369,6 +369,11 @@ const
   yTagNimField*   : TagId = 100.TagId ## \
     ## This tag is used in serialization for the name of a field of an
     ## object. It may contain any string scalar that is a valid Nim symbol.
+  
+  yTagNimNilString* : TagId = 101.TagId ## for strings that are nil
+  yTagNimNilSeq*    : TagId = 102.TagId ## \
+    ## for seqs that are nil. This tag is used regardless of the seq's generic
+    ## type parameter.
     
   yFirstCustomTagId* : TagId = 1000.TagId ## \
     ## The first ``TagId`` which should be assigned to an URI that does not
@@ -570,6 +575,18 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
   ## The stream will advance until after the finishing token that was used
   ## for constructing the value. The ``ConstructionContext`` is needed for
   ## potential child objects which may be refs.
+
+proc constructChild*(s: var YamlStream, c: ConstructionContext,
+                     result: var string)
+    {.raises: [YamlConstructionError, YamlStreamError].}
+  ## Constructs a Nim value that is a string from a part of a YAML stream.
+  ## This specialization takes care of possible nil strings.
+
+proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
+                        result: var seq[T])
+    {.raises: [YamlConstructionError, YamlStreamError].}
+  ## Constructs a Nim value that is a string from a part of a YAML stream.
+  ## This specialization takes care of possible nil seqs.
 
 proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
                         result: var ref O)

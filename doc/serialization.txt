@@ -62,7 +62,9 @@ supported. There is currently no problem with ``float``, because it is always a
 ``float64``.
 
 ``string`` is supported and one of the few Nim types which directly map to a
-standard YAML type. ``char`` is also supported.
+standard YAML type. NimYAML is able to handle strings that are ``nil``, they
+will be serialized with the special tag ``!nim:nil:string``. ``char`` is also
+supported.
 
 To support new scalar types, you must implement the ``constructObject()`` and
 ``representObject()`` procs on that type (see below).
@@ -85,6 +87,9 @@ cannot be loaded to Nim collection types. For example, this sequence:
 
 Cannot be loaded to a Nim ``seq``. For this reason, you cannot load YAML's
 native ``!!map`` and ``!!seq`` types directly into Nim types.
+
+Nim ``seq`` types may be ``nil``. This is handled by serializing them to an
+empty scalar with the tag ``!nim:nil:seq``.
 
 Reference Types
 ---------------

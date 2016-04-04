@@ -93,6 +93,18 @@ suite "Serialization":
       except: gotException = true
       assert gotException, "Expected exception, got none."
 
+  test "Serialization: Load nil string":
+    let input = newStringStream("!nim:nil:string \"\"")
+    var result: string
+    load(input, result)
+    assert isNil(result)
+  
+  test "Serialization: Dump nil string":
+    let input: string = nil
+    var output = newStringStream()
+    dump(input, output, tsNone, asTidy, blockOnly)
+    assertStringEqual "%YAML 1.2\n--- \n!nim:nil:string \"\"", output.data
+
   test "Serialization: Load string sequence":
     let input = newStringStream(" - a\n - b")
     var result: seq[string]
@@ -101,11 +113,23 @@ suite "Serialization":
     assert result[0] == "a"
     assert result[1] == "b"
     
-  test "Serialization: Represent string sequence":
+  test "Serialization: Dump string sequence":
     var input = @["a", "b"]
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output.data
+  
+  test "Serialization: Load nil seq":
+    let input = newStringStream("!nim:nil:seq \"\"")
+    var result: seq[int]
+    load(input, result)
+    assert isNil(result)
+  
+  test "Serialization: Dump nil seq":
+    let input: seq[int] = nil
+    var output = newStringStream()
+    dump(input, output, tsNone, asTidy, blockOnly)
+    assertStringEqual "%YAML 1.2\n--- \n!nim:nil:seq \"\"", output.data
   
   test "Serialization: Load char set":
     let input = newStringStream("- a\n- b")
@@ -115,7 +139,7 @@ suite "Serialization":
     assert 'a' in result
     assert 'b' in result
   
-  test "Serialization: Represent char set":
+  test "Serialization: Dump char set":
     var input = {'a', 'b'}
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
@@ -129,7 +153,7 @@ suite "Serialization":
     assert result[1] == 42
     assert result[2] == 47
   
-  test "Serialization: Represent array":
+  test "Serialization: Dump array":
     let input = [23'i32, 42'i32, 47'i32]
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
@@ -143,7 +167,7 @@ suite "Serialization":
     assert result[23] == "dreiundzwanzig"
     assert result[42] == "zweiundvierzig"
     
-  test "Serialization: Represent Table[int, string]":
+  test "Serialization: Dump Table[int, string]":
     var input = initTable[int32, string]()
     input[23] = "dreiundzwanzig"
     input[42] = "zweiundvierzig"
@@ -168,7 +192,7 @@ suite "Serialization":
       else: assert false
       i.inc()
     
-  test "Serialization: Represent OrderedTable[tuple[int32, int32], string]":
+  test "Serialization: Dump OrderedTable[tuple[int32, int32], string]":
     var input = initOrderedTable[tuple[a, b: int32], string]()
     input.add((a: 23'i32, b: 42'i32), "dreiundzwanzigzweiundvierzig")
     input.add((a: 13'i32, b: 47'i32), "dreizehnsiebenundvierzig")
@@ -196,7 +220,7 @@ suite "Serialization":
     assert result[1] == @[4.int32, 5.int32]
     assert result[2] == @[6.int32]
     
-  test "Serialization: Represent Sequences in Sequence":
+  test "Serialization: Dump Sequences in Sequence":
     let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32], @[6.int32]]
     var output = newStringStream()
     dump(input, output, tsNone)
@@ -212,7 +236,7 @@ suite "Serialization":
     assert result[1] == tlGreen
     assert result[2] == tlYellow
     
-  test "Serialization: Represent Enum":
+  test "Serialization: Dump Enum":
     let input = @[tlRed, tlGreen, tlYellow]
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
@@ -227,7 +251,7 @@ suite "Serialization":
     assert result.i == 42
     assert result.b == true
 
-  test "Serialization: Represent Tuple":
+  test "Serialization: Dump Tuple":
     let input = (str: "value", i: 42.int32, b: true)
     var output = newStringStream()
     dump(input, output, tsNone)
@@ -241,7 +265,7 @@ suite "Serialization":
     assert result.surname   == "Pan"
     assert result.age == 12
     
-  test "Serialization: Represent custom object":
+  test "Serialization: Dump custom object":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = newStringStream()
     dump(input, output, tsNone, asTidy, blockOnly)
@@ -256,7 +280,7 @@ suite "Serialization":
     assert result[0] == "one"
     assert result[1] == "two"
     
-  test "Serialization: Represent sequence with explicit tags":
+  test "Serialization: Dump sequence with explicit tags":
     let input = @["one", "two"]
     var output = newStringStream()
     dump(input, output, tsAll, asTidy, blockOnly)
@@ -272,7 +296,7 @@ suite "Serialization":
     assert result.surname   == "Pan"
     assert result.age       == 12
     
-  test "Serialization: Represent custom object with explicit root tag":
+  test "Serialization: Dump custom object with explicit root tag":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = newStringStream()
     dump(input, output, tsRootOnly, asTidy, blockOnly)
@@ -280,7 +304,7 @@ suite "Serialization":
         "--- !nim:custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12",
         output.data)
     
-  test "Serialization: Represent cyclic data structure":
+  test "Serialization: Dump cyclic data structure":
     var
       a = newNode("a")
       b = newNode("b")
@@ -342,7 +366,7 @@ next:
     assert(result[0] == nil)
     assert(result[1][] == "~")
     
-  test "Serialization: Represent nil values":
+  test "Serialization: Dump nil values":
     var input = newSeq[ref string]()
     input.add(nil)
     input.add(new string)

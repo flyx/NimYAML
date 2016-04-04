@@ -488,6 +488,37 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
   else: assert false
   constructObject(s, c, result)
 
+proc constructChild*(s: var YamlStream, c: ConstructionContext,
+                     result: var string) =
+  let item = s.peek()
+  if item.kind == yamlScalar:
+    if item.scalarTag == yTagNimNilString:
+      discard s.next()
+      result = nil
+      return
+    elif item.scalarTag notin
+        [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
+      raise newException(YamlConstructionError, "Wrong tag for string")
+    elif item.scalarAnchor != yAnchorNone:
+      raise newException(YamlConstructionError, "Anchor on non-ref type")
+  constructObject(s, c, result)
+
+proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
+                        result: var seq[T]) =
+  let item = s.peek()
+  if item.kind == yamlScalar:
+    if item.scalarTag == yTagNimNilSeq:
+      discard s.next()
+      result = nil
+      return
+  elif item.kind == yamlStartSeq:
+    if item.seqTag notin [yTagQuestionMark, yamlTag(seq[T])]:
+      raise newException(YamlConstructionError, "Wrong tag for " &
+          typetraits.name(seq[T]))
+    elif item.seqAnchor != yAnchorNone:
+      raise newException(YamlConstructionError, "Anchor on non-ref type")
+  constructObject(s, c, result)
+    
 proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
                         result: var ref O) =
   var e = s.peek()
@@ -526,6 +557,20 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
 proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext):
     RawYamlStream =
   result = representObject(value, ts, c, presentTag(O, ts))
+
+proc representChild*(value: string, ts: TagStyle, c: SerializationContext):
+    RawYamlStream =
+  if isNil(value):
+    result = iterator(): YamlStreamEvent =
+      yield scalarEvent("", yTagNimNilString)
+  else: result = representObject(value, ts, c, presentTag(string, ts))
+
+proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext):
+    RawYamlStream =
+  if isNil(value):
+    result = iterator(): YamlStreamEvent =
+      yield scalarEvent("", yTagNimNilSeq)
+  else: result = representObject(value, ts, c, presentTag(seq[T], ts))
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
     RawYamlStream =
