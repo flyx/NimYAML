@@ -28,7 +28,7 @@ proc safeTagUri(id: TagId): string {.raises: [].} =
     if uri.len > 0 and uri[0] == '!': return uri[1..uri.len - 1]
     else: return uri
   except KeyError:
-    # cannot happen (theoretically, you known)
+    # cannot happen (theoretically, you know)
     assert(false)
 
 template constructScalarItem*(s: var YamlStream, i: expr,
@@ -74,9 +74,11 @@ proc constructObject*[T: int8|int16|int32|int64](
 
 template constructObject*(s: var YamlStream, c: ConstructionContext,
                           result: var int) =
-  ## calling this will raise a compiler error because ``int`` is not supported
-  {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
-  discard
+  ## constructs an integer of architecture-defined length by loading it into
+  ## int32 and then converting it.
+  var i32Result: int32
+  constructObject(s, c, i32Result)
+  result = int(i32Result)
 
 proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
     c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
@@ -86,9 +88,11 @@ proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
 
 template representObject*(value: int, tagStyle: TagStyle,
                           c: SerializationContext, tag: TagId): RawYamlStream =
-  ## calling this will raise a compiler error because ``int`` is not supported
-  {.fatal: "The length of `int` is platform dependent. Use int[8|16|32|64].".}
-  discard
+  ## represent an integer of architecture-defined length by casting it to int32.
+  ## on 64-bit systems, this may cause a type conversion error.
+  
+  # currently, sizeof(int) is at least sizeof(int32).
+  representObject(int32(value), tagStyle, c, tag)
 
 {.push overflowChecks: on.}
 proc parseBiggestUInt(s: string): uint64 =
@@ -108,11 +112,11 @@ proc constructObject*[T: uint8|uint16|uint32|uint64](
 
 template constructObject*(s: var YamlStream, c: ConstructionContext,
                           result: var uint) =
-  ## calling this will raise a compiler error because ``uint`` is not
-  ## supported
-  {.fatal:
-      "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
-  discard
+  ## represent an unsigned integer of architecture-defined length by loading it
+  ## into uint32 and then converting it.
+  var u32Result: uint32
+  constructObject(s, c, u32Result)
+  result= uint(u32Result)
 
 proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
     c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
@@ -122,13 +126,11 @@ proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
 
 template representObject*(value: uint, ts: TagStyle, c: SerializationContext,
     tag: TagId): RawYamlStream =
-  ## calling this will raise a compiler error because ``uint`` is not
-  ## supported
-  {.fatal:
-      "The length of `uint` is platform dependent. Use uint[8|16|32|64].".}
-  discard
+  ## represent an unsigned integer of architecture-defined length by casting it
+  ## to int32. on 64-bit systems, this may cause a type conversion error.
+  representObject(uint32(value), tagStyle, c, tag)
 
-proc constructObject*[T: float32|float64](
+proc constructObject*[T: float|float32|float64](
     s: var YamlStream, c: ConstructionContext, result: var T)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct a float value from a YAML scalar
@@ -144,13 +146,7 @@ proc constructObject*[T: float32|float64](
       raise newException(YamlConstructionError,
           "Cannot construct to float: " & item.scalarContent)
 
-template constructObject*(s: var YamlStream, c: ConstructionContext,
-                          result: var float) =
-  ## calling this will raise a compiler error because ``float`` is not
-  ## supported
-  {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
-
-proc representObject*[T: float32|float64](value: T, ts: TagStyle,
+proc representObject*[T: float|float32|float64](value: T, ts: TagStyle,
     c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =
   ## represents a float value as YAML scalar
   result = iterator(): YamlStreamEvent =
@@ -161,12 +157,6 @@ proc representObject*[T: float32|float64](value: T, ts: TagStyle,
     of NaN: asString = ".nan"
     else: asString = $value
     yield scalarEvent(asString, tag, yAnchorNone)
-
-template representObject*(value: float, tagStyle: TagStyle,
-                          c: SerializationContext, tag: TagId): RawYamlStream =
-  ## calling this will result in a compiler error because ``float`` is not
-  ## supported
-  {.fatal: "The length of `float` is platform dependent. Use float[32|64].".}
 
 proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
 

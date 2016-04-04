@@ -47,15 +47,19 @@ further configuration.
 Scalar Types
 ------------
 
-The following integer types are supported by NimYAML: ``int8``, ``int16``,
-``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``, ``uint64``. Note that
-the ``int`` type is *not* supported, since its sice varies based on the target
-operation system. This makes it unfit for usage within NimYAML, because a value
-might not round-trip between a binary for a 32-bit OS and another binary for a
-64-bit OS. The same goes for ``uint``.
+The following integer types are supported by NimYAML: ``int``, ``int8``,
+``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``, ``uint64``.
+Note that the ``int`` type has a variable size dependent on the target
+operation system. To make sure that it round-trips properly between 32-bit and
+64-bit operating systems, it will be converted to an ``int32`` during loading
+and dumping. This will raise an exception for values outside of the range
+``int32.low .. int32.high``! If you define the types you serialize yourself,
+always consider using an integer type with explicit length. The same goes for
+``uint``.
 
-The floating point types ``float32`` and ``float64`` are also supported, but
-``float`` is not, for the same reason.
+The floating point types ``float``, ``float32`` and ``float64`` are also
+supported. There is currently no problem with ``float``, because it is always a
+``float64``.
 
 ``string`` is supported and one of the few Nim types which directly map to a
 standard YAML type. ``char`` is also supported.

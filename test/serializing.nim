@@ -25,7 +25,10 @@ type
     value: string
     next: ref Node
     
-  BetterInt = int
+  BetterInt = distinct int
+
+proc `$`(v: BetterInt): string {.borrow.}
+proc `==`(l, r: BetterInt): bool {.borrow.}
 
 setTagUriForType(TrafficLight, "!tl")
 setTagUriForType(Node, "!example.net:Node")
@@ -64,6 +67,31 @@ proc newNode(v: string): ref Node =
 suite "Serialization":
   setup:
     let blockOnly = defineOptions(style=psBlockOnly)
+
+  test "Serialization: Load integer without fixed length":
+    var input = newStringStream("-4247")
+    var result: int
+    load(input, result)
+    assert result == -4247, "result is " & $result 
+    
+    input = newStringStream($(int64(int32.high) + 1'i64))
+    var gotException = false
+    try: load(input, result)
+    except: gotException = true
+    assert gotException, "Expected exception, got none."
+
+  test "Serialization: Dump integer without fixed length":
+    var input = -4247
+    var output = newStringStream()
+    dump(input, output, tsNone, asTidy, blockOnly)
+    assertStringEqual "%YAML 1.2\n--- \n\"-4247\"", output.data
+    
+    when sizeof(int) == sizeof(int64):
+      input = int(int32.high) + 1
+      var gotException = false
+      try: dump(input, output, tsNone, asTidy, blockOnly)
+      except: gotException = true
+      assert gotException, "Expected exception, got none."
 
   test "Serialization: Load string sequence":
     let input = newStringStream(" - a\n - b")
@@ -330,8 +358,8 @@ next:
     var result: seq[BetterInt]
     load(input, result)
     assert(result.len == 2)
-    assert(result[0] == 2)
-    assert(result[1] == 3)
+    assert(result[0] == 2.BetterInt)
+    assert(result[1] == 3.BetterInt)
     
   test "Serialization: Custom representObject":
     let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
