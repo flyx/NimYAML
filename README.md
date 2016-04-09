@@ -15,8 +15,6 @@ an overview of already available features.
    - Support generic objects
    - Support transient fields (i.e. fields that will not be (de-)serialized on
      objects and tuples)
-   - Check for and avoid name clashes when generating local tags for custom
-     object types.
 
 ## Developers
 
