@@ -238,8 +238,8 @@ Defining a custom tag uri for a type
     level, experience: int32
     drops: seq[string]
   
-  setTagUriForType(Mob, "!Mob")
-  setTagUriForType(seq[string], "!Drops")
+  setTagUri(Mob, "!Mob")
+  setTagUri(seq[string], "!Drops")
   
   var mob = Mob(level: 42, experience: 1800, drops:
       @["Sword of Mob Slaying"])
@@ -352,8 +352,7 @@ Processing a Sequence of Heterogeneous Items
   type Person = object
     name: string
 
-  setTagUriForType(Person, "!nim:demo:Person",
-                   yTagPerson)
+  setTagUri(Person, "!nim:demo:Person", yTagPerson)
 
   var
     s = newFileStream("in.yaml", fmRead)
@@ -367,7 +366,7 @@ Processing a Sequence of Heterogeneous Items
   while nextEvent.kind != yamlEndSeq:
     var curTag = nextEvent.tag()
     if curTag == yTagQuestionMark:
-      # we only support implicitly tagged scalar events
+      # we only support implicitly tagged scalars
       assert nextEvent.kind == yamlScalar
       case guessType(nextEvent.scalarContent)
       of yTypeInteger: curTag = yTagInteger
@@ -390,14 +389,11 @@ Processing a Sequence of Heterogeneous Items
       var b: bool
       events.constructChild(context, b)
       echo "got boolean: ", b
-    else:
-      # non-standard tag ids are not available
-      # at compile time
-      if curTag == yTagPerson:
-        var p: Person
-        events.constructChild(context, p)
-        echo "got Person with name: ", p.name
-      else: assert false, "unsupported tag: " & $curTag
+    of yTagPerson:
+      var p: Person
+      events.constructChild(context, p)
+      echo "got Person with name: ", p.name
+    else: assert false, "unsupported tag: " & $curTag
     nextEvent = events.peek()
   assert events.next().kind == yamlEndSeq
   assert events.next().kind == yamlEndDoc

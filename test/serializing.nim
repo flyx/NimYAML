@@ -30,9 +30,9 @@ type
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(l, r: BetterInt): bool {.borrow.}
 
-setTagUriForType(TrafficLight, "!tl")
-setTagUriForType(Node, "!example.net:Node")
-setTagUriForType(BetterInt, "!test:BetterInt")
+setTagUri(TrafficLight, "!tl")
+setTagUri(Node, "!example.net:Node")
+setTagUri(BetterInt, "!test:BetterInt")
 
 proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
     c: SerializationContext, tag: TagId): RawYamlStream {.raises: [].} =

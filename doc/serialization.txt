@@ -142,13 +142,13 @@ These tags are generated on the fly based on the types you instantiate
 ``Table`` or ``seq`` with.
 
 You may customize the tags used for your types by using the template
-`setTagUriForType <yaml.html#setTagUriForType.t,typedesc,string>`_. It may not
+`setTagUri <yaml.html#setTagUri.t,typedesc,string>`_. It may not
 be applied to scalar and collection types implemented by NimYAML, but you can
 for example use it on a certain ``seq`` type:
 
 .. code-block:: nim
 
-    setTagUriForType(seq[string], "!nim:my:seq")
+    setTagUri(seq[string], "!nim:my:seq")
 
 Customize Serialization
 =======================
