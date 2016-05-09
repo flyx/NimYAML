@@ -385,7 +385,7 @@ proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
     yield endSeqEvent()
 
 template yamlTag*(T: typedesc[object|enum]): expr =
-  var uri = when compiles(yamlTagId(T)): yamlTagId(T) else:
+  var uri = when compiles(yamlTag(T)): yamlTag(T) else:
       "!nim:custom:" & (typetraits.name(type(T)))
   try: serializationTagLibrary.tags[uri]
   except KeyError: serializationTagLibrary.registerUri(uri)
@@ -553,10 +553,6 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     var e = newException(YamlStreamError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
-
-proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext):
-    RawYamlStream =
-  result = representObject(value, ts, c, presentTag(O, ts))
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext):
     RawYamlStream =
