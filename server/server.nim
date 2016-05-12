@@ -4,7 +4,8 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import jester, asyncdispatch, json, streams
+import jester, asyncdispatch, json, streams, strutils
+import packages.docutils.rstgen, packages.docutils.highlite
 import yaml
 
 routes:
@@ -38,10 +39,27 @@ routes:
         resp resultNode.pretty, "application/json"
         tokens = true
       if not tokens:
-        var output = newStringStream()
+        var
+          output = newStringStream()
+          highlighted = ""
         transform(newStringStream(@"input"), output, defineOptions(style))
+        
+        # syntax highlighting (stolen and modified from stlib's rstgen)
+        var g: GeneralTokenizer
+        g.initGeneralTokenizer(output.data)
+        while true:
+          g.getNextToken(langYaml)
+          case g.kind
+          of gtEof: break
+          of gtNone, gtWhitespace:
+            highlighted.add(substr(output.data, g.start, g.length + g.start - 1))
+          else:
+            highlighted.addf("<span class=\"$2\">$1</span>", "\\span$2{$1}", [
+              esc(outHtml, substr(output.data, g.start, g.length+g.start-1)),
+              tokenClassToStr[g.kind]])
+
         resultNode["code"] = %0
-        resultNode["output"] = %output.data
+        resultNode["output"] = %highlighted
         resp resultNode.pretty, "application/json"
     except YamlParserError:
       let e = (ref YamlParserError)(getCurrentException())
