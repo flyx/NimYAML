@@ -67,28 +67,28 @@ template debugFail() {.dirty.} =
     echo "internal error at line: ", instantiationInfo().line
   assert(false)
 
-template parserError(message: string) {.dirty.} =
-  var e = newException(YamlParserError, message)
-  e.line = p.lexer.lineNumber
-  e.column = p.tokenstart + 1
-  e.lineContent = p.getLineContent(true)
-  raise e
+proc generateError(p: YamlParser, message: string):
+    ref YamlParserError {.raises: [].} =
+  result = newException(YamlParserError, message)
+  result.line = p.lexer.lineNumber
+  result.column = p.tokenstart + 1
+  result.lineContent = p.getLineContent(true)
 
-template lexerError(lx: BaseLexer, message: string) {.dirty.} =
-  var e = newException(YamlParserError, message)
-  e.line = lx.lineNumber
-  e.column = lx.bufpos + 1
-  e.lineContent = lx.getCurrentLine(false) &
+proc generateError(lx: BaseLexer, message: string):
+    ref YamlParserError {.raises: [].} =
+  result = newException(YamlParserError, message)
+  result.line = lx.lineNumber
+  result.column = lx.bufpos + 1
+  result.lineContent = lx.getCurrentLine(false) &
       repeat(' ', lx.getColNumber(lx.bufpos)) & "^\n"
-  raise e
 
-template addMultiple(s: var string, c: char, num: int) =
+proc addMultiple(s: var string, c: char, num: int) {.raises: [], inline.} =
   for i in 1..num:
     s.add(c)
 
-template startContent() {.dirty.} = content.setLen(0)
+proc reset(content: var string) {.raises: [], inline.} = content.setLen(0)
 
-template initLevel(k: FastParseLevelKind): FastParseLevel =
+proc initLevel(k: FastParseLevelKind): FastParseLevel {.raises: [], inline.} =
   FastParseLevel(kind: k, indentation: UnknownIndentation)
 
 template yieldEmptyScalar() {.dirty.} =
@@ -205,44 +205,45 @@ template closeEverything() {.dirty.} =
   yield endDocEvent()
 
 template handleBlockSequenceIndicator() {.dirty.} =
-  startToken()
+  p.startToken()
   case level.kind
   of fplUnknown: handleObjectStart(yamlStartSeq)
   of fplSequence:
     if level.indentation != indentation:
-      parserError("Invalid indentation of block sequence indicator")
+      raise p.generateError("Invalid indentation of block sequence indicator")
     ancestry.add(level)
     level = initLevel(fplUnknown)
-  else: parserError("Illegal sequence item in map")
+  else: raise p.generateError("Illegal sequence item in map")
   p.lexer.skipWhitespace()
   indentation = p.lexer.getColNumber(p.lexer.bufpos)
 
 template handleMapKeyIndicator() {.dirty.} =
-  startToken()
+  p.startToken()
   case level.kind
   of fplUnknown: handleObjectStart(yamlStartMap)
   of fplMapValue:
     if level.indentation != indentation:
-      parserError("Invalid indentation of map key indicator")
+      raise p.generateError("Invalid indentation of map key indicator")
     yield scalarEvent("", yTagQuestionMark, yAnchorNone)
     level.kind = fplMapKey
     ancestry.add(level)
     level = initLevel(fplUnknown)
   of fplMapKey:
     if level.indentation != indentation:
-      parserError("Invalid indentation of map key indicator")
+      raise p.generateError("Invalid indentation of map key indicator")
     ancestry.add(level)
     level = initLevel(fplUnknown)
   of fplSequence:
-    parserError("Unexpected map key indicator (expected '- ')")
+    raise p.generateError("Unexpected map key indicator (expected '- ')")
   of fplScalar:
-    parserError("Unexpected map key indicator (expected multiline scalar end)")
+    raise p.generateError(
+        "Unexpected map key indicator (expected multiline scalar end)")
   of fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
   p.lexer.skipWhitespace()
   indentation = p.lexer.getColNumber(p.lexer.bufpos)
 
 template handleMapValueIndicator() {.dirty.} =
-  startToken()
+  p.startToken()
   case level.kind
   of fplUnknown:
     if level.indentation == UnknownIndentation:
@@ -252,20 +253,20 @@ template handleMapValueIndicator() {.dirty.} =
     ancestry[ancestry.high].kind = fplMapValue
   of fplMapKey:
     if level.indentation != indentation:
-      parserError("Invalid indentation of map key indicator")
+      raise p.generateError("Invalid indentation of map key indicator")
     yield scalarEvent("", yTagQuestionMark, yAnchorNone)
     level.kind = fplMapValue
     ancestry.add(level)
     level = initLevel(fplUnknown)
   of fplMapValue:
     if level.indentation != indentation:
-      parserError("Invalid indentation of map key indicator")
+      raise p.generateError("Invalid indentation of map key indicator")
     ancestry.add(level)
     level = initLevel(fplUnknown)
   of fplSequence:
-    parserError("Unexpected map value indicator (expected '- ')")
+    raise p.generateError("Unexpected map value indicator (expected '- ')")
   of fplScalar:
-    parserError(
+    raise p.generateError(
         "Unexpected map value indicator (expected multiline scalar end)")
   of fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
   p.lexer.skipWhitespace()
@@ -283,11 +284,11 @@ template initDocValues() {.dirty.} =
   ancestry.add(FastParseLevel(kind: fplDocument, indentation: -1))
 
 template handleTagHandle() {.dirty.} =
-  startToken()
-  if level.kind != fplUnknown: parserError("Unexpected tag handle")
+  p.startToken()
+  if level.kind != fplUnknown: raise p.generateError("Unexpected tag handle")
   if tag != yTagQuestionMark:
-    parserError("Only one tag handle is allowed per node")
-  startContent()
+    raise p.generateError("Only one tag handle is allowed per node")
+  content.reset()
   var
     shorthandEnd: int
   p.lexer.tagHandle(content, shorthandEnd)
@@ -297,7 +298,8 @@ template handleTagHandle() {.dirty.} =
       tagUri.add(shorthands[content[0..shorthandEnd]])
       tagUri.add(content[shorthandEnd + 1 .. ^1])
     except KeyError:
-      parserError("Undefined tag shorthand: " & content[0..shorthandEnd])
+      raise p.generateError(
+          "Undefined tag shorthand: " & content[0..shorthandEnd])
     try: tag = p.tagLib.tags[tagUri]
     except KeyError: tag = p.tagLib.registerUri(tagUri)
   else:
@@ -305,26 +307,26 @@ template handleTagHandle() {.dirty.} =
     except KeyError: tag = p.tagLib.registerUri(content)
 
 template handleAnchor() {.dirty.} =
-  startToken()
-  if level.kind != fplUnknown: parserError("Unexpected token")
+  p.startToken()
+  if level.kind != fplUnknown: raise p.generateError("Unexpected token")
   if anchor != yAnchorNone:
-    parserError("Only one anchor is allowed per node")
-  startContent()
+    raise p.generateError("Only one anchor is allowed per node")
+  content.reset()
   p.lexer.anchorName(content)
   anchor = nextAnchorId
   anchors[content] = anchor
-  nextAnchorId = cast[AnchorId](cast[int](nextAnchorId) + 1)
+  nextAnchorId = AnchorId(int(nextAnchorId) + 1)
 
 template handleAlias() {.dirty.} =
-  startToken()
-  if level.kind != fplUnknown: parserError("Unexpected token")
+  p.startToken()
+  if level.kind != fplUnknown: raise p.generateError("Unexpected token")
   if anchor != yAnchorNone or tag != yTagQuestionMark:
-    parserError("Alias may not have anchor or tag")
-  startContent()
+    raise p.generateError("Alias may not have anchor or tag")
+  content.reset()
   p.lexer.anchorName(content)
   var id: AnchorId
   try: id = anchors[content]
-  except KeyError: parserError("Unknown anchor")
+  except KeyError: raise p.generateError("Unknown anchor")
   yield aliasEvent(id)
   handleObjectEnd(fpBlockAfterObject)
 
@@ -385,7 +387,8 @@ template handleBlockItemStart() {.dirty.} =
   case level.kind
   of fplUnknown: handlePossibleMapStart()
   of fplSequence:
-    parserError("Unexpected token (expected block sequence indicator)")
+    raise p.generateError(
+        "Unexpected token (expected block sequence indicator)")
   of fplMapKey:
     ancestry.add(level)
     level = FastParseLevel(kind: fplUnknown, indentation: indentation)
@@ -400,19 +403,20 @@ template handleFlowItemStart() {.dirty.} =
   if level.kind == fplUnknown and ancestry[ancestry.high].kind == fplSequence:
     handlePossibleMapStart(true, true)
 
-template startToken() {.dirty.} =
+proc startToken(p: YamlParser) {.raises: [], inline.} =
   p.tokenstart = p.lexer.getColNumber(p.lexer.bufpos)
 
-template finishLine(lexer: BaseLexer) =
+proc finishLine(lexer: var BaseLexer) {.raises: [], inline.} =
   debug("lex: finishLine")
   while lexer.buf[lexer.bufpos] notin lineEnd:
     lexer.bufpos.inc()
 
-template skipWhitespace(lexer: BaseLexer) =
+proc skipWhitespace(lexer: var BaseLexer) {.raises: [], inline.} =
   debug("lex: skipWhitespace")
   while lexer.buf[lexer.bufpos] in space: lexer.bufpos.inc()
 
-template skipWhitespaceCommentsAndNewlines(lexer: BaseLexer) =
+# TODO: {.raises: [].}
+proc skipWhitespaceCommentsAndNewlines(lexer: var BaseLexer) {.inline.} =
   debug("lex: skipWhitespaceCommentsAndNewlines")
   if lexer.buf[lexer.bufpos] != '#':
     while true:
@@ -426,11 +430,12 @@ template skipWhitespaceCommentsAndNewlines(lexer: BaseLexer) =
           lexer.bufpos.inc()
       else: break
 
-template skipIndentation(lexer: BaseLexer) =
+proc skipIndentation(lexer: var BaseLexer) {.raises: [], inline.} =
   debug("lex: skipIndentation")
   while lexer.buf[lexer.bufpos] == ' ': lexer.bufpos.inc()
 
-template directiveName(lexer: BaseLexer, directive: var LexedDirective) =
+proc directiveName(lexer: var BaseLexer, directive: var LexedDirective)
+    {.raises: [].} =
   debug("lex: directiveName")
   directive = ldUnknown
   lexer.bufpos.inc()
@@ -455,11 +460,12 @@ template directiveName(lexer: BaseLexer, directive: var LexedDirective) =
   while lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
     lexer.bufpos.inc()
 
-template yamlVersion(lexer: BaseLexer, o: var string) =
+proc yamlVersion(lexer: var BaseLexer, o: var string)
+    {.raises: [YamlParserError], inline.} =
   debug("lex: yamlVersion")
   while lexer.buf[lexer.bufpos] in space: lexer.bufpos.inc()
   var c = lexer.buf[lexer.bufpos]
-  if c notin digits: lexerError(lexer, "Invalid YAML version number")
+  if c notin digits: raise lexer.generateError("Invalid YAML version number")
   o.add(c)
   lexer.bufpos.inc()
   c = lexer.buf[lexer.bufpos]
@@ -468,11 +474,11 @@ template yamlVersion(lexer: BaseLexer, o: var string) =
     o.add(c)
     c = lexer.buf[lexer.bufpos]
   if lexer.buf[lexer.bufpos] != '.':
-    lexerError(lexer, "Invalid YAML version number")
+    raise lexer.generateError("Invalid YAML version number")
   o.add('.')
   lexer.bufpos.inc()
   c = lexer.buf[lexer.bufpos]
-  if c notin digits: lexerError(lexer, "Invalid YAML version number")
+  if c notin digits: raise lexer.generateError("Invalid YAML version number")
   o.add(c)
   lexer.bufpos.inc()
   c = lexer.buf[lexer.bufpos]
@@ -481,20 +487,20 @@ template yamlVersion(lexer: BaseLexer, o: var string) =
     lexer.bufpos.inc()
     c = lexer.buf[lexer.bufpos]
   if lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
-    lexerError(lexer, "Invalid YAML version number")
+    raise lexer.generateError("Invalid YAML version number")
 
-template lineEnding(lexer: BaseLexer) =
+proc lineEnding(p: YamlParser) {.raises: [YamlParserError], inline.} =
   debug("lex: lineEnding")
-  if lexer.buf[lexer.bufpos] notin lineEnd:
-    while lexer.buf[lexer.bufpos] in space: lexer.bufpos.inc()
-    if lexer.buf[lexer.bufpos] in lineEnd: discard
-    elif lexer.buf[lexer.bufpos] == '#':
-      while lexer.buf[lexer.bufpos] notin lineEnd: lexer.bufpos.inc()
+  if p.lexer.buf[p.lexer.bufpos] notin lineEnd:
+    while p.lexer.buf[p.lexer.bufpos] in space: p.lexer.bufpos.inc()
+    if p.lexer.buf[p.lexer.bufpos] in lineEnd: discard
+    elif p.lexer.buf[p.lexer.bufpos] == '#':
+      while p.lexer.buf[p.lexer.bufpos] notin lineEnd: p.lexer.bufpos.inc()
     else:
-      startToken()
-      parserError("Unexpected token (expected comment or line end)")
+      p.startToken()
+      raise p.generateError("Unexpected token (expected comment or line end)")
 
-template tagShorthand(lexer: BaseLexer, shorthand: var string) =
+proc tagShorthand(lexer: var BaseLexer, shorthand: var string) {.inline.} =
   debug("lex: tagShorthand")
   while lexer.buf[lexer.bufpos] in space: lexer.bufpos.inc()
   assert lexer.buf[lexer.bufpos] == '!'
@@ -509,13 +515,14 @@ template tagShorthand(lexer: BaseLexer, shorthand: var string) =
         shorthand.add(c)
         lexer.bufpos.inc()
         c = lexer.buf[lexer.bufpos]
-      else: lexerError(lexer, "Illegal character in tag shorthand")
+      else: raise lexer.generateError("Illegal character in tag shorthand")
     shorthand.add(c)
     lexer.bufpos.inc()
   if lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
-    lexerError(lexer, "Missing space after tag shorthand")
+    raise lexer.generateError("Missing space after tag shorthand")
 
-template tagUriMapping(lexer: BaseLexer, uri: var string) =
+proc tagUriMapping(lexer: var BaseLexer, uri: var string)
+    {.raises: [YamlParserError].} =
   debug("lex: tagUriMapping")
   while lexer.buf[lexer.bufpos] in space:
     lexer.bufpos.inc()
@@ -531,9 +538,10 @@ template tagUriMapping(lexer: BaseLexer, uri: var string) =
       uri.add(c)
       lexer.bufpos.inc()
       c = lexer.buf[lexer.bufpos]
-    else: lexerError(lexer, "Invalid tag uri")
+    else: raise lexer.generateError("Invalid tag uri")
 
-template directivesEndMarker(lexer: var BaseLexer, success: var bool) =
+proc directivesEndMarker(lexer: var BaseLexer, success: var bool)
+    {.raises: [].} =
   debug("lex: directivesEndMarker")
   success = true
   for i in 0..2:
@@ -542,7 +550,7 @@ template directivesEndMarker(lexer: var BaseLexer, success: var bool) =
       break
   if success: success = lexer.buf[lexer.bufpos + 3] in spaceOrLineEnd
 
-template documentEndMarker(lexer: var BaseLexer, success: var bool) =
+proc documentEndMarker(lexer: var BaseLexer, success: var bool) {.raises: [].} =
   debug("lex: documentEndMarker")
   success = true
   for i in 0..2:
@@ -562,18 +570,17 @@ proc unicodeSequence(lexer: var BaseLexer, length: int):
       c = lexer.buf[lexer.bufpos]
     case c
     of EndOFFile, '\l', '\c':
-        lexerError(lexer, "Unfinished unicode escape sequence")
+      raise lexer.generateError("Unfinished unicode escape sequence")
     of '0' .. '9':
-        unicodeChar = unicodechar or
-                (cast[int](c) - 0x30) shl (digitPosition * 4)
+      unicodeChar = unicodechar or (int(c) - 0x30) shl (digitPosition * 4)
     of 'A' .. 'F':
-        unicodeChar = unicodechar or
-                (cast[int](c) - 0x37) shl (digitPosition * 4)
+      unicodeChar = unicodechar or (int(c) - 0x37) shl (digitPosition * 4)
     of 'a' .. 'f':
-        unicodeChar = unicodechar or
-                (cast[int](c) - 0x57) shl (digitPosition * 4)
-    else: lexerError(lexer, "Invalid character in unicode escape sequence")
-  return toUTF8(cast[Rune](unicodeChar))
+      unicodeChar = unicodechar or (int(c) - 0x57) shl (digitPosition * 4)
+    else:
+      raise lexer.generateError(
+          "Invalid character in unicode escape sequence")
+  return toUTF8(Rune(unicodeChar))
 
 proc byteSequence(lexer: var BaseLexer): char {.raises: [YamlParserError].} =
   debug("lex: byteSequence")
@@ -585,17 +592,20 @@ proc byteSequence(lexer: var BaseLexer): char {.raises: [YamlParserError].} =
       c = lexer.buf[lexer.bufpos]
     case c
     of EndOfFile, '\l', 'r':
-      lexerError(lexer, "Unfinished octet escape sequence")
+      raise lexer.generateError("Unfinished octet escape sequence")
     of '0' .. '9':
       charCode = charCode or (int8(c) - 0x30.int8) shl (digitPosition * 4)
     of 'A' .. 'F':
       charCode = charCode or (int8(c) - 0x37.int8) shl (digitPosition * 4)
     of 'a' .. 'f':
       charCode = charCode or (int8(c) - 0x57.int8) shl (digitPosition * 4)
-    else: lexerError(lexer, "Invalid character in octet escape sequence")
+    else:
+      raise lexer.generateError("Invalid character in octet escape sequence")
   return char(charCode)
 
-template processQuotedWhitespace(newlines: var int) {.dirty.} =
+# TODO: {.raises: [].}
+proc processQuotedWhitespace(p: YamlParser, content, after: var string,
+                             newlines: var int) =
   after.setLen(0)
   block outer:
     while true:
@@ -629,19 +639,20 @@ template processQuotedWhitespace(newlines: var int) {.dirty.} =
         break
       p.lexer.bufpos.inc()
 
-template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
+# TODO: {.raises: [YamlParserError].}
+proc doubleQuotedScalar(p: YamlParser, content, after: var string) =
   debug("lex: doubleQuotedScalar")
-  lexer.bufpos.inc()
+  p.lexer.bufpos.inc()
   while true:
-    var c = lexer.buf[lexer.bufpos]
+    var c = p.lexer.buf[p.lexer.bufpos]
     case c
     of EndOfFile:
-      lexerError(lexer, "Unfinished double quoted string")
+      raise p.lexer.generateError("Unfinished double quoted string")
     of '\\':
-      lexer.bufpos.inc()
-      case lexer.buf[lexer.bufpos]
+      p.lexer.bufpos.inc()
+      case p.lexer.buf[p.lexer.bufpos]
       of EndOfFile:
-        lexerError(lexer, "Unfinished escape sequence")
+        raise p.lexer.generateError("Unfinished escape sequence")
       of '0':       content.add('\0')
       of 'a':       content.add('\x07')
       of 'b':       content.add('\x08')
@@ -659,41 +670,42 @@ template doubleQuotedScalar(lexer: BaseLexer, content: var string) =
       of '_':       content.add(UTF8NonBreakingSpace)
       of 'L':       content.add(UTF8LineSeparator)
       of 'P':       content.add(UTF8ParagraphSeparator)
-      of 'x':       content.add(lexer.unicodeSequence(2))
-      of 'u':       content.add(lexer.unicodeSequence(4))
-      of 'U':       content.add(lexer.unicodeSequence(8))
+      of 'x':       content.add(p.lexer.unicodeSequence(2))
+      of 'u':       content.add(p.lexer.unicodeSequence(4))
+      of 'U':       content.add(p.lexer.unicodeSequence(8))
       of '\l', '\c':
         var newlines = 0
-        processQuotedWhitespace(newlines)
+        p.processQuotedWhitespace(content, after, newlines)
         continue
-      else: lexerError(lexer, "Illegal character in escape sequence")
+      else: raise p.lexer.generateError("Illegal character in escape sequence")
     of '"':
-      lexer.bufpos.inc()
+      p.lexer.bufpos.inc()
       break
     of '\l', '\c', '\t', ' ':
       var newlines = 1
-      processQuotedWhitespace(newlines)
+      p.processQuotedWhitespace(content, after, newlines)
       continue
     else:
       content.add(c)
-    lexer.bufpos.inc()
+    p.lexer.bufpos.inc()
 
-template singleQuotedScalar(lexer: BaseLexer, content: var string) =
+# TODO: {.raises: [].}
+proc singleQuotedScalar(p: YamlParser, content, after: var string) =
   debug("lex: singleQuotedScalar")
-  lexer.bufpos.inc()
+  p.lexer.bufpos.inc()
   while true:
-    case lexer.buf[lexer.bufpos]
+    case p.lexer.buf[p.lexer.bufpos]
     of '\'':
-      lexer.bufpos.inc()
-      if lexer.buf[lexer.bufpos] == '\'': content.add('\'')
+      p.lexer.bufpos.inc()
+      if p.lexer.buf[p.lexer.bufpos] == '\'': content.add('\'')
       else: break
-    of EndOfFile: lexerError(lexer, "Unfinished single quoted string")
+    of EndOfFile: raise p.lexer.generateError("Unfinished single quoted string")
     of '\l', '\c', '\t', ' ':
       var newlines = 1
-      processQuotedWhitespace(newlines)
+      p.processQuotedWhitespace(content, after, newlines)
       continue
-    else: content.add(lexer.buf[lexer.bufpos])
-    lexer.bufpos.inc()
+    else: content.add(p.lexer.buf[p.lexer.bufpos])
+    p.lexer.bufpos.inc()
 
 proc isPlainSafe(lexer: BaseLexer, index: int, context: YamlContext): bool =
   case lexer.buf[lexer.bufpos + 1]
@@ -712,8 +724,8 @@ proc isPlainSafe(lexer: BaseLexer, index: int, context: YamlContext): bool =
 #  when context == cBlock: c in plainCharOut
 #  else: c in plainCharIn
 
-template plainScalar(lexer: BaseLexer, content: var string,
-                     context: YamlContext) =
+proc plainScalar(lexer: var BaseLexer, content, after: var string,
+                 context: static[YamlContext]) {.raises: [].} =
   debug("lex: plainScalar")
   content.add(lexer.buf[lexer.bufpos])
   block outer:
@@ -758,14 +770,14 @@ template plainScalar(lexer: BaseLexer, content: var string,
 
 template continueMultilineScalar() {.dirty.} =
   content.add(if newlines == 1: " " else: repeat('\l', newlines - 1))
-  startToken()
-  p.lexer.plainScalar(content, cBlock)
+  p.startToken()
+  p.lexer.plainScalar(content, after, cBlock)
   state = fpBlockAfterPlainScalar
 
 template handleFlowPlainScalar() {.dirty.} =
-  startContent()
-  startToken()
-  p.lexer.plainScalar(content, cFlow)
+  content.reset()
+  p.startToken()
+  p.lexer.plainScalar(content, after, cFlow)
   if p.lexer.buf[p.lexer.bufpos] in {'{', '}', '[', ']', ',', ':', '#'}:
     discard
   else:
@@ -780,7 +792,7 @@ template handleFlowPlainScalar() {.dirty.} =
           elif newlines > 1:
             content.addMultiple(' ', newlines - 1)
             newlines = 0
-          p.lexer.plainScalar(content, cFlow)
+          p.lexer.plainScalar(content, after, cFlow)
         break
       of '#', EndOfFile: break
       of '\l':
@@ -798,12 +810,12 @@ template handleFlowPlainScalar() {.dirty.} =
         elif newlines > 1:
           content.addMultiple(' ', newlines - 1)
           newlines = 0
-        p.lexer.plainScalar(content, cFlow)
+        p.lexer.plainScalar(content, after, cFlow)
   yieldShallowScalar(content)
   handleObjectEnd(fpFlowAfterObject)
 
-template tagHandle(lexer: var BaseLexer, content: var string,
-                   shorthandEnd: var int) =
+proc tagHandle(lexer: var BaseLexer, content: var string,
+                shorthandEnd: var int) {.raises: [YamlParserError].} =
   debug("lex: tagHandle")
   shorthandEnd = 0
   content.add(lexer.buf[lexer.bufpos])
@@ -814,14 +826,14 @@ template tagHandle(lexer: var BaseLexer, content: var string,
     let c = lexer.buf[lexer.bufpos]
     case c
     of spaceOrLineEnd:
-      if shorthandEnd == -1: lexerError(lexer, "Unclosed verbatim tag")
+      if shorthandEnd == -1: raise lexer.generateError("Unclosed verbatim tag")
       break
     of '!':
       if shorthandEnd == -1 and i == 2:
         content.add(c)
         continue
       elif shorthandEnd != 0:
-        lexerError(lexer, "Illegal character in tag suffix")
+        raise lexer.generateError("Illegal character in tag suffix")
       shorthandEnd = i
       content.add(c)
     of 'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', ':', '@', '&',
@@ -833,21 +845,21 @@ template tagHandle(lexer: var BaseLexer, content: var string,
     of '<':
       if i == 1:
         shorthandEnd = -1
-        startContent()
-      else: lexerError(lexer, "Illegal character in tag handle")
+        content.reset()
+      else: raise lexer.generateError("Illegal character in tag handle")
     of '>':
       if shorthandEnd == -1:
         lexer.bufpos.inc()
         if lexer.buf[lexer.bufpos] notin spaceOrLineEnd:
-          lexerError(lexer, "Missing space after verbatim tag handle")
+          raise lexer.generateError("Missing space after verbatim tag handle")
         break
-      else: lexerError(lexer, "Illegal character in tag handle")
+      else: raise lexer.generateError("Illegal character in tag handle")
     of '%':
       if shorthandEnd != 0: content.add(lexer.byteSequence())
-      else: lexerError(lexer, "Illegal character in tag handle")
-    else: lexerError(lexer, "Illegal character in tag handle")
+      else: raise lexer.generateError("Illegal character in tag handle")
+    else: raise lexer.generateError("Illegal character in tag handle")
 
-template anchorName(lexer: BaseLexer, content: var string) =
+proc anchorName(lexer: var BaseLexer, content: var string) {.raises: [].} =
   debug("lex: anchorName")
   while true:
     lexer.bufpos.inc()
@@ -856,26 +868,25 @@ template anchorName(lexer: BaseLexer, content: var string) =
     of spaceOrLineEnd, '[', ']', '{', '}', ',': break
     else: content.add(c)
 
-template consumeLineIfEmpty(lex: BaseLexer): bool =
-  var result = true
+proc consumeLineIfEmpty(p: YamlParser, newlines: var int): bool =
+  result = true
   while true:
-    lex.bufpos.inc()
-    case lex.buf[lex.bufpos]
+    p.lexer.bufpos.inc()
+    case p.lexer.buf[p.lexer.bufpos]
     of ' ', '\t': discard
     of '\l':
-      lex.bufpos = lex.handleLF(lex.bufpos)
+      p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
       break
     of '\c':
-      lex.bufpos = lex.handleCR(lex.bufpos)
+      p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
       break
     of '#', EndOfFile:
-      lex.lineEnding()
+      p.lineEnding()
       handleLineEnd(false)
       break
     else:
       result = false
       break
-  result
 
 template startScalar(t: ScalarType) {.dirty.} =
   newlines = 0
@@ -893,25 +904,27 @@ template blockScalarHeader() {.dirty.} =
     case p.lexer.buf[p.lexer.bufpos]
     of '+':
       if chomp != ctClip:
-        lexerError(p.lexer, "Only one chomping indicator is allowed")
+        raise p.lexer.generateError("Only one chomping indicator is allowed")
       chomp = ctKeep
     of '-':
       if chomp != ctClip:
-        lexerError(p.lexer, "Only one chomping indicator is allowed")
+        raise p.lexer.generateError("Only one chomping indicator is allowed")
       chomp = ctStrip
     of '1'..'9':
       if level.indentation != UnknownIndentation:
-        lexerError(p.lexer, "Only one indentation indicator is allowed")
+        raise p.lexer.generateError("Only one indentation indicator is allowed")
       level.indentation = ancestry[ancestry.high].indentation +
           ord(p.lexer.buf[p.lexer.bufpos]) - ord('\x30')
     of spaceOrLineEnd: break
-    else: lexerError(p.lexer, "Illegal character in block scalar header: '" &
-                     p.lexer.buf[p.lexer.bufpos] & "'")
+    else:
+      raise p.lexer.generateError(
+          "Illegal character in block scalar header: '" &
+          p.lexer.buf[p.lexer.bufpos] & "'")
   recentWasMoreIndented = false
-  p.lexer.lineEnding()
+  p.lineEnding()
   handleLineEnd(true)
   startScalar(t)
-  startContent()
+  content.reset()
 
 template blockScalarLine() {.dirty.} =
   debug("lex: blockScalarLine")
@@ -919,16 +932,17 @@ template blockScalarLine() {.dirty.} =
     if p.lexer.buf[p.lexer.bufpos] == '#':
       # skip all following comment lines
       while indentation > ancestry[ancestry.high].indentation:
-        p.lexer.lineEnding()
+        p.lineEnding()
         handleLineEnd(true)
         newlines.inc(-1)
         p.lexer.skipIndentation()
         indentation = p.lexer.getColNumber(p.lexer.bufpos)
       if indentation > ancestry[ancestry.high].indentation:
-        p.lexer.lexerError("Invalid content in block scalar after comments")
+        raise p.lexer.generateError(
+            "Invalid content in block scalar after comments")
       closeMoreIndentedLevels()
     else:
-      p.lexer.lexerError(
+      raise p.lexer.generateError(
           "Invalid indentation (expected indentation of at least " &
           $level.indentation & " spaces)")    
   else:
@@ -989,12 +1003,12 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         case p.lexer.buf[p.lexer.bufpos]
         of '%':
           var ld: LexedDirective
-          startToken()
+          p.startToken()
           p.lexer.directiveName(ld)
           case ld
           of ldYaml:
             var version = ""
-            startToken()
+            p.startToken()
             p.lexer.yamlVersion(version)
             if version != "1.2":
               if p.callback != nil:
@@ -1002,16 +1016,16 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
                              p.getLineContent(),
                              "Version is not 1.2, but " & version)
               discard
-            p.lexer.lineEnding()
+            p.lineEnding()
             handleLineEnd(false)
           of ldTag:
             var shorthand = ""
             tagUri.setLen(0)
-            startToken()
+            p.startToken()
             p.lexer.tagShorthand(shorthand)
             p.lexer.tagUriMapping(tagUri)
             shorthands[shorthand] = tagUri
-            p.lexer.lineEnding()
+            p.lineEnding()
             handleLineEnd(false)
           of ldUnknown:
             if p.callback != nil:
@@ -1020,7 +1034,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             p.lexer.finishLine()
             handleLineEnd(false)
         of ' ', '\t':
-          if not p.lexer.consumeLineIfEmpty():
+          if not p.consumeLineIfEmpty(newlines):
             indentation = p.lexer.getColNumber(p.lexer.bufpos)
             yield startDocEvent()
             state = fpBlockObjectStart
@@ -1028,11 +1042,11 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of '\c': p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
         of EndOfFile: return
         of '#':
-          p.lexer.lineEnding()
+          p.lineEnding()
           handleLineEnd(false)
         of '-':
           var success: bool
-          startToken()
+          p.startToken()
           p.lexer.directivesEndMarker(success)
           yield startDocEvent()
           if success:
@@ -1047,16 +1061,16 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         case p.lexer.buf[p.lexer.bufpos]
         of '\l':
           if level.kind notin {fplUnknown, fplScalar}:
-            startToken()
-            parserError("Unexpected scalar")
+            p.startToken()
+            raise p.generateError("Unexpected scalar")
           startScalar(stFlow)
           p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
           newlines.inc()
           state = fpBlockObjectStart
         of '\c':
           if level.kind notin {fplUnknown, fplScalar}:
-            startToken()
-            parserError("Unexpected scalar")
+            p.startToken()
+            raise p.generateError("Unexpected scalar")
           startScalar(stFlow)
           p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
           newlines.inc()
@@ -1091,23 +1105,25 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             ancestry.add(level)
             level = initLevel(fplUnknown)
           of fplSequence:
-            startToken()
-            parserError("Illegal token (expected sequence item)")
+            p.startToken()
+            raise p.generateError("Illegal token (expected sequence item)")
           of fplScalar:
-            startToken()
-            parserError("Multiline scalars may not be implicit map keys")
+            p.startToken()
+            raise p.generateError(
+                "Multiline scalars may not be implicit map keys")
           of fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
           p.lexer.bufpos.inc()
           p.lexer.skipWhitespace()
           indentation = p.lexer.getColNumber(p.lexer.bufpos)
           state = fpBlockObjectStart
         of '#':
-          p.lexer.lineEnding()
+          p.lineEnding()
           handleLineEnd(true)
           state = fpBlockObjectStart
         else:
-          startToken()
-          parserError("Illegal token (expected ':', comment or line end)")
+          p.startToken()
+          raise p.generateError(
+              "Illegal token (expected ':', comment or line end)")
       of fpBlockObjectStart:
         debug("state: blockObjectStart")
         p.lexer.skipIndentation()
@@ -1125,7 +1141,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           if success:
             closeEverything()
             p.lexer.bufpos.inc(3)
-            p.lexer.lineEnding()
+            p.lineEnding()
             handleLineEnd(false)
             state = fpAfterDocument
             continue
@@ -1134,7 +1150,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             handleLineEnd(true)
             continue
           elif p.lexer.buf[p.lexer.bufpos] == '#':
-            p.lexer.lineEnding()
+            p.lineEnding()
             handleLineEnd(true)
             continue
           elif p.lexer.buf[p.lexer.bufpos] == '-' and not
@@ -1161,22 +1177,22 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           closeEverything()
           return
         of '#':
-          p.lexer.lineEnding()
+          p.lineEnding()
           handleLineEnd(true)
           if level.kind == fplUnknown: level.indentation = UnknownIndentation
         of '\'':
           handleBlockItemStart()
-          startContent()
-          startToken()
-          p.lexer.singleQuotedScalar(content)
+          content.reset()
+          p.startToken()
+          p.singleQuotedScalar(content, after)
           if tag == yTagQuestionMark: tag = yTagExclamationMark
           yieldShallowScalar(content)
           handleObjectEnd(fpBlockAfterObject)
         of '"':
           handleBlockItemStart()
-          startContent()
-          startToken()
-          p.lexer.doubleQuotedScalar(content)
+          content.reset()
+          p.startToken()
+          p.doubleQuotedScalar(content, after)
           if tag == yTagQuestionMark: tag = yTagExclamationMark
           yieldShallowScalar(content)
           handleObjectEnd(fpBlockAfterObject)
@@ -1188,9 +1204,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             if level.kind == fplScalar: continueMultilineScalar()
             else:
               handleBlockItemStart()
-              startContent()
-              startToken()
-              p.lexer.plainScalar(content, cBlock)
+              content.reset()
+              p.startToken()
+              p.lexer.plainScalar(content, after, cBlock)
               state = fpBlockAfterPlainScalar
           else:
             p.lexer.bufpos.inc()
@@ -1212,9 +1228,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             if level.kind == fplScalar: continueMultilineScalar()
             else:
               handleBlockItemStart()
-              startContent()
-              startToken()
-              p.lexer.plainScalar(content, cBlock)
+              content.reset()
+              p.startToken()
+              p.lexer.plainScalar(content, after, cBlock)
               state = fpBlockAfterPlainScalar
           else:
             p.lexer.bufpos.inc()
@@ -1224,27 +1240,28 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             if level.kind == fplScalar: continueMultilineScalar()
             else:
               handleBlockItemStart()
-              startContent()
-              startToken()
-              p.lexer.plainScalar(content, cBlock)
+              content.reset()
+              p.startToken()
+              p.lexer.plainScalar(content, after, cBlock)
               state = fpBlockAfterPlainScalar
           else:
             p.lexer.bufpos.inc()
             handleMapValueIndicator()
         of '@', '`':
-          lexerError(p.lexer, "Reserved characters cannot start a plain scalar")
+          raise p.lexer.generateError(
+              "Reserved characters cannot start a plain scalar")
         of '\t':
           if level.kind == fplScalar:
             p.lexer.skipWhitespace()
             continueMultilineScalar()
-          else: lexerError(p.lexer, "\\t cannot start any token")
+          else: raise p.lexer.generateError("\\t cannot start any token")
         else:
           if level.kind == fplScalar: continueMultilineScalar()
           else:
             handleBlockItemStart()
-            startContent()
-            startToken()
-            p.lexer.plainScalar(content, cBlock)
+            content.reset()
+            p.startToken()
+            p.lexer.plainScalar(content, after, cBlock)
             state = fpBlockAfterPlainScalar
       of fpExpectDocEnd:
         debug("state: expectDocEnd")
@@ -1259,20 +1276,22 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             initDocValues()
             yield startDocEvent()
             state = fpBlockObjectStart
-          else: parserError("Unexpected content (expected document end)")
+          else:
+            raise p.generateError("Unexpected content (expected document end)")
         of '.':
           var isDocumentEnd: bool
-          startToken()
+          p.startToken()
           p.lexer.documentEndMarker(isDocumentEnd)
           if isDocumentEnd:
             closeEverything()
             p.lexer.bufpos.inc(3)
-            p.lexer.lineEnding()
+            p.lineEnding()
             handleLineEnd(false)
             state = fpAfterDocument
-          else: parserError("Unexpected content (expected document end)")
+          else:
+            raise p.generateError("Unexpected content (expected document end)")
         of ' ', '\t', '#':
-          p.lexer.lineEnding()
+          p.lineEnding()
           handleLineEnd(true)
         of '\l': p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
         of '\c': p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
@@ -1280,28 +1299,28 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           yield endDocEvent()
           break
         else:
-          startToken()
-          parserError("Unexpected content (expected document end)")
+          p.startToken()
+          raise p.generateError("Unexpected content (expected document end)")
       of fpAfterDocument:
         debug("state: afterDocument")
         case p.lexer.buf[p.lexer.bufpos]
         of '.':
           var isDocumentEnd: bool
-          startToken()
+          p.startToken()
           p.lexer.documentEndMarker(isDocumentEnd)
           if isDocumentEnd:
             p.lexer.bufpos.inc(3)
-            p.lexer.lineEnding()
+            p.lineEnding()
             handleLineEnd(false)
           else:
             initDocValues()
             yield startDocEvent()
             state = fpBlockObjectStart
         of '#':
-          p.lexer.lineEnding()
+          p.lineEnding()
           handleLineEnd(false)
         of '\t', ' ':
-          if not p.lexer.consumeLineIfEmpty():
+          if not p.consumeLineIfEmpty(newlines):
             indentation = p.lexer.getColNumber(p.lexer.bufpos)
             initDocValues()
             yield startDocEvent()
@@ -1338,11 +1357,11 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               yieldEmptyScalar()
               yield scalarEvent("", yTagQuestionMark, yAnchorNone)
           of fplSequence:
-            startToken()
-            parserError("Unexpected token (expected ']')")
+            p.startToken()
+            raise p.generateError("Unexpected token (expected ']')")
           of fplSinglePairValue:
-            startToken()
-            parserError("Unexpected token (expected ']')")
+            p.startToken()
+            raise p.generateError("Unexpected token (expected ']')")
           of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
@@ -1359,8 +1378,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             yield endMapEvent()
             assert(level.kind == fplSequence)
           of fplMapKey, fplMapValue:
-            startToken()
-            parserError("Unexpected token (expected '}')")
+            p.startToken()
+            raise p.generateError("Unexpected token (expected '}')")
           of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
@@ -1406,8 +1425,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
               level = initLevel(fplSinglePairValue)
               yield scalarEvent("")
             of fplMapValue, fplSinglePairValue:
-              startToken()
-              parserError("Unexpected token (expected ',')")
+              p.startToken()
+              raise p.generateError("Unexpected token (expected ',')")
             of fplMapKey:
               yieldEmptyScalar()
               level.kind = fplMapValue
@@ -1420,17 +1439,17 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             p.lexer.bufpos.inc()
         of '\'':
           handleFlowItemStart()
-          startContent()
-          startToken()
-          p.lexer.singleQuotedScalar(content)
+          content.reset()
+          p.startToken()
+          p.singleQuotedScalar(content, after)
           if tag == yTagQuestionMark: tag = yTagExclamationMark
           yieldShallowScalar(content)
           handleObjectEnd(fpFlowAfterObject)
         of '"':
           handleFlowItemStart()
-          startContent()
-          startToken()
-          p.lexer.doubleQuotedScalar(content)
+          content.reset()
+          p.startToken()
+          p.doubleQuotedScalar(content, after)
           if tag == yTagQuestionMark: tag = yTagExclamationMark
           yieldShallowScalar(content)
           handleObjectEnd(fpFlowAfterObject)
@@ -1448,15 +1467,15 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             handleFlowItemStart()
             handleFlowPlainScalar()
           elif explicitFlowKey:
-            startToken()
-            parserError("Duplicate '?' in flow mapping")
+            p.startToken()
+            raise p.generateError("Duplicate '?' in flow mapping")
           elif level.kind == fplUnknown:
             case ancestry[ancestry.high].kind
             of fplMapKey, fplMapValue, fplDocument: discard
             of fplSequence: handleObjectStart(yamlStartMap, true)
             else:
-              startToken()
-              parserError("Unexpected token")
+              p.startToken()
+              raise p.generateError("Unexpected token")
             explicitFlowKey = true
             p.lexer.bufpos.inc()
           else:
@@ -1473,8 +1492,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           case level.kind
           of fplSequence: discard
           of fplMapKey, fplMapValue:
-            startToken()
-            parserError("Unexpected token (expected '}')")
+            p.startToken()
+            raise p.generateError("Unexpected token (expected '}')")
           of fplSinglePairValue:
             level = ancestry.pop()
             assert(level.kind == fplSequence)
@@ -1486,8 +1505,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           case level.kind
           of fplMapKey, fplMapValue: discard
           of fplSequence, fplSinglePairValue:
-            startToken()
-            parserError("Unexpected token (expected ']')")
+            p.startToken()
+            raise p.generateError("Unexpected token (expected ']')")
           of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
@@ -1511,8 +1530,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
         of ':':
           case level.kind
           of fplSequence, fplMapKey:
-            startToken()
-            parserError("Unexpected token (expected ',')")
+            p.startToken()
+            raise p.generateError("Unexpected token (expected ',')")
           of fplMapValue, fplSinglePairValue: discard
           of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
           ancestry.add(level)
@@ -1520,13 +1539,13 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           state = fpFlow
           p.lexer.bufpos.inc()
         of '#':
-          p.lexer.lineEnding()
+          p.lineEnding()
           handleLineEnd(true)
         of EndOfFile:
-          startToken()
-          parserError("Unclosed flow content")
+          p.startToken()
+          raise p.generateError("Unclosed flow content")
         else:
-          startToken()
-          parserError("Unexpected content (expected flow indicator)")
+          p.startToken()
+          raise p.generateError("Unexpected content (expected flow indicator)")
   try: result = initYamlStream(backend)
   except Exception: debugFail() # compiler error
