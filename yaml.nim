@@ -172,6 +172,7 @@ type
     anchors: Table[string, AnchorId]
     nextAnchorId: AnchorId
     newlines: int
+    indentation: int
         
   PresentationStyle* = enum
     ## Different styles for YAML character stream output.
