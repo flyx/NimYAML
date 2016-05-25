@@ -88,10 +88,7 @@
   </section>
   <script type="text/javascript">
     function setTextContent(element, text) {
-      while (element.firstChild!==null) {
-        element.removeChild(element.firstChild); // remove all existing content
-      }
-      element.appendChild(document.createTextNode(text));
+      element.innerHTML = text;
     }
     function parse() {
       var r = new XMLHttpRequest();

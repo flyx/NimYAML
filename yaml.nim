@@ -144,6 +144,14 @@ type
     ##   ``1.2``.
     ## - If there is an unknown directive encountered.
     
+  FastParseLevelKind = enum
+    fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
+    fplSinglePairValue, fplScalar, fplDocument
+  
+  FastParseLevel = object
+    kind: FastParseLevelKind
+    indentation: int
+  
   YamlParser* = ref object
     ## A parser object. Retains its ``TagLibrary`` across calls to
     ## `parse <#parse,YamlParser,Stream>`_. Can be used
@@ -151,10 +159,20 @@ type
     ## only until the document goes out of scope (i.e. until
     ## ``yamlEndDocument`` is yielded).
     tagLib: TagLibrary
-    anchors: OrderedTable[string, AnchorId]
     callback: WarningCallback
     lexer: BaseLexer
     tokenstart: int
+    content, after: string
+    ancestry: seq[FastParseLevel]
+    level: FastParseLevel
+    tagUri: string
+    tag: TagId
+    anchor: AnchorId
+    shorthands: Table[string, string]
+    anchors: Table[string, AnchorId]
+    nextAnchorId: AnchorId
+    newlines: int
+    indentation: int
         
   PresentationStyle* = enum
     ## Different styles for YAML character stream output.
