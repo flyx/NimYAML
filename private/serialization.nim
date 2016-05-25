@@ -72,8 +72,9 @@ proc constructObject*[T: int8|int16|int32|int64](
   constructScalarItem(s, item, T):
     result = T(parseBiggestInt(item.scalarContent))
 
-template constructObject*(s: var YamlStream, c: ConstructionContext,
-                          result: var int) =
+proc constructObject*(s: var YamlStream, c: ConstructionContext,
+                      result: var int)
+    {.raises: [YamlConstructionError, YamlStreamError], inline.} =
   ## constructs an integer of architecture-defined length by loading it into
   ## int32 and then converting it.
   var i32Result: int32
@@ -86,8 +87,9 @@ proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
   result = iterator(): YamlStreamEvent =
     yield scalarEvent($value, tag, yAnchorNone)
 
-template representObject*(value: int, tagStyle: TagStyle,
-                          c: SerializationContext, tag: TagId): RawYamlStream =
+proc representObject*(value: int, tagStyle: TagStyle,
+                      c: SerializationContext, tag: TagId): RawYamlStream
+    {.raises: [], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
   ## on 64-bit systems, this may cause a type conversion error.
   
@@ -110,8 +112,9 @@ proc constructObject*[T: uint8|uint16|uint32|uint64](
   constructScalarItem(s, item, T):
     result = T(parseBiggestUInt(item.scalarContent))
 
-template constructObject*(s: var YamlStream, c: ConstructionContext,
-                          result: var uint) =
+proc constructObject*(s: var YamlStream, c: ConstructionContext,
+                      result: var uint)
+    {.raises: [YamlConstructionError, YamlStreamError], inline.} =
   ## represent an unsigned integer of architecture-defined length by loading it
   ## into uint32 and then converting it.
   var u32Result: uint32
@@ -124,11 +127,11 @@ proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
   result = iterator(): YamlStreamEvent =
     yield scalarEvent($value, tag, yAnchorNone)
 
-template representObject*(value: uint, ts: TagStyle, c: SerializationContext,
-    tag: TagId): RawYamlStream =
+proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
+    tag: TagId): RawYamlStream {.raises: [], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
   ## to int32. on 64-bit systems, this may cause a type conversion error.
-  representObject(uint32(value), tagStyle, c, tag)
+  representObject(uint32(value), ts, c, tag)
 
 proc constructObject*[T: float|float32|float64](
     s: var YamlStream, c: ConstructionContext, result: var T)
@@ -384,13 +387,16 @@ proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
       yield endMapEvent()
     yield endSeqEvent()
 
-template yamlTag*(T: typedesc[object|enum]): expr =
-  var uri = when compiles(yamlTag(T)): yamlTag(T) else:
-      "!nim:custom:" & (typetraits.name(type(T)))
-  try: serializationTagLibrary.tags[uri]
-  except KeyError: serializationTagLibrary.registerUri(uri)
+proc yamlTag*(T: typedesc[object|enum]):
+    TagId {.inline, noSideEffect, raises: [].} =
+  when compiles(yamlTag(T)): result = yamlTag(T)
+  else:
+    var uri = "!nim:custom:" & (typetraits.name(type(T)))
+    try: serializationTagLibrary.tags[uri]
+    except KeyError: serializationTagLibrary.registerUri(uri)
 
-template yamlTag*(T: typedesc[tuple]): expr =
+proc yamlTag*(T: typedesc[tuple]):
+    TagId {.inline, noSideEffect, raises: [].} =
   var
     i: T
     uri = "!nim:tuple("
