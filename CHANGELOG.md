@@ -1,3 +1,21 @@
+### 0.5.0
+
+Features:
+
+ * Support variant object types (experimental)
+ * Added ability to use variant object types to process
+   heterogeneous data
+ * Support `set` type
+ * Support `array` type
+ * Support `int`, `uint` and `float` types
+   (previously, the precision must be specified)
+ * Check for duplicate tag URIs at compile time
+ * Renamed `setTagUriForType` to `setTagUri`
+
+Bugfixes:
+
+ * None, but fastparse.nim has seen heavy refactoring
+
 ### 0.4.0
 
 Features:

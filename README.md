@@ -1,6 +1,6 @@
 # NimYAML - YAML implementation for Nim
 
-NimYAML is currently being developed. The current release 0.4.0 is not
+NimYAML is currently being developed. The current release 0.5.0 is not
 considered stable. See [the documentation](http://flyx.github.io/NimYAML/) for
 an overview of already available features.
 
@@ -11,7 +11,6 @@ an overview of already available features.
  * Serialization:
    - Support for more standard library types
    - Support polymorphism
-   - Support variant objects
    - Support generic objects
    - Support transient fields (i.e. fields that will not be (de-)serialized on
      objects and tuples)
@@ -31,7 +30,7 @@ nim yamlTestSuite # execute YAML test suite (git-clones yaml-dev-kit)
 ```
 
 Project is tested against current develop branch of Nim. Older Nim versions
-probably do not work.
+do not work.
 
 ## License
 

@@ -14,7 +14,7 @@ Source code can be found on `GitHub <https://github.com/flyx/NimYAML>`_. You can
 install it with `Nimble <https://github.com/nim-lang/nimble>`_:
 
 .. code-block:: bash
-  nimble install nimyaml
+  nimble install yaml
 
 Quickstart
 ==========
