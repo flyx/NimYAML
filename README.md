@@ -1,6 +1,6 @@
 # NimYAML - YAML implementation for Nim
 
-NimYAML is currently being developed. The current release 0.5.0 is not
+NimYAML is currently being developed. The current release 0.5.1 is not
 considered stable. See [the documentation](http://flyx.github.io/NimYAML/) for
 an overview of already available features.
 

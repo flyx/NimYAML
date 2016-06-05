@@ -696,11 +696,11 @@ template setTagUri*(t: typedesc, uri: string, idName: expr): stmt =
 proc canBeImplicit(t: typedesc): bool {.compileTime.} =
   let tDesc = getType(t)
   if tDesc.kind != nnkObjectTy: return false
-  if tDesc[1].len != 1: return false
-  if tDesc[1][0].kind != nnkRecCase: return false
+  if tDesc[2].len != 1: return false
+  if tDesc[2][0].kind != nnkRecCase: return false
   var foundEmptyBranch = false
-  for i in 1.. tDesc[1][0].len - 1:
-    case tDesc[1][0][i][1].len # branch contents
+  for i in 1.. tDesc[2][0].len - 1:
+    case tDesc[2][0][i][1].len # branch contents
     of 0:
       if foundEmptyBranch: return false
       else: foundEmptyBranch = true

@@ -1,3 +1,9 @@
+### 0.5.1
+
+Bugfixes:
+
+ * Fixed a problem that was introduced by a change in Nim devel
+
 ### 0.5.0
 
 Features:

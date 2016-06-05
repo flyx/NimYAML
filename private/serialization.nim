@@ -411,7 +411,7 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
                            name: expr, o: expr): stmt =
   let tDesc = getType(getType(t)[1])
   result = newNimNode(nnkCaseStmt).add(name)
-  for child in tDesc[1].children:
+  for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
         discriminant = newDotExpr(o, newIdentNode($child[0]))
@@ -460,7 +460,12 @@ proc constructObject*[O: object|tuple](
       raise newException(YamlConstructionError,
           "Expected field name, got " & $e.kind)
     let name = e.scalarContent
-    constructFieldValue(O, s, c, name, result)
+    when result is tuple:
+      for fname, value in fieldPairs(result):
+        if fname == name:
+          constructChild(s, c, value)
+          break
+    else: constructFieldValue(O, s, c, name, result)
   discard s.next()
 
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
@@ -507,7 +512,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
                                      t: typedesc): stmt =
   let tDesc = getType(getType(t)[1])
   assert tDesc.kind == nnkObjectTy
-  let recCase = tDesc[1][0]
+  let recCase = tDesc[2][0]
   assert recCase.kind == nnkRecCase
   let
     discriminant = newDotExpr(r, newIdentNode($recCase[0]))
