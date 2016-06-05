@@ -387,14 +387,6 @@ proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
       yield endMapEvent()
     yield endSeqEvent()
 
-proc isVariant(t: typedesc): bool {.compileTime.} =
-  let typeDesc = getType(t)
-  if typeDesc.len > 1:
-    for child in typeDesc[1].children:
-      if child.kind == nnkRecCase:
-        return true
-  return false
-
 proc yamlTag*(T: typedesc[object|enum]):
     TagId {.inline, raises: [].} =
   var uri = "!nim:custom:" & (typetraits.name(type(T)))
@@ -415,27 +407,60 @@ proc yamlTag*(T: typedesc[tuple]):
   try: serializationTagLibrary.tags[uri]
   except KeyError: serializationTagLibrary.registerUri(uri)
 
+macro constructFieldValue(t: typedesc, stream: expr, context: expr,
+                           name: expr, o: expr): stmt =
+  let tDesc = getType(getType(t)[1])
+  result = newNimNode(nnkCaseStmt).add(name)
+  for child in tDesc[1].children:
+    if child.kind == nnkRecCase:
+      let
+        discriminant = newDotExpr(o, newIdentNode($child[0]))
+        discType = newCall("type", discriminant)
+      var disOb = newNimNode(nnkOfBranch).add(newStrLitNode($child[0]))
+      disOb.add(newStmtList(
+          newNimNode(nnkVarSection).add(
+              newNimNode(nnkIdentDefs).add(
+                  newIdentNode("value"), discType, newEmptyNode())),
+          newCall("constructChild", stream, context, newIdentNode("value")),
+          newCall("reset", o),
+          newAssignment(discriminant, newIdentNode("value"))))
+      result.add(disOb)
+      for bIndex in 1 .. len(child) - 1:
+        let discTest = infix(discriminant, "==", child[bIndex][0])
+        for item in child[bIndex][1].children:
+          assert item.kind == nnkSym
+          var ob = newNimNode(nnkOfBranch).add(newStrLitNode($item))
+          let field = newDotExpr(o, newIdentNode($item))
+          var ifStmt = newIfStmt((cond: discTest, body: newStmtList(
+              newCall("constructChild", stream, context, field))))
+          ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkDiscardStmt).add(
+              newEmptyNode()))) # todo: raise exception here
+          ob.add(newStmtList(ifStmt))
+          result.add(ob)
+    else:
+      assert child.kind == nnkSym
+      var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
+      let field = newDotExpr(o, newIdentNode($child))
+      ob.add(newStmtList(newCall("constructChild", stream, context, field)))
+      result.add(ob)
+
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim object or tuple from a YAML mapping
   let e = s.next()
   if e.kind != yamlStartMap:
-    raise newException(YamlConstructionError, "Expected map start, got " &
-                       $e.kind)
+    raise newException(YamlConstructionError, "While constructing " & 
+        typetraits.name(O) & ": Expected map start, got " & $e.kind)
   while s.peek.kind != yamlEndMap:
+    # todo: check for duplicates in input and raise appropriate exception
+    # also todo: check for missing items and raise appropriate exception
     let e = s.next()
     if e.kind != yamlScalar:
       raise newException(YamlConstructionError,
           "Expected field name, got " & $e.kind)
     let name = e.scalarContent
-    when compiles(implicitVariantObject(O)):
-      discard
-    else:
-      for fname, value in fieldPairs(result):
-        if fname == name:
-          constructChild(s, c, value)
-          break
+    constructFieldValue(O, s, c, name, result)
   discard s.next()
 
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
@@ -478,30 +503,110 @@ proc representObject*[O: enum](value: O, ts: TagStyle,
 
 proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
 
+macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
+                                     t: typedesc): stmt =
+  let tDesc = getType(getType(t)[1])
+  assert tDesc.kind == nnkObjectTy
+  let recCase = tDesc[1][0]
+  assert recCase.kind == nnkRecCase
+  let
+    discriminant = newDotExpr(r, newIdentNode($recCase[0]))
+    discType = newCall("type", discriminant)
+  var ifStmt = newNimNode(nnkIfStmt)
+  for i in 1 .. recCase.len - 1:
+    assert recCase[i].kind == nnkOfBranch
+    var branch = newNimNode(nnkElifBranch)
+    var branchContent = newStmtList(newAssignment(discriminant, recCase[i][0]))
+    case recCase[i][1].len
+    of 0:
+      branch.add(infix(newIdentNode("yTagNull"), "in", possibleTagIds))
+      branchContent.add(newNimNode(nnkDiscardStmt).add(newCall("next", s)))
+    of 1:
+      let field = newDotExpr(r, newIdentNode($recCase[i][1][0]))
+      branch.add(infix(
+          newCall("yamlTag", newCall("type", field)), "in", possibleTagIds))
+      branchContent.add(newCall("constructChild", s, c, field))
+    else: assert false
+    branch.add(branchContent)
+    ifStmt.add(branch)
+  let raiseStmt = newNimNode(nnkRaiseStmt).add(
+      newCall("newException", newIdentNode("YamlConstructionError"),
+      infix(newStrLitNode("This value type does not map to any field in " &
+                          typetraits.name(t) & ": "), "&",
+            newCall("uri", newIdentNode("serializationTagLibrary"),
+              newNimNode(nnkBracketExpr).add(possibleTagIds, newIntLitNode(0)))
+      )
+  ))
+  ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
+      newStmtList(raiseStmt), newNimNode(nnkExceptBranch).add(
+        newIdentNode("KeyError"), newStmtList(newCall("assert", newLit(false)))    
+  ))))
+  result = newStmtList(newCall("reset", r), ifStmt)
+
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var T) =
   let item = s.peek()
-  case item.kind
-  of yamlScalar:
-    if item.scalarTag notin [yTagQuestionMark, yTagExclamationMark, yamlTag(T)]:
-      raise newException(YamlConstructionError, "Wrong tag for " &
-                         typetraits.name(T))
-    elif item.scalarAnchor != yAnchorNone:
-      raise newException(YamlConstructionError, "Anchor on non-ref type")
-  of yamlStartMap:
-    if item.mapTag notin [yTagQuestionMark, yamlTag(T)]:
-      raise newException(YamlConstructionError, "Wrong tag for " &
-                         typetraits.name(T))
-    elif item.mapAnchor != yAnchorNone:
-      raise newException(YamlConstructionError, "Anchor on non-ref type")
-  of yamlStartSeq:
-    if item.seqTag notin [yTagQuestionMark, yamlTag(T)]:
-      raise newException(YamlConstructionError, "Wrong tag for " &
-                         typetraits.name(T))
-    elif item.seqAnchor != yAnchorNone:
-      raise newException(YamlConstructionError, "Anchor on non-ref type")
-  else: assert false
-  constructObject(s, c, result)
+  when compiles(implicitVariantObject(result)):
+    var possibleTagIds = newSeq[TagId]()
+    case item.kind
+    of yamlScalar:
+      case item.scalarTag
+      of yTagQuestionMark:
+        case guessType(item.scalarContent)
+        of yTypeInteger:
+          possibleTagIds.add([yamlTag(int), yamlTag(int8), yamlTag(int16),
+                              yamlTag(int32), yamlTag(int64)])
+          if item.scalarContent[0] != '-':
+            possibleTagIds.add([yamlTag(uint), yamlTag(uint8), yamlTag(uint16),
+                                yamlTag(uint32), yamlTag(uint64)])
+        of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
+          possibleTagIds.add([yamlTag(float), yamlTag(float32),
+                              yamlTag(float64)])
+        of yTypeBoolTrue, yTypeBoolFalse:
+          possibleTagIds.add(yamlTag(bool))
+        of yTypeNull:
+          raise newException(YamlConstructionError, "not implemented!")
+        of yTypeUnknown:
+          possibleTagIds.add(yamlTag(string))
+      of yTagExclamationMark:
+        possibleTagIds.add(yamlTag(string))
+      else:
+        possibleTagIds.add(item.scalarTag)
+    of yamlStartMap:
+      if item.mapTag in [yTagQuestionMark, yTagExclamationMark]:
+        raise newException(YamlConstructionError,
+            "Complex value of implicit variant object type must have a tag.")
+      possibleTagIds.add(item.mapTag)
+    of yamlStartSeq:
+      if item.seqTag in [yTagQuestionMark, yTagExclamationMark]:
+        raise newException(YamlConstructionError,
+            "Complex value of implicit variant object type must have a tag.")
+      possibleTagIds.add(item.seqTag)
+    else: assert false
+    constructImplicitVariantObject(s, c, result, possibleTagIds, T)
+  else:
+    case item.kind
+    of yamlScalar:
+      if item.scalarTag notin [yTagQuestionMark, yTagExclamationMark,
+                               yamlTag(T)]:
+        raise newException(YamlConstructionError, "Wrong tag for " &
+                           typetraits.name(T))
+      elif item.scalarAnchor != yAnchorNone:
+        raise newException(YamlConstructionError, "Anchor on non-ref type")
+    of yamlStartMap:
+      if item.mapTag notin [yTagQuestionMark, yamlTag(T)]:
+        raise newException(YamlConstructionError, "Wrong tag for " &
+                           typetraits.name(T))
+      elif item.mapAnchor != yAnchorNone:
+        raise newException(YamlConstructionError, "Anchor on non-ref type")
+    of yamlStartSeq:
+      if item.seqTag notin [yTagQuestionMark, yamlTag(T)]:
+        raise newException(YamlConstructionError, "Wrong tag for " &
+                           typetraits.name(T))
+      elif item.seqAnchor != yAnchorNone:
+        raise newException(YamlConstructionError, "Anchor on non-ref type")
+    else: assert false
+    constructObject(s, c, result)
 
 proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var string) =
@@ -636,8 +741,20 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
 
 proc representChild*[O](value: O, ts: TagStyle,
                         c: SerializationContext): RawYamlStream =
-  result = representObject(value, ts, c, if ts == tsNone:
-      yTagQuestionMark else: yamlTag(O))
+  when compiles(implicitVariantObject(value)):
+    # todo: this would probably be nicer if constructed with a macro
+    var count = 0
+    for name, field in fieldPairs(value):
+      if count > 0:
+        result =
+            representChild(field, if ts == tsAll: tsAll else: tsRootOnly, c)
+      inc(count)
+    if count == 1:
+      result = iterator(): YamlStreamEvent =
+        yield scalarEvent("~", yTagNull)
+  else:
+    result = representObject(value, ts, c, if ts == tsNone:
+        yTagQuestionMark else: yamlTag(O))
 
 proc construct*[T](s: var YamlStream, target: var T) =
   var context = newConstructionContext()
@@ -675,7 +792,7 @@ proc load*[K](input: Stream, target: var K) =
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: assert(false)
+    else: assert false
 
 proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
     {.inline.} =

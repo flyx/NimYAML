@@ -343,6 +343,72 @@ Loading Nim objects from JSON
 Processing a Sequence of Heterogeneous Items
 --------------------------------------------
 
+… With variant objects
+......................
+
+.. raw:: html
+  <table class="quickstart-example"><thead><tr><th>code.nim</th>
+  <th>in.yaml</th></tr></thead><tbody><tr><td>
+
+.. code-block:: nim
+  import yaml
+  type
+    Person = object
+      name: string
+    
+    ContainerKind = enum
+      ckString, ckInt, ckBool, ckPerson, ckNone
+    
+    Container = object
+      case kind: ContainerKind
+      of ckString:
+        strVal: string
+      of ckInt:
+        intVal: int
+      of ckBool:
+        boolVal: bool
+      of ckPerson:
+        personVal: Person
+      of ckNone:
+        discard
+        
+  setTagUri(Person, "!nim:demo:Person")
+  
+  # tell NimYAML to use Container as implicit type.
+  # only possible with variant object types where
+  # each branch contains at most one object.
+  markAsImplicit(Container)
+  
+  var list: seq[Container]
+  
+  var s = newFileStream("in.yaml")
+  load(s, list)
+  s.close()
+  
+  assert(list[0].kind == ckString)
+  assert(list[0].strVal == "this is a string")
+  # and so on
+
+.. raw:: html
+  </td>
+  <td>
+
+.. code-block:: yaml
+  %YAML 1.2
+  ---
+  - this is a string
+  - 42
+  - false
+  - !!str 23
+  - !nim:demo:Person {name: Trillian}
+  - !!null
+
+.. raw:: html
+  </td></tr></tbody></table>
+
+… With the Sequential API
+.........................
+
 .. raw:: html
   <table class="quickstart-example"><thead><tr><th>code.nim</th>
   <th>in.yaml</th></tr></thead><tbody><tr><td>

@@ -86,7 +86,8 @@ cannot be loaded to Nim collection types. For example, this sequence:
     - !!string foo
 
 Cannot be loaded to a Nim ``seq``. For this reason, you cannot load YAML's
-native ``!!map`` and ``!!seq`` types directly into Nim types.
+native ``!!map`` and ``!!seq`` types directly into Nim types. However, you can
+use variant object types to process heterogeneous value lists, see below.
 
 Nim ``seq`` types may be ``nil``. This is handled by serializing them to an
 empty scalar with the tag ``!nim:nil:seq``.
@@ -115,11 +116,80 @@ conditions must be met:
 - All fields of an object type must be accessible from the code position where 
   you call NimYAML. If an object has non-public member fields, it can only be
   processed in the module where it is defined.
-- The object may not contain a ``case`` clause.
 - The object may not have a generic parameter
 
 NimYAML will present enum types as YAML scalars, and tuple and object types as
 YAML maps. Some of the conditions above may be loosened in future releases.
+
+Variant Object Types
+....................
+
+A *variant object type* is an object type that contains one or more ``case``
+clauses. NimYAML currently supports variant object types. However, this feature
+is **highly experimental**. Only the currently accessible fields of a variant
+object type are dumped, and only those may be present when loading. The
+discriminator field(s) are treated like all other fields. The value of a
+discriminator field must occur before any value of a field that depends on it.
+This violates the YAML specification and therefore will be changed in the
+future.
+
+While dumping variant object types directly is currently not production ready,
+you can use them for processing heterogeneous data sets. For example, if you
+have a YAML document which contains differently typed values in the same list
+like this:
+
+.. code-block:: yaml
+  %YAML 1.2
+  ---
+  - 42
+  - this is a string
+  - !!null
+
+You can define a variant object type that can hold all types that occur in this
+list in order to load it:
+
+.. code-block:: nim
+  import yaml
+  
+  type
+    ContainerKind = enum
+      ckInt, ckString, ckNone
+    Container = object
+      case kind: ContainerKind
+      of ckInt:
+        intVal: int
+      of ckString:
+        strVal: string
+      of ckNone:
+        discard
+  
+  markAsImplicit(Container)
+  
+  var
+    list: seq[Container]
+    s = newFileStream("in.yaml")
+  load(s, list)
+
+``markAsImplicit`` tells NimYAML that you want to use the type ``Container``
+implicitly, i.e. its fields are not visible in YAML, and are set dependent on
+the value type that gets loaded into it. The type ``Container`` must fullfil the
+following requirements:
+
+- It must contain exactly one ``case`` clause, and nothing else.
+- Each branch of the ``case`` clause must contain exactly one field, with one
+  exception: There may be at most one branch that contains no field at all.
+- It must not be a derived object type (this is currently not enforced)
+
+When loading the sequence, NimYAML writes the value into the first field that
+can hold the value's type. All complex values (i.e. non-scalar values) *must*
+have a tag in the YAML source, because NimYAML would otherwise be unable to
+determine their type. The type of scalar values will be guessed if no tag is
+available, but be aware that ``42`` can fit in both ``int8`` and ``int16``, so
+in the case you have fields for both types, you should annotate the value.
+
+When dumping the sequence, NimYAML will always annotate a tag to each value it
+outputs. This is to avoid possible ambiguity when loading. If a branch without
+a field exists, it is represented as a ``!!null`` value.
 
 Tags
 ====
