@@ -624,57 +624,10 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext):
     RawYamlStream {.inline.}
   ## Represents a Nim string. Supports nil strings.
 
-proc isVariant(t: typedesc): bool {.compileTime.} =
-  let typeDesc = getType(t)
-  if typeDesc.len > 1:
-    for child in typeDesc[1].children:
-      if child.kind == nnkRecCase:
-        return true
-  return false
-
-macro presentTagDiscriminators(target: string, t: typedesc, val: expr): stmt =
-  var first = true
-  let typeDesc = getType(getType(t)[1])
-  for child in typeDesc[1].children:
-    if child.kind != nnkRecCase: continue
-    
-    template discriminantToString(): NimNode =
-      newNimNode(nnkInfix).add(
-        newIdentNode("$"), newDotExpr(val, child[0])
-      )
-        
-    if first:
-      first = false
-      result = newNimNode(nnkInfix).add(
-          newIdentNode("&"), newStrLitNode("("), discriminantToString()
-      )
-    else:
-      result = newNimNode(nnkInfix).add(
-        newIdentNode("&"), result, newNimNode(nnkInfix).add(
-        newIdentNode("&"), newStrLitNode(","), discriminantToString())
-      )
-  if first: # no discriminators
-    result = newNimNode(nnkDiscardStmt).add(newNimNode(nnkEmpty))
-  else:
-    result = newNimNode(nnkInfix).add(newIdentNode("&="), target,
-        newNimNode(nnkInfix).add(newIdentNode("&"), result, newStrLitNode(")")))
-
-template presentVariantObjectTag[O](t: typedesc[object], val: O): TagId =
-  var oTag = name(t)
-  presentTagDiscriminators(oTag, t, val)
-  try: serializationTagLibrary.tags[oTag]
-  except KeyError: serializationTagLibrary.registerUri(oTag)
-
 proc representChild*[O](value: O, ts: TagStyle,
                         c: SerializationContext):
-    RawYamlStream {.raises: [].} =
+    RawYamlStream {.raises: [].}
   ## Represents an arbitrary Nim object as YAML object.
-  const isVar = isVariant(O)
-  when isVar:
-    result = representObject(value, ts, c, presentVariantObjectTag(O, value))
-  else:
-    result = representObject(value, ts, c, if ts == tsNone:
-        yTagQuestionMark else: yamlTag(O))
 
 proc construct*[T](s: var YamlStream, target: var T)
     {.raises: [YamlConstructionError, YamlStreamError].}

@@ -387,16 +387,22 @@ proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
       yield endMapEvent()
     yield endSeqEvent()
 
+proc isVariant(t: typedesc): bool {.compileTime.} =
+  let typeDesc = getType(t)
+  if typeDesc.len > 1:
+    for child in typeDesc[1].children:
+      if child.kind == nnkRecCase:
+        return true
+  return false
+
 proc yamlTag*(T: typedesc[object|enum]):
-    TagId {.inline, noSideEffect, raises: [].} =
-  when compiles(yamlTag(T)): result = yamlTag(T)
-  else:
-    var uri = "!nim:custom:" & (typetraits.name(type(T)))
-    try: serializationTagLibrary.tags[uri]
-    except KeyError: serializationTagLibrary.registerUri(uri)
+    TagId {.inline, raises: [].} =
+  var uri = "!nim:custom:" & (typetraits.name(type(T)))
+  try: serializationTagLibrary.tags[uri]
+  except KeyError: serializationTagLibrary.registerUri(uri)
 
 proc yamlTag*(T: typedesc[tuple]):
-    TagId {.inline, noSideEffect, raises: [].} =
+    TagId {.inline, raises: [].} =
   var
     i: T
     uri = "!nim:tuple("
@@ -423,10 +429,13 @@ proc constructObject*[O: object|tuple](
       raise newException(YamlConstructionError,
           "Expected field name, got " & $e.kind)
     let name = e.scalarContent
-    for fname, value in fieldPairs(result):
-      if fname == name:
-        constructChild(s, c, value)
-        break
+    when compiles(implicitVariantObject(O)):
+      discard
+    else:
+      for fname, value in fieldPairs(result):
+        if fname == name:
+          constructChild(s, c, value)
+          break
   discard s.next()
 
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
@@ -624,6 +633,11 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
           if finished(child): break
           yield event
     except KeyError: assert false, "Can never happen"
+
+proc representChild*[O](value: O, ts: TagStyle,
+                        c: SerializationContext): RawYamlStream =
+  result = representObject(value, ts, c, if ts == tsNone:
+      yTagQuestionMark else: yamlTag(O))
 
 proc construct*[T](s: var YamlStream, target: var T) =
   var context = newConstructionContext()
