@@ -580,6 +580,9 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
       indentation -= options.indentationStep
     of yamlEndDoc:
       if finished(s): break
+      if options.style == psJson:
+        raise newException(YamlPresenterJsonError,
+            "Cannot output more than one document in JSON style")
       safeWrite("..." & newline)
 
 proc transform*(input: Stream, output: Stream,
