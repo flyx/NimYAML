@@ -432,14 +432,16 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
       of psBlockOnly: nextState = dBlockSequenceItem 
       
       if levels.len == 0:
-        if nextState == dBlockSequenceItem:
+        case nextState
+        of dBlockSequenceItem:
           if options.style != psJson:
             writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
-        else:
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
+        of dFlowSequenceStart:
           safeWrite(newline)
+          if options.style != psJson:
+            writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
           indentation += options.indentationStep
+        else: assert false
       else:
         startItem(target, options.style, indentation,
                   levels[levels.high], true, newline)
@@ -480,7 +482,8 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
         nextState = dFlowMapStart
       of psBlockOnly: nextState = dBlockMapValue
       if levels.len == 0:
-        if nextState == dBlockMapValue:
+        case nextState
+        of dBlockMapValue:
           if options.style != psJson:
             writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
           else:
@@ -488,8 +491,13 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               safeWrite(newline)
               writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
             indentation += options.indentationStep
-        elif options.style in [psJson, psCanonical]:
+        of dFlowMapStart:
+          safeWrite(newline)
+          if options.style != psJson:
+            writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
           indentation += options.indentationStep
+        of dBlockInlineMap: discard
+        else: assert false
       else:
         if nextState in [dBlockMapValue, dBlockImplicitMapKey]:
           startItem(target, options.style, indentation,
