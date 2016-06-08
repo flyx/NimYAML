@@ -488,7 +488,8 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               safeWrite(newline)
               writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
             indentation += options.indentationStep
-        elif options.style == psJson: indentation += options.indentationStep
+        elif options.style in [psJson, psCanonical]:
+          indentation += options.indentationStep
       else:
         if nextState in [dBlockMapValue, dBlockImplicitMapKey]:
           startItem(target, options.style, indentation,
