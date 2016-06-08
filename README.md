@@ -1,19 +1,24 @@
 # NimYAML - YAML implementation for Nim
 
-NimYAML is currently being developed. The current release 0.5.1 is not
-considered stable. See [the documentation](http://flyx.github.io/NimYAML/) for
-an overview of already available features.
+NimYAML is a pure Nim YAML implementation without any dependencies other than
+Nim's standard library. It enables you to serialize Nim objects to a YAML stream
+and back. It also provides a low-level event-based API, and a document object
+model which you do not want to use because serializing to native types is much
+more awesome.
 
-## TODO list
+Documentation, examples and an online demo are available [here][1]. Releases are
+available as tags in this repository and can be fetched via nimble:
 
- * Misc:
-   - Add type hints for more scalar types
+    nimble install yaml
+
+## Features that may come in the future
+
  * Serialization:
    - Support for more standard library types
-   - Support polymorphism
-   - Support generic objects
-   - Support transient fields (i.e. fields that will not be (de-)serialized on
-     objects and tuples)
+   - Support for polymorphism
+   - Support for generic objects
+   - Support for transient fields (i.e. object fields that will not be
+     (de-)serialized
 
 ## Developers
 
@@ -29,9 +34,11 @@ nim build # build a library
 nim yamlTestSuite # execute YAML test suite (git-clones yaml-dev-kit)
 ```
 
-Project is tested against current develop branch of Nim. Older Nim versions
-do not work.
+NimYAML needs at least Nim 0.14.0 in order to compile.
 
 ## License
 
-[MIT](copying.txt)
+[MIT][2]
+
+ [1]: http://flyx.github.io/NimYAML/
+ [2]: copying.txt

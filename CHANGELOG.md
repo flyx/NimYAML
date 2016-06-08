@@ -1,3 +1,15 @@
+### 0.6.0
+
+Features:
+
+ * Properly support variant object types
+ * First version that works with a released Nim version (0.14.0)
+
+Bugfixes:
+
+ * Fixed a crash in presenter when outputting JSON or canonical YAML
+ * Raise an exception when trying to output multiple documents in JSON style
+
 ### 0.5.1
 
 Bugfixes:
