@@ -422,7 +422,6 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
               newNimNode(nnkIdentDefs).add(
                   newIdentNode("value"), discType, newEmptyNode())),
           newCall("constructChild", stream, context, newIdentNode("value")),
-          newCall("reset", o),
           newAssignment(discriminant, newIdentNode("value"))))
       result.add(disOb)
       for bIndex in 1 .. len(child) - 1:
@@ -433,8 +432,10 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
           let field = newDotExpr(o, newIdentNode($item))
           var ifStmt = newIfStmt((cond: discTest, body: newStmtList(
               newCall("constructChild", stream, context, field))))
-          ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkDiscardStmt).add(
-              newEmptyNode()))) # todo: raise exception here
+          ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkRaiseStmt).add(
+              newCall("newException", newIdentNode("YamlConstructionError"),
+              infix(newStrLitNode("Field " & $item & " not allowed for " &
+              $child[0] & " == "), "&", prefix(discriminant, "$"))))))
           ob.add(newStmtList(ifStmt))
           result.add(ob)
     else:
@@ -444,18 +445,34 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
       ob.add(newStmtList(newCall("constructChild", stream, context, field)))
       result.add(ob)
 
+proc isVariantObject(t: typedesc): bool {.compileTime.} =
+  let tDesc = getType(t)
+  if tDesc.kind != nnkObjectTy: return false
+  for child in tDesc[2].children:
+    if child.kind == nnkRecCase: return true
+  return false
+
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim object or tuple from a YAML mapping
   let e = s.next()
-  if e.kind != yamlStartMap:
+  const
+    startKind = when isVariantObject(O): yamlStartSeq else: yamlStartMap
+    endKind = when isVariantObject(O): yamlEndSeq else: yamlEndMap
+  if e.kind != startKind:
     raise newException(YamlConstructionError, "While constructing " & 
         typetraits.name(O) & ": Expected map start, got " & $e.kind)
-  while s.peek.kind != yamlEndMap:
+  when isVariantObject(O): reset(result) # make discriminants writeable
+  while s.peek.kind != endKind:
     # todo: check for duplicates in input and raise appropriate exception
     # also todo: check for missing items and raise appropriate exception
-    let e = s.next()
+    var e = s.next()
+    when isVariantObject(O):
+      if e.kind != yamlStartMap:
+        raise newException(YamlConstructionError,
+            "Expected single-pair map, got " & $e.kind)
+      e = s.next()
     if e.kind != yamlScalar:
       raise newException(YamlConstructionError,
           "Expected field name, got " & $e.kind)
@@ -465,7 +482,13 @@ proc constructObject*[O: object|tuple](
         if fname == name:
           constructChild(s, c, value)
           break
-    else: constructFieldValue(O, s, c, name, result)
+    else:
+      constructFieldValue(O, s, c, name, result)
+    when isVariantObject(O):
+      e = s.next()
+      if e.kind != yamlEndMap:
+        raise newException(YamlConstructionError,
+            "Expected end of single-pair map, got " & $e.kind)
   discard s.next()
 
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
@@ -473,8 +496,13 @@ proc representObject*[O: object|tuple](value: O, ts: TagStyle,
   ## represents a Nim object or tuple as YAML mapping
   result = iterator(): YamlStreamEvent =
     let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-    yield startMapEvent(tag, yAnchorNone)
+    when isVariantObject(O):
+      yield startSeqEvent(tag, yAnchorNone)
+    else:
+      yield startMapEvent(tag, yAnchorNone)
     for name, value in fieldPairs(value):
+      when isVariantObject(O):
+        yield startMapEvent(yTagQuestionMark, yAnchorNone)
       yield scalarEvent(name,
           if childTagStyle == tsNone: yTagQuestionMark else:
           yTagNimField, yAnchorNone)
@@ -483,7 +511,12 @@ proc representObject*[O: object|tuple](value: O, ts: TagStyle,
         let event = events()
         if finished(events): break
         yield event
-    yield endMapEvent()
+      when isVariantObject(O):
+        yield endMapEvent()
+    when isVariantObject(O):
+      yield endSeqEvent()
+    else:
+      yield endMapEvent()
 
 proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
                                result: var O)

@@ -26,6 +26,17 @@ type
     next: ref Node
     
   BetterInt = distinct int
+  
+  AnimalKind = enum
+    akCat, akDog
+  
+  Animal = object
+    name: string
+    case kind: AnimalKind
+    of akCat:
+      purringIntensity: int
+    of akDog:
+      barkometer: int
 
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(l, r: BetterInt): bool {.borrow.}
@@ -303,6 +314,42 @@ suite "Serialization":
     assertStringEqual("%YAML 1.2\n" &
         "--- !nim:custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12",
         output.data)
+  
+  test "Serialization: Load custom variant object":
+    let input = newStringStream(
+      "---\n- - name: Bastet\n  - kind: akCat\n  - purringIntensity: 7\n" &
+      "- - name: Anubis\n  - kind: akDog\n  - barkometer: 13")
+    var result: seq[Animal]
+    load(input, result)
+    assert result.len == 2
+    assert result[0].name == "Bastet"
+    assert result[0].kind == akCat
+    assert result[0].purringIntensity == 7
+    assert result[1].name == "Anubis"
+    assert result[1].kind == akDog
+    assert result[1].barkometer == 13
+  
+  test "Serialization: Dump custom variant object":
+    let input = @[Animal(name: "Bastet", kind: akCat, purringIntensity: 7),
+                  Animal(name: "Anubis", kind: akDog, barkometer: 13)]
+    var output = newStringStream()
+    dump(input, output, tsNone, asTidy, blockOnly)
+    assertStringEqual """%YAML 1.2
+--- 
+- 
+  - 
+    name: Bastet
+  - 
+    kind: akCat
+  - 
+    purringIntensity: 7
+- 
+  - 
+    name: Anubis
+  - 
+    kind: akDog
+  - 
+    barkometer: 13""", output.data
     
   test "Serialization: Dump cyclic data structure":
     var

@@ -37,8 +37,8 @@ NimYAML supports a growing number of types of Nim's ``system`` module and
 standard library, and it also supports user-defined object, tuple and enum types
 out of the box.
 
-**Important**: NimYAML currently does not support polymorphism or variant
-object types. This may be added in the future.
+**Important**: NimYAML currently does not support polymorphism. This may be
+added in the future.
 
 This also means that NimYAML is generally able to work with object, tuple and
 enum types defined in the standard library or a third-party library without
@@ -125,18 +125,43 @@ Variant Object Types
 ....................
 
 A *variant object type* is an object type that contains one or more ``case``
-clauses. NimYAML currently supports variant object types. However, this feature
-is **highly experimental**. Only the currently accessible fields of a variant
-object type are dumped, and only those may be present when loading. The
-discriminator field(s) are treated like all other fields. The value of a
-discriminator field must occur before any value of a field that depends on it.
-This violates the YAML specification and therefore will be changed in the
-future.
+clauses. NimYAML supports variant object types. Only the currently accessible
+fields of a variant object type are dumped, and only those may be present when
+loading.
 
-While dumping variant object types directly is currently not production ready,
-you can use them for processing heterogeneous data sets. For example, if you
-have a YAML document which contains differently typed values in the same list
-like this:
+The value of a discriminator field must be loaded before any value of a field
+that depends on it. Therefore, a YAML mapping cannot be used to serialize
+variant object types - the YAML specification explicitly states that the order
+of key-value pairs in a mapping must not be used to convey content information.
+So, any variant object type is serialized as a list of key-value pairs.
+
+For example, this type:
+
+.. code-block:: nim
+  type
+    AnimalKind = enum
+      akCat, akDog
+  
+    Animal = object
+      name: string
+      case kind: AnimalKind
+      of akCat:
+        purringIntensity: int
+      of akDog:
+        barkometer: int
+
+will be serialized as:
+
+.. code-block:: yaml
+  %YAML 1.2
+  --- !nim:custom:Animal
+  - name: Bastet
+  - kind: akCat
+  - purringIntensity: 7
+
+You can also use variant object types for processing heterogeneous data sets.
+For example, if you have a YAML document which contains differently typed values
+in the same list like this:
 
 .. code-block:: yaml
   %YAML 1.2
