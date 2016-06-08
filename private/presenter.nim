@@ -488,6 +488,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               safeWrite(newline)
               writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
             indentation += options.indentationStep
+        elif options.style == psJson: indentation += options.indentationStep
       else:
         if nextState in [dBlockMapValue, dBlockImplicitMapKey]:
           startItem(target, options.style, indentation,
@@ -615,7 +616,3 @@ proc transform*(input: Stream, output: Stream,
     else:
       # never happens
       assert(false)
-  except YamlPresenterJsonError:
-    raise (ref YamlPresenterJsonError)(getCurrentException())
-  except YamlPresenterOutputError:
-    raise (ref YamlPresenterOutputError)(getCurrentException())
