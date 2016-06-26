@@ -321,6 +321,14 @@ proc writeTagAndAnchor(target: Stream, tag: TagId, tagLib: TagLibrary,
     e.parent = getCurrentException()
     raise e
 
+proc nextItem(c: var Queue, s: var YamlStream):
+    YamlStreamEvent {.raises: [YamlStreamError].} =
+  if c.len > 0:
+    try: result = c.dequeue
+    except IndexError: assert false
+  else:
+    result = s.next()
+
 proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               options: PresentationOptions = defaultPresentationOptions) =
   var
@@ -330,7 +338,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
   let newline = if options.newlines == nlLF: "\l"
         elif options.newlines == nlCRLF: "\c\l" else: "\n"
   while cached.len > 0 or not s.finished():
-    let item = if cached.len > 0: cached.dequeue else: s.next()
+    let item = nextItem(cached, s)
     case item.kind
     of yamlStartDoc:
       if options.style != psJson:
