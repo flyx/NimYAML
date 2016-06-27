@@ -1,3 +1,10 @@
+### 0.6.1
+
+Bugfixes:
+
+ * Fixed deserialization of floats (#17)
+ * Handle IndexError from queues properly
+
 ### 0.6.0
 
 Features:
