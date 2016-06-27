@@ -140,7 +140,8 @@ proc constructObject*[T: float|float32|float64](
   constructScalarItem(s, item, T):
     let hint = guessType(item.scalarContent)
     case hint
-    of yTypeFloat: result = T(parseBiggestFloat(item.scalarContent))
+    of yTypeFloat:
+      discard parseBiggestFloat(item.scalarContent, result)
     of yTypeFloatInf:
         if item.scalarContent[0] == '-': result = NegInf
         else: result = Inf
