@@ -1,3 +1,10 @@
+### 0.6.2
+
+Bugfixes:
+
+ * Fixed problem when serializing a type that overloads the `==` operator (#19)
+ * Fixed type hints for floats (`0` digit was not processed properly)
+
 ### 0.6.1
 
 Bugfixes:
