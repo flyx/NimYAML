@@ -729,7 +729,7 @@ proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext):
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
     RawYamlStream =
-  if value == nil:
+  if isNil(value):
     result = iterator(): YamlStreamEvent =
       yield scalarEvent("~", yTagNull)
   elif c.style == asNone: result = representChild(value[], ts, c)
