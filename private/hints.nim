@@ -14,18 +14,18 @@ type
           ythOF, ythOFF,
     ythT, ythTR, ythTRU, ythTRUE,
     ythY, ythYE, ythYES,
-    
+
     ythPoint, ythPointI, ythPointIN, ythPointINF,
               ythPointN, ythPointNA, ythPointNAN,
-    
+
     ythLowerFA, ythLowerFAL, ythLowerFALS,
     ythLowerNU, ythLowerNUL,
     ythLowerOF,
     ythLowerTR, ythLowerTRU,
     ythLowerYE,
-    
+
     ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
-    
+
     ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent
 
 macro typeHintStateMachine(c: untyped, content: untyped): stmt =
@@ -33,7 +33,7 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
   result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
   for branch in content.children:
     assert branch.kind == nnkOfBranch
-    var 
+    var
       charBranch = newNimNode(nnkOfBranch, branch)
       i = 0
       stateBranches = newNimNode(nnkCaseStmt, branch).add(
@@ -77,6 +77,7 @@ template advanceTypeHint(ch: char) {.dirty.} =
   of '0':
     [ythInitial, ythMinus]      => yth0
     [ythNumE, ythNumEPlusMinus] => ythExponent
+    [ythInt, ythDecimal, ythExponent] => nil
   of '1'..'9':
     [ythInitial, ythMinus]            => ythInt
     [ythNumE, ythNumEPlusMinus]       => ythExponent
