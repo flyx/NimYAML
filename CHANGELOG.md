@@ -1,9 +1,15 @@
+### 0.6.3
+
+Bugfixes:
+
+ * Can load floats from integer literals (without decimal point) (#22)
+
 ### 0.6.2
 
 Bugfixes:
 
  * Fixed problem when serializing a type that overloads the `==` operator (#19)
- * Fixed type hints for floats (`0` digit was not processed properly)
+ * Fixed type hints for floats (`0` digit was not processed properly) (#21)
 
 ### 0.6.1
 
