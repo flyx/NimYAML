@@ -13,7 +13,7 @@ proc newSerializationContext*(s: AnchorStyle): SerializationContext =
   result.refs = initTable[pointer, AnchorId]()
   result.style = s
   result.nextAnchorId = 0.AnchorId
-    
+
 template presentTag*(t: typedesc, ts: TagStyle): TagId =
   ## Get the TagId that represents the given type in the given style
   if ts == tsNone: yTagQuestionMark else: yamlTag(t)
@@ -38,7 +38,7 @@ template constructScalarItem*(s: var YamlStream, i: expr,
   ## the scalar as ``YamlStreamEvent`` in the content. Exceptions raised in
   ## the content will be automatically catched and wrapped in
   ## ``YamlConstructionError``, which will then be raised.
-  let i = s.next() 
+  let i = s.next()
   if i.kind != yamlScalar:
     raise newException(YamlConstructionError, "Expected scalar")
   try: content
@@ -92,7 +92,7 @@ proc representObject*(value: int, tagStyle: TagStyle,
     {.raises: [], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
   ## on 64-bit systems, this may cause a type conversion error.
-  
+
   # currently, sizeof(int) is at least sizeof(int32).
   representObject(int32(value), tagStyle, c, tag)
 
@@ -142,6 +142,8 @@ proc constructObject*[T: float|float32|float64](
     case hint
     of yTypeFloat:
       discard parseBiggestFloat(item.scalarContent, result)
+    of yTypeInteger:
+      discard parseBiggestFloat(item.scalarContent, result)
     of yTypeFloatInf:
         if item.scalarContent[0] == '-': result = NegInf
         else: result = Inf
@@ -175,7 +177,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
     else:
       raise newException(YamlConstructionError,
           "Cannot construct to bool: " & item.scalarContent)
-        
+
 proc representObject*(value: bool, ts: TagStyle, c: SerializationContext,
     tag: TagId): RawYamlStream  {.raises: [].} =
   ## represents a bool value as a YAML scalar
@@ -283,7 +285,7 @@ proc representObject*[I, T](value: array[I, T], ts: TagStyle,
         if finished(events): break
         yield event
     yield endSeqEvent()
-    
+
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
   try:
     let uri = "!nim:tables:Table(" & safeTagUri(yamlTag(K)) & "," &
@@ -462,7 +464,7 @@ proc constructObject*[O: object|tuple](
     startKind = when isVariantObject(O): yamlStartSeq else: yamlStartMap
     endKind = when isVariantObject(O): yamlEndSeq else: yamlEndMap
   if e.kind != startKind:
-    raise newException(YamlConstructionError, "While constructing " & 
+    raise newException(YamlConstructionError, "While constructing " &
         typetraits.name(O) & ": Expected map start, got " & $e.kind)
   when isVariantObject(O): reset(result) # make discriminants writeable
   while s.peek.kind != endKind:
@@ -578,7 +580,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
   ))
   ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
       newStmtList(raiseStmt), newNimNode(nnkExceptBranch).add(
-        newIdentNode("KeyError"), newStmtList(newCall("assert", newLit(false)))    
+        newIdentNode("KeyError"), newStmtList(newCall("assert", newLit(false)))
   ))))
   result = newStmtList(newCall("reset", r), ifStmt)
 
@@ -677,7 +679,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
     elif item.seqAnchor != yAnchorNone:
       raise newException(YamlConstructionError, "Anchor on non-ref type")
   constructObject(s, c, result)
-    
+
 proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
                         result: var ref O) =
   var e = s.peek()
@@ -699,7 +701,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
       assert(not c.refs.hasKey(anchor))
       c.refs[anchor] = cast[pointer](result)
       anchor = yAnchorNone
-  
+
   case e.kind
   of yamlScalar: removeAnchor(e.scalarAnchor)
   of yamlStartMap: removeAnchor(e.mapAnchor)
@@ -759,7 +761,7 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
         var child = representChild(value[], childTagStyle, c)
         var first = child()
         assert(not finished(child))
-        case first.kind 
+        case first.kind
         of yamlStartMap:
           first.mapAnchor = a
           if ts == tsNone: first.mapTag = yTagQuestionMark
@@ -800,7 +802,7 @@ proc construct*[T](s: var YamlStream, target: var T) =
   try:
     var e = s.next()
     assert(e.kind == yamlStartDoc)
-    
+
     constructChild(s, context, target)
     e = s.next()
     assert(e.kind == yamlEndDoc)
@@ -838,7 +840,7 @@ proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
   if a != yAnchorNone:
     try: a = q[cast[pointer](a)]
     except KeyError: assert false, "Can never happen"
-    
+
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream =
   var
