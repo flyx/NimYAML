@@ -410,9 +410,12 @@ const
 template internalError(s: string) =
   when not defined(release):
     let ii = instantiationInfo()
-    echo "! Error in file ", ii.filename, " at line ", ii.line, ":"
-    echo "!   ", s
-    echo "! Please report this bug."
+    echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
+    echo s
+    echo "[NimYAML] Stacktrace:"
+    try: writeStackTrace()
+    except: discard
+    echo "[NimYAML] Please report this bug."
     quit 1
 template yAssert(e: typed) =
   when not defined(release):
