@@ -15,8 +15,7 @@ proc next*(s: var YamlStream): YamlStreamEvent =
   else:
     try:
       shallowCopy(result, s.backend())
-      assert(not finished(s.backend))
-    except AssertionError: raise
+      yAssert(not finished(s.backend))
     except YamlStreamError:
       let cur = getCurrentException()
       var e = newException(YamlStreamError, cur.msg)
@@ -47,7 +46,6 @@ proc finished*(s: var YamlStream): bool =
       else:
         s.peeked = true
         result = false
-    except AssertionError: raise
     except YamlStreamError:
       let cur = getCurrentException()
       var e = newException(YamlStreamError, cur.msg)

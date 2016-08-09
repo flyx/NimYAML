@@ -27,9 +27,7 @@ proc safeTagUri(id: TagId): string {.raises: [].} =
     let uri = serializationTagLibrary.uri(id)
     if uri.len > 0 and uri[0] == '!': return uri[1..uri.len - 1]
     else: return uri
-  except KeyError:
-    # cannot happen (theoretically, you know)
-    assert(false)
+  except KeyError: internalError("Unexpected KeyError for TagId " & $id)
 
 template constructScalarItem*(s: var YamlStream, i: expr,
                               t: typedesc, content: untyped) =
@@ -91,10 +89,17 @@ proc representObject*(value: int, tagStyle: TagStyle,
                       c: SerializationContext, tag: TagId): RawYamlStream
     {.raises: [], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
-  ## on 64-bit systems, this may cause a type conversion error.
+  ## on 64-bit systems, this may cause a RangeError.
 
   # currently, sizeof(int) is at least sizeof(int32).
-  representObject(int32(value), tagStyle, c, tag)
+  result = iterator(): YamlStreamEvent =
+    var ev: YamlStreamEvent
+    try: ev = scalarEvent($int32(value), tag, yAnchorNone)
+    except RangeError:
+      var e = newException(YamlStreamError, getCurrentExceptionMsg())
+      e.parent = getCurrentException()
+      raise e
+    yield ev
 
 {.push overflowChecks: on.}
 proc parseBiggestUInt(s: string): uint64 =
@@ -130,8 +135,15 @@ proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
 proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
     tag: TagId): RawYamlStream {.raises: [], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
-  ## to int32. on 64-bit systems, this may cause a type conversion error.
-  representObject(uint32(value), ts, c, tag)
+  ## to int32. on 64-bit systems, this may cause a RangeError.
+  result = iterator(): YamlStreamEvent =
+    var ev: YamlStreamEvent
+    try: ev = scalarEvent($uint32(value), tag, yAnchorNone)
+    except RangeError:
+      var e = newException(YamlStreamError, getCurrentExceptionMsg())
+      e.parent = getCurrentException()
+      raise e
+    yield ev
 
 proc constructObject*[T: float|float32|float64](
     s: var YamlStream, c: ConstructionContext, result: var T)
@@ -293,7 +305,7 @@ proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
     result = lazyLoadTag(uri)
   except KeyError:
     # cannot happen (theoretically, you know)
-    assert(false)
+    internalError("Unexpected KeyError")
 
 proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
                             result: var Table[K, V])
@@ -342,7 +354,7 @@ proc yamlTag*[K, V](T: typedesc[OrderedTable[K, V]]): TagId
     result = lazyLoadTag(uri)
   except KeyError:
     # cannot happen (theoretically, you know)
-    assert(false)
+    internalError("Unexpected KeyError")
 
 proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
                             result: var OrderedTable[K, V])
@@ -430,7 +442,7 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
       for bIndex in 1 .. len(child) - 1:
         let discTest = infix(discriminant, "==", child[bIndex][0])
         for item in child[bIndex][1].children:
-          assert item.kind == nnkSym
+          yAssert item.kind == nnkSym
           var ob = newNimNode(nnkOfBranch).add(newStrLitNode($item))
           let field = newDotExpr(o, newIdentNode($item))
           var ifStmt = newIfStmt((cond: discTest, body: newStmtList(
@@ -442,7 +454,7 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
           ob.add(newStmtList(ifStmt))
           result.add(ob)
     else:
-      assert child.kind == nnkSym
+      yAssert child.kind == nnkSym
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
       let field = newDotExpr(o, newIdentNode($child))
       ob.add(newStmtList(newCall("constructChild", stream, context, field)))
@@ -547,15 +559,15 @@ proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
 macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
                                      t: typedesc): stmt =
   let tDesc = getType(getType(t)[1])
-  assert tDesc.kind == nnkObjectTy
+  yAssert tDesc.kind == nnkObjectTy
   let recCase = tDesc[2][0]
-  assert recCase.kind == nnkRecCase
+  yAssert recCase.kind == nnkRecCase
   let
     discriminant = newDotExpr(r, newIdentNode($recCase[0]))
     discType = newCall("type", discriminant)
   var ifStmt = newNimNode(nnkIfStmt)
   for i in 1 .. recCase.len - 1:
-    assert recCase[i].kind == nnkOfBranch
+    yAssert recCase[i].kind == nnkOfBranch
     var branch = newNimNode(nnkElifBranch)
     var branchContent = newStmtList(newAssignment(discriminant, recCase[i][0]))
     case recCase[i][1].len
@@ -567,7 +579,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
       branch.add(infix(
           newCall("yamlTag", newCall("type", field)), "in", possibleTagIds))
       branchContent.add(newCall("constructChild", s, c, field))
-    else: assert false
+    else: internalError("Too many children: " & $recCase[i][1].len)
     branch.add(branchContent)
     ifStmt.add(branch)
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
@@ -580,7 +592,8 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
   ))
   ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
       newStmtList(raiseStmt), newNimNode(nnkExceptBranch).add(
-        newIdentNode("KeyError"), newStmtList(newCall("assert", newLit(false)))
+        newIdentNode("KeyError"), newStmtList(newCall("internalError",
+        newStrLitNode("Unexcpected KeyError")))
   ))))
   result = newStmtList(newCall("reset", r), ifStmt)
 
@@ -623,7 +636,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         raise newException(YamlConstructionError,
             "Complex value of implicit variant object type must have a tag.")
       possibleTagIds.add(item.seqTag)
-    else: assert false
+    else: internalError("Unexpected item kind: " & $item.kind)
     constructImplicitVariantObject(s, c, result, possibleTagIds, T)
   else:
     case item.kind
@@ -646,7 +659,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                            typetraits.name(T))
       elif item.seqAnchor != yAnchorNone:
         raise newException(YamlConstructionError, "Anchor on non-ref type")
-    else: assert false
+    else: internalError("Unexpected item kind: " & $item.kind)
     constructObject(s, c, result)
 
 proc constructChild*(s: var YamlStream, c: ConstructionContext,
@@ -690,15 +703,13 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
       discard s.next()
       return
   elif e.kind == yamlAlias:
-    try:
-      result = cast[ref O](c.refs[e.aliasTarget])
-      discard s.next()
-      return
-    except KeyError: assert(false)
+    result = cast[ref O](c.refs.getOrDefault(e.aliasTarget))
+    discard s.next()
+    return
   new(result)
   template removeAnchor(anchor: var AnchorId) {.dirty.} =
     if anchor != yAnchorNone:
-      assert(not c.refs.hasKey(anchor))
+      yAssert(not c.refs.hasKey(anchor))
       c.refs[anchor] = cast[pointer](result)
       anchor = yAnchorNone
 
@@ -706,10 +717,10 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   of yamlScalar: removeAnchor(e.scalarAnchor)
   of yamlStartMap: removeAnchor(e.mapAnchor)
   of yamlStartSeq: removeAnchor(e.seqAnchor)
-  else: assert(false)
+  else: internalError("Unexpected event kind: " & $e.kind)
   s.peek = e
   try: constructChild(s, c, result[])
-  except YamlConstructionError, YamlStreamError, AssertionError: raise
+  except YamlConstructionError, YamlStreamError: raise
   except Exception:
     var e = newException(YamlStreamError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
@@ -738,47 +749,40 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
   else:
     let p = cast[pointer](value)
     if c.refs.hasKey(p):
-      try:
-        if c.refs[p] == yAnchorNone:
-          c.refs[p] = c.nextAnchorId
-          c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-      except KeyError: assert false, "Can never happen"
-      result = iterator(): YamlStreamEvent {.raises: [].} =
-        var event: YamlStreamEvent
-        try: event = aliasEvent(c.refs[p])
-        except KeyError: assert false, "Can never happen"
-        yield event
-      return
-    try:
-      if c.style == asAlways:
+      if c.refs.getOrDefault(p) == yAnchorNone:
         c.refs[p] = c.nextAnchorId
         c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-      else: c.refs[p] = yAnchorNone
-      let
-        a = if c.style == asAlways: c.refs[p] else: cast[AnchorId](p)
-        childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
-      result = iterator(): YamlStreamEvent =
-        var child = representChild(value[], childTagStyle, c)
-        var first = child()
-        assert(not finished(child))
-        case first.kind
-        of yamlStartMap:
-          first.mapAnchor = a
-          if ts == tsNone: first.mapTag = yTagQuestionMark
-        of yamlStartSeq:
-          first.seqAnchor = a
-          if ts == tsNone: first.seqTag = yTagQuestionMark
-        of yamlScalar:
-          first.scalarAnchor = a
-          if ts == tsNone and guessType(first.scalarContent) != yTypeNull:
-            first.scalarTag = yTagQuestionMark
-        else: discard
-        yield first
-        while true:
-          let event = child()
-          if finished(child): break
-          yield event
-    except KeyError: assert false, "Can never happen"
+      result = iterator(): YamlStreamEvent {.raises: [].} =
+        yield aliasEvent(c.refs.getOrDefault(p))
+      return
+    if c.style == asAlways:
+      c.refs[p] = c.nextAnchorId
+      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+    else: c.refs[p] = yAnchorNone
+    let
+      a = if c.style == asAlways: c.refs.getOrDefault(p) else: cast[AnchorId](p)
+      childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
+    result = iterator(): YamlStreamEvent =
+      var child = representChild(value[], childTagStyle, c)
+      var first = child()
+      yAssert(not finished(child))
+      case first.kind
+      of yamlStartMap:
+        first.mapAnchor = a
+        if ts == tsNone: first.mapTag = yTagQuestionMark
+      of yamlStartSeq:
+        first.seqAnchor = a
+        if ts == tsNone: first.seqTag = yTagQuestionMark
+      of yamlScalar:
+        first.scalarAnchor = a
+        if ts == tsNone and guessType(first.scalarContent) != yTypeNull:
+          first.scalarTag = yTagQuestionMark
+      else: discard
+      yield first
+      while true:
+        let event = child()
+        if finished(child): break
+        yield event
 
 proc representChild*[O](value: O, ts: TagStyle,
                         c: SerializationContext): RawYamlStream =
@@ -801,17 +805,15 @@ proc construct*[T](s: var YamlStream, target: var T) =
   var context = newConstructionContext()
   try:
     var e = s.next()
-    assert(e.kind == yamlStartDoc)
+    yAssert(e.kind == yamlStartDoc)
 
     constructChild(s, context, target)
     e = s.next()
-    assert(e.kind == yamlEndDoc)
+    yAssert(e.kind == yamlEndDoc)
   except YamlConstructionError:
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
     raise (ref YamlStreamError)(getCurrentException())
-  except AssertionError:
-    raise (ref AssertionError)(getCurrentException())
   except Exception:
     # may occur while calling s()
     var ex = newException(YamlStreamError, "")
@@ -833,19 +835,17 @@ proc load*[K](input: Stream, target: var K) =
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: assert false
+    else: internalError("Unexpected exception: " & e.parent.repr)
 
 proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
     {.inline.} =
-  if a != yAnchorNone:
-    try: a = q[cast[pointer](a)]
-    except KeyError: assert false, "Can never happen"
+  if a != yAnchorNone: a = q.getOrDefault(cast[pointer](a))
 
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream =
   var
     context = newSerializationContext(a)
-    objStream = iterator(): YamlStreamEvent =
+    objStream = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
       yield startDocEvent()
       var events = representChild(value, ts, context)
       while true:
@@ -855,11 +855,8 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
       yield endDocEvent()
   if a == asTidy:
     var objQueue = newSeq[YamlStreamEvent]()
-    try:
-      for event in objStream(): objQueue.add(event)
-    except Exception:
-      assert(false)
-    var backend = iterator(): YamlStreamEvent =
+    for event in objStream(): objQueue.add(event)
+    var backend = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
       for i in countup(0, objQueue.len - 1):
         var event = objQueue[i]
         case event.kind
@@ -879,5 +876,4 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
       if options.style == psJson: asNone else: anchorStyle)
   try: present(events, target, serializationTagLibrary, options)
   except YamlStreamError:
-    # serializing object does not raise any errors, so we can ignore this
-    assert false, "Can never happen"
+    internalError("Unexpected exception: " & getCurrentException().repr)

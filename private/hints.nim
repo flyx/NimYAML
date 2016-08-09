@@ -29,10 +29,10 @@ type
     ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent
 
 macro typeHintStateMachine(c: untyped, content: untyped): stmt =
-  assert content.kind == nnkStmtList
+  yAssert content.kind == nnkStmtList
   result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
   for branch in content.children:
-    assert branch.kind == nnkOfBranch
+    yAssert branch.kind == nnkOfBranch
     var
       charBranch = newNimNode(nnkOfBranch, branch)
       i = 0
@@ -42,14 +42,14 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
       charBranch.add(copyNimTree(branch[i]))
       inc(i)
     for rule in branch[i].children:
-      assert rule.kind == nnkInfix
-      assert ($rule[0].ident == "=>")
+      yAssert rule.kind == nnkInfix
+      yAssert ($rule[0].ident == "=>")
       var stateBranch = newNimNode(nnkOfBranch, rule)
       case rule[1].kind
       of nnkBracket:
         for item in rule[1].children: stateBranch.add(item)
       of nnkIdent: stateBranch.add(rule[1])
-      else: assert false
+      else: internalError("Invalid rule kind: " & $rule[1].kind)
       if rule[2].kind == nnkNilLit:
         stateBranch.add(newStmtList(newNimNode(nnkDiscardStmt).add(
                         newEmptyNode())))

@@ -57,10 +57,8 @@ template debug(message: string) {.dirty.} =
     try: styledWriteLine(stdout, fgBlue, message)
     except IOError: discard
 
-template debugFail() {.dirty.} =
-  when not defined(release):
-    echo "internal error at line: ", instantiationInfo().line
-  assert(false)
+template unexpectedLevelKind() {.dirty.} =
+  internalError("Unexpected level kind: " & $p.level.kind)
 
 proc generateError(p: YamlParser, message: string):
     ref YamlParserError {.raises: [].} =
@@ -119,7 +117,7 @@ template yieldLevelEnd() {.dirty.} =
   of fplUnknown:
     if p.ancestry.len > 1:
       yield emptyScalar(p) # don't yield scalar for empty doc
-  of fplSinglePairKey, fplDocument: debugFail()
+  of fplSinglePairKey, fplDocument: unexpectedLevelKind()
 
 template handleLineEnd(insideDocument: bool) {.dirty.} =
   case p.lexer.buf[p.lexer.bufpos]
@@ -142,11 +140,11 @@ template handleObjectEnd(nextState: FastParseState) {.dirty.} =
   of fplSinglePairKey: p.level.kind = fplSinglePairValue
   of fplMapValue: p.level.kind = fplMapKey
   of fplSequence, fplDocument: discard
-  of fplUnknown, fplScalar, fplSinglePairValue: debugFail()
+  of fplUnknown, fplScalar, fplSinglePairValue: unexpectedLevelKind()
 
 proc objectStart(p: YamlParser, k: static[YamlStreamEventKind],
                  single: bool = false): YamlStreamEvent {.raises: [].} =
-  assert(p.level.kind == fplUnknown)
+  yAssert(p.level.kind == fplUnknown)
   when k == yamlStartMap:
     result = startMapEvent(p.tag, p.anchor)
     if single:
@@ -234,7 +232,7 @@ template handleMapKeyIndicator() {.dirty.} =
   of fplScalar:
     raise p.generateError(
         "Unexpected map key indicator (expected multiline scalar end)")
-  of fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
+  of fplSinglePairKey, fplSinglePairValue, fplDocument: unexpectedLevelKind()
   p.lexer.skipWhitespace()
   p.indentation = p.lexer.getColNumber(p.lexer.bufpos)
 
@@ -264,7 +262,7 @@ template handleMapValueIndicator() {.dirty.} =
   of fplScalar:
     raise p.generateError(
         "Unexpected map value indicator (expected multiline scalar end)")
-  of fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
+  of fplSinglePairKey, fplSinglePairValue, fplDocument: unexpectedLevelKind()
   p.lexer.skipWhitespace()
   p.indentation = p.lexer.getColNumber(p.lexer.bufpos)
 
@@ -383,7 +381,8 @@ template handleBlockItemStart() {.dirty.} =
     p.level.kind = fplMapKey
     p.ancestry.add(p.level)
     p.level = FastParseLevel(kind: fplUnknown, indentation: p.indentation)
-  of fplScalar, fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
+  of fplScalar, fplSinglePairKey, fplSinglePairValue, fplDocument:
+    unexpectedLevelKind()
 
 template handleFlowItemStart() {.dirty.} =
   if p.level.kind == fplUnknown and
@@ -487,7 +486,7 @@ proc lineEnding(p: YamlParser) {.raises: [YamlParserError], inline.} =
 proc tagShorthand(lexer: var BaseLexer, shorthand: var string) {.inline.} =
   debug("lex: tagShorthand")
   while lexer.buf[lexer.bufpos] in space: lexer.bufpos.inc()
-  assert lexer.buf[lexer.bufpos] == '!'
+  yAssert lexer.buf[lexer.bufpos] == '!'
   shorthand.add('!')
   lexer.bufpos.inc()
   var c = lexer.buf[lexer.bufpos]
@@ -1099,7 +1098,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             p.startToken()
             raise p.generateError(
                 "Multiline scalars may not be implicit map keys")
-          of fplSinglePairKey, fplSinglePairValue, fplDocument: debugFail()
+          of fplSinglePairKey, fplSinglePairValue, fplDocument:
+            unexpectedLevelKind()
           p.lexer.bufpos.inc()
           p.lexer.skipWhitespace()
           p.indentation = p.lexer.getColNumber(p.lexer.bufpos)
@@ -1345,7 +1345,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           flowdepth.inc()
           p.lexer.bufpos.inc()
         of '}':
-          assert(p.level.kind == fplUnknown)
+          yAssert(p.level.kind == fplUnknown)
           p.level = p.ancestry.pop()
           case p.level.kind
           of fplMapValue:
@@ -1362,11 +1362,12 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           of fplSinglePairValue:
             p.startToken()
             raise p.generateError("Unexpected token (expected ']')")
-          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
+          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
         of ']':
-          assert(p.level.kind == fplUnknown)
+          yAssert(p.level.kind == fplUnknown)
           p.level = p.ancestry.pop()
           case p.level.kind
           of fplSequence:
@@ -1376,15 +1377,16 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             yield emptyScalar(p)
             p.level = p.ancestry.pop()
             yield endMapEvent()
-            assert(p.level.kind == fplSequence)
+            yAssert(p.level.kind == fplSequence)
           of fplMapKey, fplMapValue:
             p.startToken()
             raise p.generateError("Unexpected token (expected '}')")
-          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
+          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
         of ',':
-          assert(p.level.kind == fplUnknown)
+          yAssert(p.level.kind == fplUnknown)
           p.level = p.ancestry.pop()
           case p.level.kind
           of fplSequence: yield emptyScalar(p)
@@ -1400,8 +1402,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             yield emptyScalar(p)
             p.level = p.ancestry.pop()
             yield endMapEvent()
-            assert(p.level.kind == fplSequence)
-          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
+            yAssert(p.level.kind == fplSequence)
+          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.ancestry.add(p.level)
           p.level = initLevel(fplUnknown)
           p.lexer.bufpos.inc()
@@ -1433,7 +1436,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             of fplSinglePairKey:
               yield emptyScalar(p)
               p.level.kind = fplSinglePairValue
-            of fplUnknown, fplScalar, fplDocument: debugFail()
+            of fplUnknown, fplScalar, fplDocument: unexpectedLevelKind()
             p.ancestry.add(p.level)
             p.level = initLevel(fplUnknown)
             p.lexer.bufpos.inc()
@@ -1496,9 +1499,10 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             raise p.generateError("Unexpected token (expected '}')")
           of fplSinglePairValue:
             p.level = p.ancestry.pop()
-            assert(p.level.kind == fplSequence)
+            yAssert(p.level.kind == fplSequence)
             yield endMapEvent()
-          of fplScalar, fplUnknown, fplSinglePairKey, fplDocument: debugFail()
+          of fplScalar, fplUnknown, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
         of '}':
@@ -1507,7 +1511,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           of fplSequence, fplSinglePairValue:
             p.startToken()
             raise p.generateError("Unexpected token (expected ']')")
-          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
+          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.lexer.bufpos.inc()
           leaveFlowLevel()
         of ',':
@@ -1519,10 +1524,11 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             explicitFlowKey = false
           of fplSinglePairValue:
             p.level = p.ancestry.pop()
-            assert(p.level.kind == fplSequence)
+            yAssert(p.level.kind == fplSequence)
             yield endMapEvent()
           of fplMapKey: explicitFlowKey = false
-          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
+          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.ancestry.add(p.level)
           p.level = initLevel(fplUnknown)
           state = fpFlow
@@ -1533,7 +1539,8 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
             p.startToken()
             raise p.generateError("Unexpected token (expected ',')")
           of fplMapValue, fplSinglePairValue: discard
-          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument: debugFail()
+          of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+            unexpectedLevelKind()
           p.ancestry.add(p.level)
           p.level = initLevel(fplUnknown)
           state = fpFlow
@@ -1548,4 +1555,5 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
           p.startToken()
           raise p.generateError("Unexpected content (expected flow indicator)")
   try: result = initYamlStream(backend)
-  except Exception: debugFail() # compiler error
+  except Exception: # nimc enforces this handler although it isn't necessary
+    internalError("Reached code that should be unreachable")

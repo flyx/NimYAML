@@ -35,7 +35,7 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
         result.pairs.add((key: key, value: value))
       discard s.next()
       if start.mapAnchor != yAnchorNone:
-        assert(not c.refs.hasKey(start.mapAnchor))
+        yAssert(not c.refs.hasKey(start.mapAnchor))
         c.refs[start.mapAnchor] = cast[pointer](result)
     of yamlStartSeq:
       result.tag = tagLib.uri(start.seqTag)
@@ -44,7 +44,7 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
       while s.peek().kind != yamlEndSeq:
         result.children.add(composeNode(s, tagLib, c))
       if start.seqAnchor != yAnchorNone:
-        assert(not c.refs.hasKey(start.seqAnchor))
+        yAssert(not c.refs.hasKey(start.seqAnchor))
         c.refs[start.seqAnchor] = cast[pointer](result)
       discard s.next()
     of yamlScalar:
@@ -52,11 +52,11 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
       result.kind = yScalar
       shallowCopy(result.content, start.scalarContent)
       if start.scalarAnchor != yAnchorNone:
-        assert(not c.refs.hasKey(start.scalarAnchor))
+        yAssert(not c.refs.hasKey(start.scalarAnchor))
         c.refs[start.scalarAnchor] = cast[pointer](result)
     of yamlAlias:
       result = cast[YamlNode](c.refs[start.aliasTarget])
-    else: assert false, "Malformed YamlStream"
+    else: internalError("Malformed YamlStream")
   except KeyError:
     raise newException(YamlConstructionError,
                        "Wrong tag library: TagId missing")
@@ -64,9 +64,9 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
 proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
     {.raises: [YamlStreamError, YamlConstructionError].} =
   var context = newConstructionContext()
-  assert s.next().kind == yamlStartDoc, "Malformed YamlStream"
+  yAssert s.next().kind == yamlStartDoc
   result.root = composeNode(s, tagLib, context)
-  assert s.next().kind == yamlEndDoc, "Malformed YamlStream"
+  yAssert s.next().kind == yamlEndDoc
 
 proc loadDOM*(s: Stream): YamlDocument
     {.raises: [IOError, YamlParserError, YamlConstructionError].} =
@@ -81,38 +81,31 @@ proc loadDOM*(s: Stream): YamlDocument
       raise (ref YamlParserError)(e.parent)
     elif e.parent of IOError:
       raise (ref IOError)(e.parent)
-    else: assert false, "Never happens: " & e.parent.repr
+    else: internalError("Unexpected exception: " & e.parent.repr)
 
 proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
                    tagLib: TagLibrary): RawYamlStream {.raises: [].}=
   let p = cast[pointer](n)
   if a != asNone and c.refs.hasKey(p):
-    try:
-      if c.refs[p] == yAnchorNone:
-        c.refs[p] = c.nextAnchorId
-        c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-    except KeyError: assert false, "Can never happen"
+    if c.refs.getOrDefault(p) == yAnchorNone:
+      c.refs[p] = c.nextAnchorId
+      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
     result = iterator(): YamlStreamEvent {.raises: [].} =
-      var event: YamlStreamEvent
-      try: event = aliasEvent(c.refs[p])
-      except KeyError: assert false, "Can never happen"
-      yield event
+      yield aliasEvent(c.refs.getOrDefault(p))
     return
   var
     tagId: TagId
     anchor: AnchorId
-  try:
-    if a == asAlways:
-      c.refs[p] = c.nextAnchorId
-      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-    else: c.refs[p] = yAnchorNone
-    tagId = if tagLib.tags.hasKey(n.tag): tagLib.tags[n.tag] else:
-            tagLib.registerUri(n.tag)
-    case a
-    of asNone: anchor = yAnchorNone
-    of asTidy: anchor = cast[AnchorId](n)
-    of asAlways: anchor = c.refs[p]
-  except KeyError: assert false, "Can never happen"
+  if a == asAlways:
+    c.refs[p] = c.nextAnchorId
+    c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+  else: c.refs[p] = yAnchorNone
+  tagId = if tagLib.tags.hasKey(n.tag): tagLib.tags.getOrDefault(n.tag) else:
+          tagLib.registerUri(n.tag)
+  case a
+  of asNone: anchor = yAnchorNone
+  of asTidy: anchor = cast[AnchorId](n)
+  of asAlways: anchor = c.refs.getOrDefault(p)
   result = iterator(): YamlStreamEvent =
     case n.kind
     of yScalar: yield scalarEvent(n.content, tagId, anchor)
@@ -141,20 +134,18 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
       yield endMapEvent()
 
 template processAnchoredEvent(target: expr, c: SerializationContext): stmt =
-  try:
-    let anchorId = c.refs[cast[pointer](target)]
-    if anchorId != yAnchorNone: target = anchorId
-    else: target = yAnchorNone
-  except KeyError: assert false, "Can never happen"
+  let anchorId = c.refs.getOrDefault(cast[pointer](target))
+  if anchorId != yAnchorNone: target = anchorId
+  else: target = yAnchorNone
   yield event
 
 proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
-    YamlStream {.raises: [].} =
+    YamlStream {.raises: [YamlStreamError].} =
   var
     context = newSerializationContext(a)
     events = serializeNode(doc.root, context, a, tagLib)
   if a == asTidy:
-    var backend = iterator(): YamlStreamEvent {.raises: [].} =
+    var backend = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
       var output = newSeq[YamlStreamEvent]()
       while true:
         let event = events()
@@ -170,7 +161,7 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
       yield endDocEvent()
     result = initYamlStream(backend)
   else:
-    var backend = iterator(): YamlStreamEvent {.raises: [].} =
+    var backend = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
       yield startDocEvent()
       while true:
         let event = events()
@@ -182,14 +173,11 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
 proc dumpDOM*(doc: YamlDocument, target: Stream,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions)
-    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].} =
+    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+               YamlStreamError].} =
   ## Dump a YamlDocument as YAML character stream.
   var
     tagLib = initExtendedTagLibrary()
     events = serialize(doc, tagLib,
                        if options.style == psJson: asNone else: anchorStyle)
-  try:
-    present(events, target, tagLib, options)
-  except YamlStreamError:
-    # serializing object does not raise any errors, so we can ignore this
-    assert false, "Can never happen"
+  present(events, target, tagLib, options)

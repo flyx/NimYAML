@@ -256,9 +256,6 @@ type
     style: AnchorStyle
     nextAnchorId: AnchorId
     
-  RawYamlStream* = iterator(): YamlStreamEvent {.raises: [].} ## \
-    ## Stream of ``YamlStreamEvent``s returned by ``representObject`` procs.
-    
   YamlNodeKind* = enum
     yScalar, yMapping, ySequence
     
@@ -341,6 +338,9 @@ type
     ## ``lineContent`` are only available if the costructing proc also does
     ## parsing, because otherwise this information is not available to the
     ## costruction proc.
+    
+  RawYamlStream* = iterator(): YamlStreamEvent {.raises: [YamlStreamError].}## \
+    ## Stream of ``YamlStreamEvent``s returned by ``representObject`` procs.
 
 const
   # failsafe schema
@@ -405,7 +405,19 @@ const
   defaultPresentationOptions* =
         PresentationOptions(style: psDefault, indentationStep: 2,
                             newlines: nlOSDefault)
-    
+
+# used throughout implementation code, therefore defined here
+template internalError(s: string) =
+  when not defined(release):
+    let ii = instantiationInfo()
+    echo "! Error in file ", ii.filename, " at line ", ii.line, ":"
+    echo "!   ", s
+    echo "! Please report this bug."
+    quit 1
+template yAssert(e: typed) =
+  when not defined(release):
+    if not e: internalError(astToStr(e))
+
 # interface
 
 proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].}
@@ -468,7 +480,6 @@ iterator items*(s: var YamlStream): YamlStreamEvent
     try:
       event = s.backend()
       if finished(s.backend): break
-    except AssertionError: raise
     except YamlStreamError:
       let cur = getCurrentException()
       var e = newException(YamlStreamError, cur.msg)
@@ -625,8 +636,7 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext):
   ## Represents a Nim string. Supports nil strings.
 
 proc representChild*[O](value: O, ts: TagStyle,
-                        c: SerializationContext):
-    RawYamlStream {.raises: [].}
+                        c: SerializationContext): RawYamlStream {.raises: [].}
   ## Represents an arbitrary Nim object as YAML object.
 
 proc construct*[T](s: var YamlStream, target: var T)
@@ -638,13 +648,15 @@ proc load*[K](input: Stream, target: var K)
   ## Loads a Nim value from a YAML character stream.
 
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
-                   a: AnchorStyle = asTidy): YamlStream {.raises: [].}
+                   a: AnchorStyle = asTidy): YamlStream
+    {.raises: [YamlStreamError].}
   ## Represents a Nim value as ``YamlStream``
 
 proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions)
-    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError].}
+    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+               YamlStreamError].}
   ## Dump a Nim value as YAML character stream.
 
 var

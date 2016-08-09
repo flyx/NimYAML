@@ -6,6 +6,9 @@
 
 type Level = tuple[node: JsonNode, key: string]
 
+template unexpectedNodeKind() {.dirty.} =
+  internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
+
 proc initLevel(node: JsonNode): Level {.raises: [].} =
   (node: node, key: cast[string](nil))
 
@@ -117,7 +120,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
           levels[levels.high].key = nil
           if event.scalarAnchor != yAnchorNone:
             anchors[event.scalarAnchor] = jsonScalar
-      else: discard # will never happen
+      else: unexpectedNodeKind()
     of yamlEndSeq, yamlEndMap:
       if levels.len > 1:
         let level = levels.pop()
@@ -130,33 +133,24 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
           else:
             levels[levels.high].node[levels[levels.high].key] = level.node
             levels[levels.high].key = nil
-        else: discard # will never happen
+        else: unexpectedNodeKind()
       else: discard # wait for yamlEndDocument
     of yamlAlias:
       # we can savely assume that the alias exists in anchors
       # (else the parser would have already thrown an exception)
       case levels[levels.high].node.kind
       of JArray:
-        try:
-          levels[levels.high].node.elems.add(anchors[event.aliasTarget])
-        except KeyError:
-          # we can safely assume that this doesn't happen. It would
-          # have resulted in a parser error earlier.
-          assert(false)
+        levels[levels.high].node.elems.add(
+            anchors.getOrDefault(event.aliasTarget))
       of JObject:
         if isNil(levels[levels.high].key):
           raise newException(YamlConstructionError,
               "cannot use alias node as key in JSON")
         else:
-          try:
-            levels[levels.high].node.fields.add(
-                levels[levels.high].key, anchors[event.aliasTarget])
-          except KeyError:
-            # we can safely assume that this doesn't happen. It would
-            # have resulted in a parser error earlier.
-            assert(false)
+          levels[levels.high].node.fields.add(
+              levels[levels.high].key, anchors.getOrDefault(event.aliasTarget))
           levels[levels.high].key = nil
-      else: discard # will never happen
+      else: unexpectedNodeKind()
 
 proc loadToJson*(s: Stream): seq[JsonNode] =
   var
@@ -165,7 +159,7 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
   try:
     return constructJson(events)
   except YamlConstructionError:
-    var e = cast[ref YamlConstructionError](getCurrentException())
+    var e = (ref YamlConstructionError)(getCurrentException())
     e.line = parser.getLineNumber()
     e.column = parser.getColNumber()
     e.lineContent = parser.getLineContent()
@@ -173,13 +167,10 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
   except YamlStreamError:
     let e = getCurrentException()
     if e.parent of IOError:
-      raise cast[ref IOError](e.parent)
+      raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError:
-      raise cast[ref YamlParserError](e.parent)
-    else:
-      # can never happen
-      assert(false)
-  except AssertionError: raise
+      raise (ref YamlParserError)(e.parent)
+    else: internalError("Unexpected exception: " & e.parent.repr)
   except Exception:
     # compiler bug: https://github.com/nim-lang/Nim/issues/3772
-    assert(false)
+    internalError("Reached code that should be unreachable")

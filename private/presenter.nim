@@ -325,7 +325,7 @@ proc nextItem(c: var Queue, s: var YamlStream):
     YamlStreamEvent {.raises: [YamlStreamError].} =
   if c.len > 0:
     try: result = c.dequeue
-    except IndexError: assert false
+    except IndexError: internalError("Unexpected IndexError")
   else:
     result = s.next()
 
@@ -403,7 +403,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
       if options.style == psJson:
         raise newException(YamlPresenterJsonError,
                            "Alias not allowed in JSON output")
-      assert levels.len > 0
+      yAssert levels.len > 0
       startItem(target, options.style, indentation, levels[levels.high],
                 false, newline)
       try:
@@ -419,7 +419,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
       of psDefault:
         var length = 0
         while true:
-          assert(not(s.finished()))
+          yAssert(not s.finished())
           let next = s.next()
           cached.enqueue(next)
           case next.kind
@@ -449,7 +449,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
           if options.style != psJson:
             writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
           indentation += options.indentationStep
-        else: assert false
+        else: internalError("Invalid nextState: " & $nextState)
       else:
         startItem(target, options.style, indentation,
                   levels[levels.high], true, newline)
@@ -505,7 +505,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
             writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
           indentation += options.indentationStep
         of dBlockInlineMap: discard
-        else: assert false
+        else: internalError("Invalid nextState: " & $nextState)
       else:
         if nextState in [dBlockMapValue, dBlockImplicitMapKey]:
           startItem(target, options.style, indentation,
@@ -528,7 +528,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
       levels.add(nextState)
         
     of yamlEndSeq:
-      assert levels.len > 0
+      yAssert levels.len > 0
       case levels.pop()
       of dFlowSequenceItem:
         case options.style
@@ -554,10 +554,10 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
           indentation -= options.indentationStep
         safeWrite(']')
       of dBlockSequenceItem: discard
-      else: assert false
+      else: internalError("Invalid popped level")
       indentation -= options.indentationStep
     of yamlEndMap:
-      assert levels.len > 0
+      yAssert levels.len > 0
       let level = levels.pop()
       case level
       of dFlowMapValue:
@@ -584,7 +584,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
           indentation -= options.indentationStep
         safeWrite('}')
       of dBlockMapValue, dBlockInlineMap: discard
-      else: assert(false)
+      else: internalError("Invalid level: " & $level)
       indentation -= options.indentationStep
     of yamlEndDoc:
       if finished(s): break
@@ -633,6 +633,4 @@ proc transform*(input: Stream, output: Stream,
     while e.parent of YamlStreamError: e = e.parent
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else:
-      # never happens
-      assert(false)
+    else: internalError("Unexpected exception: " & e.parent.repr)
