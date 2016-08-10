@@ -4,18 +4,31 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
-  result.peeked = false
-  result.backend = backend
+type IteratorYamlStream = ref object of YamlStream
+  backend: iterator(): YamlStreamEvent
 
-proc next*(s: var YamlStream): YamlStreamEvent =
+proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
+  result = new(IteratorYamlStream)
+  result.peeked = false
+  result.isFinished = false
+  IteratorYamlStream(result).backend = backend
+  result.nextImpl = proc(s: YamlStream, e: var YamlStreamEvent): bool =
+    e = IteratorYamlStream(s).backend()
+    if finished(IteratorYamlStream(s).backend):
+      s.isFinished = true
+      result = false
+    else: result = true
+
+proc next*(s: YamlStream): YamlStreamEvent =
+  yAssert(not s.isFinished)
   if s.peeked:
     s.peeked = false
     shallowCopy(result, s.cached)
   else:
     try:
-      shallowCopy(result, s.backend())
-      yAssert(not finished(s.backend))
+      while true:
+        if s.nextImpl(s, result): break
+        yAssert(not s.isFinished)
     except YamlStreamError:
       let cur = getCurrentException()
       var e = newException(YamlStreamError, cur.msg)
@@ -27,25 +40,25 @@ proc next*(s: var YamlStream): YamlStreamEvent =
       e.parent = cur
       raise e
 
-proc peek*(s: var YamlStream): YamlStreamEvent =
+proc peek*(s: YamlStream): YamlStreamEvent =
   if not s.peeked:
     s.cached = s.next()
     s.peeked = true
   shallowCopy(result, s.cached)
 
-proc `peek=`*(s: var YamlStream, value: YamlStreamEvent) =
+proc `peek=`*(s: YamlStream, value: YamlStreamEvent) =
   s.cached = value
   s.peeked = true
     
-proc finished*(s: var YamlStream): bool =
+proc finished*(s: YamlStream): bool =
   if s.peeked: result = false
   else:
     try:
-      s.cached = s.backend()
-      if finished(s.backend): result = true
-      else:
-        s.peeked = true
-        result = false
+      while true:
+        if s.isFinished: return true
+        if s.nextImpl(s, s.cached):
+          s.peeked = true
+          return false
     except YamlStreamError:
       let cur = getCurrentException()
       var e = newException(YamlStreamError, cur.msg)

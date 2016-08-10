@@ -99,7 +99,7 @@ type
     of yamlAlias:
       aliasTarget* : AnchorId
     
-  YamlStream* = object ## \
+  YamlStream* = ref object of RootObj ## \
     ## A ``YamlStream`` is an iterator-like object that yields a
     ## well-formed stream of ``YamlStreamEvents``. Well-formed means that
     ## every ``yamlStartMap`` is terminated by a ``yamlEndMap``, every
@@ -112,9 +112,8 @@ type
     ## and is not required to check for it. The procs in this module will
     ## always yield a well-formed ``YamlStream`` and expect it to be
     ## well-formed if they take it as input parameter.
-    ##
-    ## 
-    backend: iterator(): YamlStreamEvent
+    nextImpl: proc(s: YamlStream, e: var YamlStreamEvent): bool
+    isFinished: bool
     peeked: bool
     cached: YamlStreamEvent
         
@@ -457,42 +456,25 @@ proc hash*(id: AnchorId): Hash {.borrow.}
 proc initYamlStream*(backend: iterator(): YamlStreamEvent):
     YamlStream {.raises: [].}
   ## Creates a new ``YamlStream`` that uses the given iterator as backend.
-proc next*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
+proc next*(s: YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
   ## Get the next item of the stream. Requires ``finished(s) == true``.
   ## If the backend yields an exception, that exception will be encapsulated
   ## into a ``YamlStreamError``, which will be raised. 
-proc peek*(s: var YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
+proc peek*(s: YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
   ## Get the next item of the stream without advancing the stream.
   ## Requires ``finished(s) == true``. Handles exceptions of the backend like
   ## ``next()``.
-proc `peek=`*(s: var YamlStream, value: YamlStreamEvent) {.raises: [].}
+proc `peek=`*(s: YamlStream, value: YamlStreamEvent) {.raises: [].}
   ## Set the next item of the stream. Will replace a previously peeked item,
   ## if one exists.
-proc finished*(s: var YamlStream): bool {.raises: [YamlStreamError].}
+proc finished*(s: YamlStream): bool {.raises: [YamlStreamError].}
   ## ``true`` if no more items are available in the stream. Handles exceptions
   ## of the backend like ``next()``.
-iterator items*(s: var YamlStream): YamlStreamEvent
+iterator items*(s: YamlStream): YamlStreamEvent
     {.raises: [YamlStreamError].} =
   ## Iterate over all items of the stream. You may not use ``peek()`` on the
   ## stream while iterating.
-  if s.peeked:
-    s.peeked = false
-    yield s.cached
-  while true:
-    var event: YamlStreamEvent
-    try:
-      event = s.backend()
-      if finished(s.backend): break
-    except YamlStreamError:
-      let cur = getCurrentException()
-      var e = newException(YamlStreamError, cur.msg)
-      e.parent = cur.parent
-      raise e
-    except Exception:
-      var e = newException(YamlStreamError, getCurrentExceptionMsg())
-      e.parent = getCurrentException()
-      raise e
-    yield event
+  while not s.finished(): yield s.next()
 
 proc initTagLibrary*(): TagLibrary {.raises: [].}
   ## initializes the ``tags`` table and sets ``nextCustomTagId`` to

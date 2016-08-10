@@ -64,9 +64,11 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
 proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
     {.raises: [YamlStreamError, YamlConstructionError].} =
   var context = newConstructionContext()
-  yAssert s.next().kind == yamlStartDoc
+  var n = s.next()
+  yAssert n.kind == yamlStartDoc
   result.root = composeNode(s, tagLib, context)
-  yAssert s.next().kind == yamlEndDoc
+  n = s.next()
+  yAssert n.kind == yamlEndDoc
 
 proc loadDOM*(s: Stream): YamlDocument
     {.raises: [IOError, YamlParserError, YamlConstructionError].} =
