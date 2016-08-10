@@ -1,5 +1,5 @@
 import "../yaml", common
-import math, strutils, stopwatch, terminal, algorithm
+import math, strutils, stopwatch, terminal, algorithm, random
 
 from nimlets_yaml import objKind
 
@@ -41,7 +41,6 @@ proc genYamlString(size: int, maxStringLen: int,
     ## size is in KiB, mayStringLen in characters.
     
     randomize(size * maxStringLen * ord(style))
-    result = "{"
     
     let targetSize = size * 1024
     var
@@ -145,8 +144,7 @@ block:
 
 block:
     multibench(cYaml10k, 100):
-        var
-            s = newStringStream(yaml10k)
+        var s = newStringStream(yaml10k)
         let res = loadDOM(s)
         assert res.root.kind == yMapping
 

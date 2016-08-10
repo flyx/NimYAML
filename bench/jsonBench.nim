@@ -2,7 +2,7 @@ import "../yaml", common
 
 from nimlets_yaml import objKind
 
-import math, strutils, stopwatch, terminal, algorithm
+import math, strutils, stopwatch, terminal, algorithm, random
 
 proc cmp(left, right: clock): int = cmp(left.nanoseconds(), right.nanoseconds()) 
 
