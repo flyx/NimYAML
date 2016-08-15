@@ -190,7 +190,7 @@ suite "Serialization":
   test "Serialization: Load OrderedTable[tuple[int32, int32], string]":
     let input = newStringStream("- {a: 23, b: 42}: drzw\n- {a: 13, b: 47}: drsi")
     var result: OrderedTable[tuple[a, b: int32], string]
-    load(input, result) 
+    load(input, result)
     var i = 0
     for key, value in result.pairs:
       case i

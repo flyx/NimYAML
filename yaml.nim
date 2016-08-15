@@ -418,7 +418,15 @@ template internalError(s: string) =
     quit 1
 template yAssert(e: typed) =
   when not defined(release):
-    if not e: internalError(astToStr(e))
+    if not e:
+      let ii = instantiationInfo()
+      echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
+      echo "assertion failed!"
+      echo "[NimYAML] Stacktrace:"
+      try: writeStackTrace()
+      except: discard
+      echo "[NimYAML] Please report this bug."
+      quit 1
 
 # interface
 
@@ -537,8 +545,9 @@ proc getLineContent*(p: YamlParser, marker: bool = true): string {.raises: [].}
   ## be returned containing a ``^`` at the position of the recent parser
   ## token.
 
-proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [].}
-  ## Parse the given stream as YAML character stream. 
+proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [YamlParserError].}
+  ## Parse the given stream as YAML character stream.
+  ## The only Exception that can be raised comes from opening the Stream.
 
 proc defineOptions*(style: PresentationStyle = psDefault,
                     indentationStep: int = 2,
@@ -563,7 +572,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
   ## check for these values and will output invalid JSON when rendering one
   ## of these values into a JSON character stream.
 
-proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [].}
+proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].}
     ## Uses `YamlParser <#YamlParser>`_ and
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
@@ -751,8 +760,8 @@ include private.tagLibrary
 include private.events
 include private.json
 include private.presenter
+include private.parse
 include private.hints
-include private.fastparse
 include private.streams
 include private.serialization
 include private.dom
