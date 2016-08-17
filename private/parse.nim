@@ -24,6 +24,8 @@ type
     chomp: ChompType
     atSequenceItem: bool
     recentWasMoreIndented: bool
+    flowdepth: int
+    explicitFlowKey: bool
 
   LevelEndResult = enum
     lerNothing, lerOne, lerAdditionalMapEnd
@@ -625,7 +627,6 @@ proc blockScalarLine(s: ParserYamlStream, p: YamlParser):
     p.content.add(p.lexer.buf[p.lexer.bufpos])
     p.lexer.bufpos.inc()
   result = p.handleLineEnd(true)
-  debug("    (exiting with " & $p.newlines & " newlines)")
 
 proc tagHandle(p: YamlParser, shorthandEnd: var int)
     {.raises: [YamlParserError].} =
@@ -829,6 +830,50 @@ proc handleBlockItemStart(p: YamlParser, e: var YamlStreamEvent): bool =
   of fplScalar, fplSinglePairKey, fplSinglePairValue, fplDocument:
     internalError("Unexpected level kind: " & $p.level.kind)
 
+proc handleFlowItemStart(p: YamlParser, e: var YamlStreamEvent): bool =
+  if p.level.kind == fplUnknown and
+      p.ancestry[p.ancestry.high].kind == fplSequence:
+    result = p.handlePossibleMapStart(e, true, true)
+
+proc handleFlowPlainScalar(p: YamlParser, e: var YamlStreamEvent) =
+  p.content.reset()
+  p.startToken()
+  p.plainScalar(cFlow)
+  if p.lexer.buf[p.lexer.bufpos] in {'{', '}', '[', ']', ',', ':', '#'}:
+    discard
+  else:
+    p.newlines = 0
+    while true:
+      case p.lexer.buf[p.lexer.bufpos]
+      of ':':
+        if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
+          if p.newlines == 1:
+            p.content.add(' ')
+            p.newlines = 0
+          elif p.newlines > 1:
+            p.content.addMultiple(' ', p.newlines - 1)
+            p.newlines = 0
+          p.plainScalar(cFlow)
+        break
+      of '#', EndOfFile: break
+      of '\l':
+        p.lexer.bufpos = p.lexer.handleLF(p.lexer.bufpos)
+        p.newlines.inc()
+      of '\c':
+        p.lexer.bufpos = p.lexer.handleCR(p.lexer.bufpos)
+        p.newlines.inc()
+      of flowIndicators: break
+      of ' ', '\t': p.lexer.skipWhitespace()
+      else:
+        if p.newlines == 1:
+          p.content.add(' ')
+          p.newlines = 0
+        elif p.newlines > 1:
+          p.content.addMultiple(' ', p.newlines - 1)
+          p.newlines = 0
+        p.plainScalar(cFlow)
+  e = p.currentScalar()
+
 # --- macros for defining parser states ---
 
 macro parserStates(names: varargs[untyped]): stmt =
@@ -904,7 +949,8 @@ macro parserState(name: untyped, impl: untyped): stmt =
 parserStates(initial, blockObjectStart, blockAfterPlainScalar, blockAfterObject,
              scalarEnd, objectEnd, expectDocEnd, startDoc, afterDocument,
              closeStream, closeMoreIndentedLevels, emitEmptyScalar, tagHandle,
-             anchor, alias, flow)
+             anchor, alias, flow, leaveFlowMap, leaveFlowSeq, flowAfterObject,
+             leaveFlowSinglePairMap)
 
 proc closeEverything(s: ParserYamlStream, p: YamlParser) =
   p.indentation = -1
@@ -917,21 +963,17 @@ proc endLevel(p: YamlParser, s: YamlStream, e: var YamlStreamEvent):
   case p.level.kind
   of fplSequence:
     e = endSeqEvent()
-    debug("endLevel: endSeq")
   of fplMapKey:
     e = endMapEvent()
-    debug("endLevel: endMap")
   of fplMapValue, fplSinglePairValue:
     e = emptyScalar(p)
     p.level.kind = fplMapKey
     result = lerAdditionalMapEnd
-    debug("endLevel: emptyScalar")
   of fplScalar:
     if ParserYamlStream(s).scalarType != stFlow:
       case ParserYamlStream(s).chomp
       of ctKeep:
         if p.content.len == 0: p.newlines.inc(-1)
-        debug("adding kept newlines: " & $p.newlines)
         p.content.addMultiple('\l', p.newlines)
       of ctClip:
         if p.content.len != 0:
@@ -939,7 +981,6 @@ proc endLevel(p: YamlParser, s: YamlStream, e: var YamlStreamEvent):
           p.content.add('\l')
       of ctStrip: discard
     e = currentScalar(p)
-    debug("endLevel: scalar(\"" & e.scalarContent & "\")")
     p.tag = yTagQuestionMark
     p.anchor = yAnchorNone
   of fplUnknown:
@@ -1005,6 +1046,16 @@ template handleObjectEnd(p: YamlParser, mayHaveEmptyValue: bool = false): bool =
     internalError("Unexpected level kind: " & $p.level.kind)
   result
 
+proc leaveFlowLevel(s: ParserYamlStream, p: YamlParser,
+                    e: var YamlStreamEvent): bool =
+  s.flowdepth.dec()
+  result = (p.endLevel(s, e) == lerOne) # lerAdditionalMapEnd cannot happen
+  if s.flowdepth == 0:
+    s.storedState = stateBlockAfterObject
+  else:
+    s.storedState = stateFlowAfterObject
+  s.nextImpl = stateObjectEnd
+
 parserState initial:
   case p.lexer.buf[p.lexer.bufpos]
   of '%':
@@ -1036,7 +1087,6 @@ parserState initial:
   of ' ', '\t':
     if not p.consumeLineIfEmpty(p.newlines):
       p.indentation = p.lexer.getColNumber(p.lexer.bufpos)
-      echo "startDocEvent B"
       e = startDocEvent()
       result = true
       state = blockObjectStart
@@ -1051,12 +1101,10 @@ parserState initial:
     p.startToken()
     p.lexer.directivesEndMarker(success)
     if success: p.lexer.bufpos.inc(3)
-    echo "startDocEvent C"
     e = startDocEvent()
     result = true
     state = blockObjectStart
   else:
-    echo "startDocEvent D"
     e = startDocEvent()
     result = true
     state = blockObjectStart
@@ -1374,7 +1422,6 @@ parserState expectDocEnd:
 
 parserState startDoc:
   p.initDocValues()
-  echo "startDocEvent E"
   e = startDocEvent()
   result = true
   state = blockObjectStart
@@ -1391,7 +1438,6 @@ parserState afterDocument:
       discard p.handleLineEnd(true)
     else:
       p.initDocValues()
-      echo "startDocEvent F"
       e = startDocEvent()
       result = true
       state = blockObjectStart
@@ -1402,7 +1448,6 @@ parserState afterDocument:
     if not p.consumeLineIfEmpty(p.newlines):
       p.indentation = p.lexer.getColNumber(p.lexer.bufpos)
       p.initDocValues()
-      echo "startDocEvent A"
       e = startDocEvent()
       result = true
       state = blockObjectStart
@@ -1445,17 +1490,14 @@ parserState closeMoreIndentedLevels:
       of lerAdditionalMapEnd: return true
       discard p.handleObjectEnd(false)
       return result
-    debug("c")
     if p.level.kind == fplDocument: state = expectDocEnd
     else: state = stored
   elif p.indentation == p.level.indentation:
-    debug("a")
     let res = p.endLevel(s, e)
     yAssert(res == lerOne)
     result = true
     state = stored
   else:
-    debug("b")
     state = stored
 
 parserState emitEmptyScalar:
@@ -1486,7 +1528,274 @@ parserState alias:
   state = objectEnd
 
 parserState flow:
-  s.isFinished = true
+  p.lexer.skipWhitespaceCommentsAndNewlines()
+  case p.lexer.buf[p.lexer.bufpos]
+  of '{':
+    if p.handleFlowItemStart(e): return true
+    e = p.objectStart(yamlStartMap)
+    result = true
+    ParserYamlStream(s).flowdepth.inc()
+    p.lexer.bufpos.inc()
+    ParserYamlStream(s).explicitFlowKey = false
+  of '[':
+    if p.handleFlowItemStart(e): return true
+    e = p.objectStart(yamlStartSeq)
+    result = true
+    ParserYamlStream(s).flowdepth.inc()
+    p.lexer.bufpos.inc()
+  of '}':
+    yAssert(p.level.kind == fplUnknown)
+    p.level = p.ancestry.pop()
+    p.lexer.bufpos.inc()
+    state = leaveFlowMap
+  of ']':
+    yAssert(p.level.kind == fplUnknown)
+    p.level = p.ancestry.pop()
+    p.lexer.bufpos.inc()
+    state = leaveFlowSeq
+  of ',':
+    yAssert(p.level.kind == fplUnknown)
+    p.level = p.ancestry.pop()
+    case p.level.kind
+    of fplSequence:
+      e = emptyScalar(p)
+      result = true
+    of fplMapValue:
+      e = emptyScalar(p)
+      result = true
+      p.level.kind = fplMapKey
+      ParserYamlStream(s).explicitFlowKey = false
+    of fplMapKey:
+      e = emptyScalar(p)
+      p.level.kind = fplMapValue
+      return true
+    of fplSinglePairValue:
+      e = emptyScalar(p)
+      result = true
+      p.level = p.ancestry.pop()
+      state = leaveFlowSinglePairMap
+      stored = flow
+    of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+      internalError("Unexpected level kind: " & $p.level.kind)
+    p.ancestry.add(p.level)
+    p.level = initLevel(fplUnknown)
+    p.lexer.bufpos.inc()
+  of ':':
+    if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
+      if p.handleFlowItemStart(e): return true
+      p.handleFlowPlainScalar(e)
+      result = true
+      state = objectEnd
+      stored = flowAfterObject
+    else:
+      p.level = p.ancestry.pop()
+      case p.level.kind
+      of fplSequence:
+        e = startMapEvent(p.tag, p.anchor)
+        result = true
+        debug("started single-pair map at " &
+            (if p.level.indentation == UnknownIndentation:
+             $p.indentation else: $p.level.indentation))
+        p.tag = yTagQuestionMark
+        p.anchor = yAnchorNone
+        if p.level.indentation == UnknownIndentation:
+          p.level.indentation = p.indentation
+        p.ancestry.add(p.level)
+        p.level = initLevel(fplSinglePairKey)
+      of fplMapValue, fplSinglePairValue:
+        p.startToken()
+        raise p.generateError("Unexpected token (expected ',')")
+      of fplMapKey:
+        e = emptyScalar(p)
+        result = true
+        p.level.kind = fplMapValue
+      of fplSinglePairKey:
+        e = emptyScalar(p)
+        result = true
+        p.level.kind = fplSinglePairValue
+      of fplUnknown, fplScalar, fplDocument:
+        internalError("Unexpected level kind: " & $p.level.kind)
+      if p.level.kind != fplSinglePairKey: p.lexer.bufpos.inc()
+      p.ancestry.add(p.level)
+      p.level = initLevel(fplUnknown)
+  of '\'':
+    if p.handleFlowItemStart(e): return true
+    p.content.reset()
+    p.startToken()
+    p.singleQuotedScalar()
+    if p.tag == yTagQuestionMark: p.tag = yTagExclamationMark
+    e = currentScalar(p)
+    result = true
+    state = objectEnd
+    stored = flowAfterObject
+  of '"':
+    if p.handleFlowItemStart(e): return true
+    p.content.reset()
+    p.startToken()
+    p.doubleQuotedScalar()
+    if p.tag == yTagQuestionMark: p.tag = yTagExclamationMark
+    e = currentScalar(p)
+    result = true
+    state = objectEnd
+    stored = flowAfterObject
+  of '!':
+    if p.handleFlowItemStart(e): return true
+    p.handleTagHandle()
+  of '&':
+    if p.handleFlowItemStart(e): return true
+    p.handleAnchor()
+  of '*':
+    state = alias
+    stored = flowAfterObject
+  of '?':
+    if p.lexer.isPlainSafe(p.lexer.bufpos + 1, cFlow):
+      if p.handleFlowItemStart(e): return true
+      p.handleFlowPlainScalar(e)
+      result = true
+      state = objectEnd
+      stored = flowAfterObject
+    elif ParserYamlStream(s).explicitFlowKey:
+      p.startToken()
+      raise p.generateError("Duplicate '?' in flow mapping")
+    elif p.level.kind == fplUnknown:
+      case p.ancestry[p.ancestry.high].kind
+      of fplMapKey, fplMapValue, fplDocument: discard
+      of fplSequence:
+        e = p.objectStart(yamlStartMap, true)
+        result = true
+      else:
+        p.startToken()
+        raise p.generateError("Unexpected token")
+      ParserYamlStream(s).explicitFlowKey = true
+      p.lexer.bufpos.inc()
+    else:
+      ParserYamlStream(s).explicitFlowKey = true
+      p.lexer.bufpos.inc()
+  else:
+    if p.handleFlowItemStart(e): return true
+    p.handleFlowPlainScalar(e)
+    result = true
+    state = objectEnd
+    stored = flowAfterObject
+
+parserState leaveFlowMap:
+  case p.level.kind
+  of fplMapValue:
+    e = emptyScalar(p)
+    p.level.kind = fplMapKey
+    return true
+  of fplMapKey:
+    if p.tag != yTagQuestionMark or p.anchor != yAnchorNone or
+        ParserYamlStream(s).explicitFlowKey:
+      e = emptyScalar(p)
+      p.level.kind = fplMapValue
+      ParserYamlStream(s).explicitFlowKey = false
+      return true
+  of fplSequence:
+    p.startToken()
+    raise p.generateError("Unexpected token (expected ']')")
+  of fplSinglePairValue:
+    p.startToken()
+    raise p.generateError("Unexpected token (expected ']')")
+  of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+    internalError("Unexpected level kind: " & $p.level.kind)
+  result = leaveFlowLevel(ParserYamlStream(s), p, e)
+  
+parserState leaveFlowSeq:
+  case p.level.kind
+  of fplSequence:
+    if p.tag != yTagQuestionMark or p.anchor != yAnchorNone:
+      e = emptyScalar(p)
+      return true
+  of fplSinglePairValue:
+    e = emptyScalar(p)
+    p.level = p.ancestry.pop()
+    state = leaveFlowSinglePairMap
+    stored = leaveFlowSeq
+    return true
+  of fplMapKey, fplMapValue:
+    p.startToken()
+    raise p.generateError("Unexpected token (expected '}')")
+  of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+    internalError("Unexpected level kind: " & $p.level.kind)
+  result = leaveFlowLevel(ParserYamlStream(s), p, e)
+
+parserState leaveFlowSinglePairMap:
+  e = endMapEvent()
+  result = true
+  state = stored
+
+parserState flowAfterObject:
+  p.lexer.skipWhitespaceCommentsAndNewlines()
+  case p.lexer.buf[p.lexer.bufpos]
+  of ']':
+    case p.level.kind
+    of fplSequence: discard
+    of fplMapKey, fplMapValue:
+      p.startToken()
+      raise p.generateError("Unexpected token (expected '}')")
+    of fplSinglePairValue:
+      p.level = p.ancestry.pop()
+      yAssert(p.level.kind == fplSequence)
+      e = endMapEvent()
+      return true
+    of fplScalar, fplUnknown, fplSinglePairKey, fplDocument:
+      internalError("Unexpected level kind: " & $p.level.kind)
+    p.lexer.bufpos.inc()
+    result = leaveFlowLevel(ParserYamlStream(s), p, e)
+  of '}':
+    case p.level.kind
+    of fplMapKey, fplMapValue: discard
+    of fplSequence, fplSinglePairValue:
+      p.startToken()
+      raise p.generateError("Unexpected token (expected ']')")
+    of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+      internalError("Unexpected level kind: " & $p.level.kind)
+    p.lexer.bufpos.inc()
+    result = leaveFlowLevel(ParserYamlStream(s), p, e)
+  of ',':
+    case p.level.kind
+    of fplSequence: discard
+    of fplMapValue:
+      e = scalarEvent("", yTagQuestionMark, yAnchorNone)
+      result = true
+      p.level.kind = fplMapKey
+      ParserYamlStream(s).explicitFlowKey = false
+    of fplSinglePairValue:
+      p.level = p.ancestry.pop()
+      yAssert(p.level.kind == fplSequence)
+      e = endMapEvent()
+      result = true
+    of fplMapKey: ParserYamlStream(s).explicitFlowKey = false
+    of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+      internalError("Unexpected level kind: " & $p.level.kind)
+    p.ancestry.add(p.level)
+    p.level = initLevel(fplUnknown)
+    state = flow
+    p.lexer.bufpos.inc()
+  of ':':
+    case p.level.kind
+    of fplSequence, fplMapKey:
+      p.startToken()
+      raise p.generateError("Unexpected token (expected ',')")
+    of fplMapValue, fplSinglePairValue: discard
+    of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
+      internalError("Unexpected level kind: " & $p.level.kind)
+    p.ancestry.add(p.level)
+    p.level = initLevel(fplUnknown)
+    state = flow
+    p.lexer.bufpos.inc()
+  of '#':
+    p.lineEnding()
+    if p.handleLineEnd(true):
+      p.startToken()
+      raise p.generateError("Unclosed flow content")
+  of EndOfFile:
+    p.startToken()
+    raise p.generateError("Unclosed flow content")
+  else:
+    p.startToken()
+    raise p.generateError("Unexpected content (expected flow indicator)")
 
 # --- parser initialization ---
 
@@ -1508,6 +1817,7 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
   p.initDocValues()
   ParserYamlStream(result).p = p
   ParserYamlStream(result).atSequenceItem = false
+  ParserYamlStream(result).flowdepth = 0
   result.isFinished = false
   result.peeked = false
   result.nextImpl = stateInitial

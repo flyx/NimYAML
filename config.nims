@@ -11,7 +11,6 @@ task tests, "Run all tests":
 task yamlTestSuite, "Run YAML 1.2 test suite":
   --r
   --verbosity:0
-  --d:yamlDebug
   setCommand "c", "test/yamlTestSuite"
 
 task serializationTests, "Run serialization tests":
