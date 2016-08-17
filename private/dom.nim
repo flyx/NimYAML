@@ -135,7 +135,7 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
           yield event
       yield endMapEvent()
 
-template processAnchoredEvent(target: expr, c: SerializationContext): stmt =
+template processAnchoredEvent(target: untyped, c: SerializationContext): typed =
   let anchorId = c.refs.getOrDefault(cast[pointer](target))
   if anchorId != yAnchorNone: target = anchorId
   else: target = yAnchorNone

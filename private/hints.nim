@@ -28,7 +28,7 @@ type
 
     ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent
 
-macro typeHintStateMachine(c: untyped, content: untyped): stmt =
+macro typeHintStateMachine(c: untyped, content: untyped): typed =
   yAssert content.kind == nnkStmtList
   result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
   for branch in content.children:
@@ -43,7 +43,7 @@ macro typeHintStateMachine(c: untyped, content: untyped): stmt =
       inc(i)
     for rule in branch[i].children:
       yAssert rule.kind == nnkInfix
-      yAssert ($rule[0].ident == "=>")
+      yAssert $rule[0].ident == "=>"
       var stateBranch = newNimNode(nnkOfBranch, rule)
       case rule[1].kind
       of nnkBracket:

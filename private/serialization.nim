@@ -29,7 +29,7 @@ proc safeTagUri(id: TagId): string {.raises: [].} =
     else: return uri
   except KeyError: internalError("Unexpected KeyError for TagId " & $id)
 
-template constructScalarItem*(s: var YamlStream, i: expr,
+template constructScalarItem*(s: var YamlStream, i: untyped,
                               t: typedesc, content: untyped) =
   ## Helper template for implementing ``constructObject`` for types that
   ## are constructed from a scalar. ``i`` is the identifier that holds
@@ -422,8 +422,8 @@ proc yamlTag*(T: typedesc[tuple]):
   try: serializationTagLibrary.tags[uri]
   except KeyError: serializationTagLibrary.registerUri(uri)
 
-macro constructFieldValue(t: typedesc, stream: expr, context: expr,
-                           name: expr, o: expr): stmt =
+macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
+                           name: untyped, o: untyped): typed =
   let tDesc = getType(getType(t)[1])
   result = newNimNode(nnkCaseStmt).add(name)
   for child in tDesc[2].children:
@@ -459,6 +459,9 @@ macro constructFieldValue(t: typedesc, stream: expr, context: expr,
       let field = newDotExpr(o, newIdentNode($child))
       ob.add(newStmtList(newCall("constructChild", stream, context, field)))
       result.add(ob)
+  # TODO: is this correct?
+  result.add(newNimNode(nnkElse).add(newNimNode(nnkDiscardStmt).add(
+      newEmptyNode())))
 
 proc isVariantObject(t: typedesc): bool {.compileTime.} =
   let tDesc = getType(t)
@@ -556,15 +559,13 @@ proc representObject*[O: enum](value: O, ts: TagStyle,
 
 proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
 
-macro constructImplicitVariantObject(s, c, r, possibleTagIds: expr,
-                                     t: typedesc): stmt =
+macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
+                                     t: typedesc): typed =
   let tDesc = getType(getType(t)[1])
   yAssert tDesc.kind == nnkObjectTy
   let recCase = tDesc[2][0]
   yAssert recCase.kind == nnkRecCase
-  let
-    discriminant = newDotExpr(r, newIdentNode($recCase[0]))
-    discType = newCall("type", discriminant)
+  let discriminant = newDotExpr(r, newIdentNode($recCase[0]))
   var ifStmt = newNimNode(nnkIfStmt)
   for i in 1 .. recCase.len - 1:
     yAssert recCase[i].kind == nnkOfBranch
@@ -856,7 +857,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
   if a == asTidy:
     var objQueue = newSeq[YamlStreamEvent]()
     for event in objStream(): objQueue.add(event)
-    var backend = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
+    var backend = iterator(): YamlStreamEvent {.raises: [].} =
       for i in countup(0, objQueue.len - 1):
         var event = objQueue[i]
         case event.kind

@@ -39,7 +39,7 @@ type
       barkometer: int
 
 proc `$`(v: BetterInt): string {.borrow.}
-proc `==`(l, r: BetterInt): bool {.borrow.}
+proc `==`(left, right: BetterInt): bool {.borrow.}
 
 setTagUri(TrafficLight, "!tl")
 setTagUri(Node, "!example.net:Node")
@@ -75,10 +75,9 @@ proc newNode(v: string): ref Node =
   result.value = v
   result.next = nil
 
-suite "Serialization":
-  setup:
-    let blockOnly = defineOptions(style=psBlockOnly)
+let blockOnly = defineOptions(style=psBlockOnly)
 
+suite "Serialization":
   test "Serialization: Load integer without fixed length":
     var input = newStringStream("-4247")
     var result: int
