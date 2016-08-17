@@ -20,11 +20,11 @@ proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
     else: result = true
 
 proc next*(s: YamlStream): YamlStreamEvent =
-  yAssert(not s.isFinished)
   if s.peeked:
     s.peeked = false
     shallowCopy(result, s.cached)
   else:
+    yAssert(not s.isFinished)
     try:
       while true:
         if s.nextImpl(s, result): break
