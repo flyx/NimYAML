@@ -159,19 +159,9 @@ type
     ## ``yamlEndDocument`` is yielded).
     tagLib: TagLibrary
     callback: WarningCallback
+    anchors: Table[string, AnchorId]
     lexer: BaseLexer
     tokenstart: int
-    content, after: string
-    ancestry: seq[FastParseLevel]
-    level: FastParseLevel
-    tagUri: string
-    tag: TagId
-    anchor: AnchorId
-    shorthands: Table[string, string]
-    anchors: Table[string, AnchorId]
-    nextAnchorId: AnchorId
-    newlines: int
-    indentation: int
         
   PresentationStyle* = enum
     ## Different styles for YAML character stream output.
