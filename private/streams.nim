@@ -49,7 +49,7 @@ proc peek*(s: YamlStream): YamlStreamEvent =
 proc `peek=`*(s: YamlStream, value: YamlStreamEvent) =
   s.cached = value
   s.peeked = true
-    
+
 proc finished*(s: YamlStream): bool =
   if s.peeked: result = false
   else:

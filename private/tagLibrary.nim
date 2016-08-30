@@ -36,7 +36,7 @@ proc registerUri*(tagLib: TagLibrary, uri: string): TagId =
   tagLib.tags[uri] = tagLib.nextCustomTagId
   result = tagLib.nextCustomTagId
   tagLib.nextCustomTagId = cast[TagId](cast[int](tagLib.nextCustomTagId) + 1)
-    
+
 proc uri*(tagLib: TagLibrary, id: TagId): string =
   for iUri, iId in tagLib.tags.pairs:
     if iId == id: return iUri

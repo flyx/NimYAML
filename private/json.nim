@@ -13,7 +13,7 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
    {.raises: [YamlConstructionError].}=
   new(result)
   var mappedType: TypeHint
-    
+
   case tag
   of yTagQuestionMark: mappedType = guessType(content)
   of yTagExclamationMark, yTagString: mappedType = yTypeUnknown
@@ -35,7 +35,7 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
       raise newException(YamlConstructionError,
                          "Invalid float value: " & content)
   else: mappedType = yTypeUnknown
-  
+
   try:
     case mappedType
     of yTypeInteger:
@@ -68,7 +68,7 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
 
 proc constructJson*(s: var YamlStream): seq[JsonNode] =
   newSeq(result, 0)
-    
+
   var
     levels  = newSeq[Level]()
     anchors = initTable[AnchorId, JsonNode]()
@@ -95,7 +95,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
         levels.add((node: jsonFromScalar(event.scalarContent,
                                          event.scalarTag), key: nil))
         continue
-  
+
       case levels[levels.high].node.kind
       of JArray:
         let jsonScalar = jsonFromScalar(event.scalarContent,

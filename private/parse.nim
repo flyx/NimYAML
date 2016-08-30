@@ -4,19 +4,19 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-type  
+type
   ScalarType = enum
     stFlow, stLiteral, stFolded
-  
+
   LexedDirective = enum
     ldYaml, ldTag, ldUnknown
-    
+
   YamlContext = enum
     cBlock, cFlow
-  
+
   ChompType = enum
     ctKeep, ctClip, ctStrip
-  
+
   ParserContext = ref object of YamlStream
     p: YamlParser
     storedState: proc(s: YamlStream, e: var YamlStreamEvent): bool
@@ -60,7 +60,7 @@ proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
   result.callback = callback
 
 proc getLineNumber*(p: YamlParser): int = p.lexer.lineNumber
-    
+
 proc getColNumber*(p: YamlParser): int = p.tokenstart + 1 # column is 1-based
 
 proc getLineContent*(p: YamlParser, marker: bool = true): string =
@@ -568,12 +568,12 @@ proc continueMultilineScalar(c: ParserContext) {.raises: [].} =
   c.content.add(if c.newlines == 1: " " else: repeat('\l', c.newlines - 1))
   c.startToken()
   c.plainScalar(cBlock)
-  
+
 template startScalar(t: ScalarType) {.dirty.} =
   c.newlines = 0
   c.level.kind = fplScalar
   c.scalarType = t
-  
+
 proc blockScalarHeader(c: ParserContext): bool =
   debug("lex: blockScalarHeader")
   c.chomp = ctClip
@@ -629,7 +629,7 @@ proc blockScalarLine(c: ParserContext):
       c.newlines.inc()
     if c.newlines == 0: discard
     elif c.newlines == 1: c.content.add(' ')
-    else: c.content.addMultiple('\l', c.newlines - 1)    
+    else: c.content.addMultiple('\l', c.newlines - 1)
   else: c.content.addMultiple('\l', c.newlines)
   c.newlines = 0
   while c.lexer.buf[c.lexer.bufpos] notin lineEnd:
@@ -808,7 +808,7 @@ proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
   result = false
   c.startToken()
   case c.level.kind
-  of fplUnknown: 
+  of fplUnknown:
     e = c.objectStart(yamlStartSeq)
     result = true
   of fplSequence:
@@ -892,7 +892,7 @@ template capitalize(s: string): string =
 
 macro parserStates(names: varargs[untyped]): typed =
   ## generates proc declaration for each state in list like this:
-  ## 
+  ##
   ## proc name(s: YamlStream, e: var YamlStreamEvent):
   ##     bool {.raises: [YamlParserError].}
   result = newStmtList()
@@ -1709,7 +1709,7 @@ parserState leaveFlowMap:
   of fplUnknown, fplScalar, fplSinglePairKey, fplDocument:
     internalError("Unexpected level kind: " & $c.level.kind)
   result = c.leaveFlowLevel(e)
-  
+
 parserState leaveFlowSeq:
   case c.level.kind
   of fplSequence:

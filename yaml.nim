@@ -46,15 +46,15 @@ type
     ## ================== =========================
     yTypeInteger, yTypeFloat, yTypeFloatInf, yTypeFloatNaN, yTypeBoolTrue,
     yTypeBoolFalse, yTypeNull, yTypeUnknown
-    
+
   YamlStreamEventKind* = enum
     ## Kinds of YAML events that may occur in an ``YamlStream``. Event kinds
     ## are discussed in `YamlStreamEvent <#YamlStreamEvent>`_.
     yamlStartDoc, yamlEndDoc, yamlStartMap, yamlEndMap,
     yamlStartSeq, yamlEndSeq, yamlScalar, yamlAlias
-    
+
   TagId* = distinct int ## \
-    ## A ``TagId`` identifies a tag URI, like for example 
+    ## A ``TagId`` identifies a tag URI, like for example
     ## ``"tag:yaml.org,2002:str"``. The URI corresponding to a ``TagId`` can
     ## be queried from the `TagLibrary <#TagLibrary>`_ which was
     ## used to create this ``TagId``; e.g. when you parse a YAML character
@@ -64,7 +64,7 @@ type
     ## URI strings are mapped to ``TagId`` s for efficiency  reasons (you
     ## do not need to compare strings every time) and to be able to
     ## discover unknown tag URIs early in the parsing process.
-    
+
   AnchorId* = distinct int ## \
     ## An ``AnchorId`` identifies an anchor in the current document. It
     ## becomes invalid as soon as the current document scope is invalidated
@@ -72,14 +72,14 @@ type
     ## event). ``AnchorId`` s exists because of efficiency, much like
     ## ``TagId`` s. The actual anchor name is a presentation detail and
     ## cannot be queried by the user.
-    
+
   YamlStreamEvent* = object
     ## An element from a `YamlStream <#YamlStream>`_. Events that start an
     ## object (``yamlStartMap``, ``yamlStartSeq``, ``yamlScalar``) have
     ## an optional anchor and a tag associated with them. The anchor will be
     ## set to ``yAnchorNone`` if it doesn't exist.
-    ## 
-    ## A non-existing tag in the YAML character stream will be resolved to 
+    ##
+    ## A non-existing tag in the YAML character stream will be resolved to
     ## the non-specific tags ``?`` or ``!`` according to the YAML
     ## specification. These are by convention mapped to the ``TagId`` s
     ## ``yTagQuestionMark`` and ``yTagExclamationMark`` respectively.
@@ -98,7 +98,7 @@ type
     of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc: discard
     of yamlAlias:
       aliasTarget* : AnchorId
-    
+
   YamlStream* = ref object of RootObj ## \
     ## A ``YamlStream`` is an iterator-like object that yields a
     ## well-formed stream of ``YamlStreamEvents``. Well-formed means that
@@ -116,7 +116,7 @@ type
     isFinished: bool
     peeked: bool
     cached: YamlStreamEvent
-        
+
   TagLibrary* = ref object
     ## A ``TagLibrary`` maps tag URIs to ``TagId`` s.
     ##
@@ -132,8 +132,8 @@ type
     tags*: Table[string, TagId]
     nextCustomTagId*: TagId
     secondaryPrefix*: string
-    
-    
+
+
   WarningCallback* = proc(line, column: int, lineContent: string,
                           message: string)
     ## Callback for parser warnings. Currently, this callback may be called
@@ -142,15 +142,15 @@ type
     ## - If the version number in the ``%YAML`` directive does not match
     ##   ``1.2``.
     ## - If there is an unknown directive encountered.
-    
+
   FastParseLevelKind = enum
     fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
     fplSinglePairValue, fplScalar, fplDocument
-  
+
   FastParseLevel = object
     kind: FastParseLevelKind
     indentation: int
-  
+
   YamlParser* = ref object
     ## A parser object. Retains its ``TagLibrary`` across calls to
     ## `parse <#parse,YamlParser,Stream>`_. Can be used
@@ -162,7 +162,7 @@ type
     anchors: Table[string, AnchorId]
     lexer: BaseLexer
     tokenstart: int
-        
+
   PresentationStyle* = enum
     ## Different styles for YAML character stream output.
     ##
@@ -182,7 +182,7 @@ type
     ## - ``ypsBlockOnly``: Formats all output in block style, does not use
     ##   flow style at all.
     psMinimal, psCanonical, psDefault, psJson, psBlockOnly
-    
+
   TagStyle* = enum
     ## Whether object should be serialized with explicit tags.
     ##
@@ -191,7 +191,7 @@ type
     ##   where necessary.
     ## - ``tsAll``: Tags will be outputted for every object.
     tsNone, tsRootOnly, tsAll
-    
+
   AnchorStyle* = enum
     ## How ref object should be serialized.
     ##
@@ -206,7 +206,7 @@ type
     ##   content to be serialized, regardless of whether the object is
     ##   referenced again afterwards
     asNone, asTidy, asAlways
-    
+
   NewLineStyle* = enum
     ## What kind of newline sequence is used when presenting.
     ##
@@ -216,7 +216,7 @@ type
     ## - ``nlOSDefault``: Use the target operation system's default newline
     ##   sequence (CRLF on Windows, LF everywhere else).
     nlLF, nlCRLF, nlOSDefault
-    
+
   OutputYamlVersion* = enum
     ## Specify which YAML version number the presenter shall emit. The
     ## presenter will always emit content that is valid YAML 1.1, but by
@@ -227,51 +227,51 @@ type
     ## YAML version. The generated content is then guaranteed to be valid
     ## YAML 1.1 and 1.2 (but not 1.0 or any newer YAML version).
     ov1_2, ov1_1, ovNone
-            
+
   PresentationOptions* = object
     ## Options for generating a YAML character stream
     style*: PresentationStyle
     indentationStep*: int
     newlines*: NewLineStyle
     outputVersion*: OutputYamlVersion
-        
+
   ConstructionContext* = ref object
     ## Context information for the process of constructing Nim values from YAML.
     refs: Table[AnchorId, pointer]
-    
+
   SerializationContext* = ref object
     ## Context information for the process of serializing YAML from Nim values.
     refs: Table[pointer, AnchorId]
     style: AnchorStyle
     nextAnchorId: AnchorId
-    
+
   YamlNodeKind* = enum
     yScalar, yMapping, ySequence
-    
+
   YamlNode* = ref YamlNodeObj not nil
     ## Represents a node in a ``YamlDocument``.
-    
+
   YamlNodeObj* = object
     tag*: string
     case kind*: YamlNodeKind
     of yScalar: content*: string
     of ySequence: children*: seq[YamlNode]
     of yMapping: pairs*: seq[tuple[key, value: YamlNode]]
-    
+
   YamlDocument* = object
     ## Represents a YAML document.
     root*: YamlNode
-    
+
   YamlLoadingError* = object of Exception
     ## Base class for all exceptions that may be raised during the process
-    ## of loading a YAML character stream. 
+    ## of loading a YAML character stream.
     line*: int ## line number (1-based) where the error was encountered
     column*: int ## column number (1-based) where the error was encountered
     lineContent*: string ## \
       ## content of the line where the error was encountered. Includes a
       ## second line with a marker ``^`` at the position where the error
       ## was encountered.
-    
+
   YamlParserError* = object of YamlLoadingError
     ## A parser error is raised if the character stream that is parsed is
     ## not a valid YAML character stream. This stream cannot and will not be
@@ -287,13 +287,13 @@ type
     ## - An element has invalid indentation. This can happen for example if
     ##   a block list element indicated by ``"- "`` is less indented than
     ##   the element in the previous line, but there is no block sequence
-    ##   list open at the same indentation level. 
+    ##   list open at the same indentation level.
     ## - The YAML structure is invalid. For example, an explicit block map
     ##   indicated by ``"? "`` and ``": "`` may not suddenly have a block
     ##   sequence item (``"- "``) at the same indentation level. Another
     ##   possible violation is closing a flow style object with the wrong
     ##   closing character (``}``, ``]``) or not closing it at all.
-    ## - A custom tag shorthand is used that has not previously been 
+    ## - A custom tag shorthand is used that has not previously been
     ##   declared with a ``%TAG`` directive.
     ## - Multiple tags or anchors are defined for the same node.
     ## - An alias is used which does not map to any anchor that has
@@ -302,7 +302,7 @@ type
     ##
     ## Some elements in this list are vague. For a detailed description of a
     ## valid YAML character stream, see the YAML specification.
-    
+
   YamlPresenterJsonError* = object of Exception
     ## Exception that may be raised by the YAML presenter when it is
     ## instructed to output JSON, but is unable to do so. This may occur if:
@@ -310,24 +310,24 @@ type
     ## - The given `YamlStream <#YamlStream>`_ contains a map which has any
     ##   non-scalar type as key.
     ## - Any float scalar bears a ``NaN`` or positive/negative infinity value
-    
+
   YamlPresenterOutputError* = object of Exception
     ## Exception that may be raised by the YAML presenter. This occurs if
     ## writing character data to the output stream raises any exception.
     ## The error that has occurred is available from ``parent``.
-    
+
   YamlStreamError* = object of Exception
     ## Exception that may be raised by a ``YamlStream`` when the underlying
     ## backend raises an exception. The error that has occurred is
     ## available from ``parent``.
-    
+
   YamlConstructionError* = object of YamlLoadingError
     ## Exception that may be raised when constructing data objects from a
     ## `YamlStream <#YamlStream>`_. The fields ``line``, ``column`` and
     ## ``lineContent`` are only available if the costructing proc also does
     ## parsing, because otherwise this information is not available to the
     ## costruction proc.
-    
+
   RawYamlStream* = iterator(): YamlStreamEvent {.raises: [YamlStreamError].}## \
     ## Stream of ``YamlStreamEvent``s returned by ``representObject`` procs.
 
@@ -342,9 +342,9 @@ const
     ## `!!seq <http://yaml.org/type/seq.html>`_ tag
   yTagMapping*        : TagId = 4.TagId ## \
     ## `!!map <http://yaml.org/type/map.html>`_ tag
-    
+
   # json & core schema
-    
+
   yTagNull*    : TagId = 5.TagId ## \
     ## `!!null <http://yaml.org/type/null.html>`_ tag
   yTagBoolean* : TagId = 6.TagId ## \
@@ -353,9 +353,9 @@ const
     ## `!!int <http://yaml.org/type/int.html>`_ tag
   yTagFloat*   : TagId = 8.TagId ## \
     ## `!!float <http://yaml.org/type/float.html>`_ tag
-    
+
   # other language-independent YAML types (from http://yaml.org/type/ )
-    
+
   yTagOrderedMap* : TagId = 9.TagId  ## \
     ## `!!omap <http://yaml.org/type/omap.html>`_ tag
   yTagPairs*      : TagId = 10.TagId ## \
@@ -372,25 +372,25 @@ const
     ## `!!value <http://yaml.org/type/value.html>`_ tag
   yTagYaml*       : TagId = 16.TagId ## \
     ## `!!yaml <http://yaml.org/type/yaml.html>`_ tag
-    
+
   yTagNimField*   : TagId = 100.TagId ## \
     ## This tag is used in serialization for the name of a field of an
     ## object. It may contain any string scalar that is a valid Nim symbol.
-  
+
   yTagNimNilString* : TagId = 101.TagId ## for strings that are nil
   yTagNimNilSeq*    : TagId = 102.TagId ## \
     ## for seqs that are nil. This tag is used regardless of the seq's generic
     ## type parameter.
-    
+
   yFirstCustomTagId* : TagId = 1000.TagId ## \
     ## The first ``TagId`` which should be assigned to an URI that does not
     ## exist in the ``YamlTagLibrary`` which is used for parsing.
-    
+
   yAnchorNone*: AnchorId = (-1).AnchorId ## \
     ## yielded when no anchor was defined for a YAML node
-    
+
   yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
-    
+
   defaultPresentationOptions* =
         PresentationOptions(style: psDefault, indentationStep: 2,
                             newlines: nlOSDefault)
@@ -401,9 +401,10 @@ template internalError(s: string) =
     let ii = instantiationInfo()
     echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
     echo s
-    echo "[NimYAML] Stacktrace:"
-    try: writeStackTrace()
-    except: discard
+    when not defined(JS):
+      echo "[NimYAML] Stacktrace:"
+      try: writeStackTrace()
+      except: discard
     echo "[NimYAML] Please report this bug."
     quit 1
 template yAssert(e: typed) =
@@ -412,9 +413,10 @@ template yAssert(e: typed) =
       let ii = instantiationInfo()
       echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
       echo "assertion failed!"
-      echo "[NimYAML] Stacktrace:"
-      try: writeStackTrace()
-      except: discard
+      when not defined(JS):
+        echo "[NimYAML] Stacktrace:"
+        try: writeStackTrace()
+        except: discard
       echo "[NimYAML] Please report this bug."
       quit 1
 
@@ -422,7 +424,7 @@ template yAssert(e: typed) =
 
 proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].}
   ## compares all existing fields of the given items
-    
+
 proc `$`*(event: YamlStreamEvent): string {.raises: [].}
   ## outputs a human-readable string describing the given event
 
@@ -457,7 +459,7 @@ proc initYamlStream*(backend: iterator(): YamlStreamEvent):
 proc next*(s: YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
   ## Get the next item of the stream. Requires ``finished(s) == true``.
   ## If the backend yields an exception, that exception will be encapsulated
-  ## into a ``YamlStreamError``, which will be raised. 
+  ## into a ``YamlStreamError``, which will be raised.
 proc peek*(s: YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
   ## Get the next item of the stream without advancing the stream.
   ## Requires ``finished(s) == true``. Handles exceptions of the backend like
@@ -481,7 +483,7 @@ proc initTagLibrary*(): TagLibrary {.raises: [].}
 proc registerUri*(tagLib: TagLibrary, uri: string): TagId {.raises: [].}
   ## registers a custom tag URI with a ``TagLibrary``. The URI will get
   ## the ``TagId`` ``nextCustomTagId``, which will be incremented.
-    
+
 proc uri*(tagLib: TagLibrary, id: TagId): string {.raises: [KeyError].}
   ## retrieve the URI a ``TagId`` maps to.
 
@@ -518,7 +520,7 @@ proc guessType*(scalar: string): TypeHint {.raises: [].}
 proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
                     callback: WarningCallback = nil): YamlParser {.raises: [].}
   ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
-  ## whenever the parser yields a warning. 
+  ## whenever the parser yields a warning.
 
 proc getLineNumber*(p: YamlParser): int {.raises: [].}
   ## Get the line number (1-based) of the recently yielded parser token.
@@ -566,13 +568,13 @@ proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].}
     ## Uses `YamlParser <#YamlParser>`_ and
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
-    
+
 proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
               options: PresentationOptions = defaultPresentationOptions)
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].}
   ## Convert ``s`` to a YAML character stream and write it to ``target``.
-    
+
 proc transform*(input: Stream, output: Stream,
                 options: PresentationOptions = defaultPresentationOptions)
     {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
@@ -656,8 +658,8 @@ var
   nextStaticTagId {.compileTime.} = 100.TagId ## \
     ## used for generating unique TagIds with ``setTagUri``.
   registeredUris {.compileTime.} = newSeq[string]() ## \
-    ## Since Table doesn't really work at compile time, we also store 
-    ## registered URIs here to be able to generate a static compiler error 
+    ## Since Table doesn't really work at compile time, we also store
+    ## registered URIs here to be able to generate a static compiler error
     ## when the user tries to register an URI more than once.
 
 template setTagUri*(t: typedesc, uri: string): typed =

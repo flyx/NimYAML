@@ -9,7 +9,7 @@ type
     dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
     dBlockInlineMap, dBlockSequenceItem, dFlowImplicitMapKey, dFlowMapValue,
     dFlowExplicitMapKey, dFlowSequenceItem, dFlowMapStart, dFlowSequenceStart
-  
+
   ScalarStyle = enum
     sLiteral, sFolded, sPlain, sDoubleQuoted
 
@@ -94,7 +94,7 @@ proc inspect(scalar: string, indentation: int,
   elif canUseFolded: result = sFolded
   elif canUsePlain: result = sPlain
   else: result = sDoubleQuoted
-    
+
 proc writeDoubleQuoted(scalar: string, s: Stream, indentation: int,
                        newline: string)
             {.raises: [YamlPresenterOutputError].} =
@@ -363,7 +363,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                   levels[levels.high], false, newline)
       if options.style != psJson:
         writeTagAndAnchor(target, item.scalarTag, tagLib, item.scalarAnchor)
-        
+
       if options.style == psJson:
         let hint = guessType(item.scalarContent)
         if item.scalarTag in [yTagQuestionMark, yTagBoolean] and
@@ -437,8 +437,8 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
                              "Cannot have sequence as map key in JSON output!")
         nextState = dFlowSequenceStart
       of psMinimal, psCanonical: nextState = dFlowSequenceStart
-      of psBlockOnly: nextState = dBlockSequenceItem 
-      
+      of psBlockOnly: nextState = dBlockSequenceItem
+
       if levels.len == 0:
         case nextState
         of dBlockSequenceItem:
@@ -456,7 +456,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
         if options.style != psJson:
           writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
         indentation += options.indentationStep
-          
+
       if nextState == dFlowSequenceStart: safeWrite('[')
       if levels.len > 0 and options.style in [psJson, psCanonical] and
           levels[levels.high] in [dBlockExplicitMapKey, dBlockMapValue,
@@ -518,7 +518,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
           if options.style != psJson:
             writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
         indentation += options.indentationStep
-        
+
       if nextState == dFlowMapStart: safeWrite('{')
       if levels.len > 0 and options.style in [psJson, psCanonical] and
           levels[levels.high] in
@@ -526,7 +526,7 @@ proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
            dBlockImplicitMapKey, dBlockSequenceItem]:
         indentation += options.indentationStep
       levels.add(nextState)
-        
+
     of yamlEndSeq:
       yAssert levels.len > 0
       case levels.pop()

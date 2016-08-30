@@ -46,24 +46,24 @@ proc tag*(event: YamlStreamEvent): TagId =
 
 proc startDocEvent*(): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlStartDoc)
-    
+
 proc endDocEvent*(): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlEndDoc)
-    
+
 proc startMapEvent*(tag: TagId = yTagQuestionMark,
                     anchor: AnchorId = yAnchorNone): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlStartMap, mapTag: tag, mapAnchor: anchor)
-                             
+
 proc endMapEvent*(): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlEndMap)
-    
+
 proc startSeqEvent*(tag: TagId = yTagQuestionMark,
                     anchor: AnchorId = yAnchorNone): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlStartSeq, seqTag: tag, seqAnchor: anchor)
-                             
+
 proc endSeqEvent*(): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlEndSeq)
-    
+
 proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
                   anchor: AnchorId = yAnchorNone): YamlStreamEvent =
   result = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
