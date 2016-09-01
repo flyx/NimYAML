@@ -601,32 +601,31 @@ proc transform*(input: Stream, output: Stream,
     events = parser.parse(input)
   try:
     if options.style == psCanonical:
-      var specificTagEvents = iterator(): YamlStreamEvent =
-        for e in events:
-          var event = e
-          case event.kind
-          of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
-            discard
-          of yamlStartMap:
-            if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
-              event.mapTag = yTagMapping
-          of yamlStartSeq:
-            if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
-              event.seqTag = yTagSequence
-          of yamlScalar:
-            if event.scalarTag == yTagQuestionMark:
-              case guessType(event.scalarContent)
-              of yTypeInteger: event.scalarTag = yTagInteger
-              of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
-                event.scalarTag = yTagFloat
-              of yTypeBoolTrue, yTypeBoolFalse: event.scalarTag = yTagBoolean
-              of yTypeNull: event.scalarTag = yTagNull
-              of yTypeUnknown: event.scalarTag = yTagString
-            elif event.scalarTag == yTagExclamationMark:
-              event.scalarTag = yTagString
-          yield event
-      var s = initYamlStream(specificTagEvents)
-      present(s, output, tagLib, options)
+      var bys: YamlStream = newBufferYamlStream()
+      for e in events:
+        var event = e
+        case event.kind
+        of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
+          discard
+        of yamlStartMap:
+          if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
+            event.mapTag = yTagMapping
+        of yamlStartSeq:
+          if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
+            event.seqTag = yTagSequence
+        of yamlScalar:
+          if event.scalarTag == yTagQuestionMark:
+            case guessType(event.scalarContent)
+            of yTypeInteger: event.scalarTag = yTagInteger
+            of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
+              event.scalarTag = yTagFloat
+            of yTypeBoolTrue, yTypeBoolFalse: event.scalarTag = yTagBoolean
+            of yTypeNull: event.scalarTag = yTagNull
+            of yTypeUnknown: event.scalarTag = yTagString
+          elif event.scalarTag == yTagExclamationMark:
+            event.scalarTag = yTagString
+        BufferYamlStream(bys).buf.add(e)
+      present(bys, output, tagLib, options)
     else: present(events, output, tagLib, options)
   except YamlStreamError:
     var e = getCurrentException()

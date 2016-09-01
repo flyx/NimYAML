@@ -121,6 +121,11 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
   constructObject(s, c, u32Result)
   result= uint(u32Result)
 
+when defined(JS):
+  # TODO: this is a dirty hack and may lead to overflows!
+  proc `$`(x: uint8|uint16|uint32|uint64|uint): string =
+    result = $BiggestInt(x)
+
 proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
     c: SerializationContext, tag: TagId) {.raises: [].} =
   ## represents an unsigned integer value as YAML scalar

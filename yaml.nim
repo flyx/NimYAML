@@ -750,9 +750,9 @@ setTagUri(float64, "!nim:system:float64", yTagNimFloat64)
 include private.tagLibrary
 include private.events
 include private.json
+include private.streams
 include private.presenter
 include private.parse
 include private.hints
-include private.streams
 include private.serialization
 include private.dom
