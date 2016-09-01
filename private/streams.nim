@@ -4,20 +4,39 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-type IteratorYamlStream = ref object of YamlStream
-  backend: iterator(): YamlStreamEvent
+when not defined(JS):
+  type IteratorYamlStream = ref object of YamlStream
+    backend: iterator(): YamlStreamEvent
 
-proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
-  result = new(IteratorYamlStream)
-  result.peeked = false
-  result.isFinished = false
-  IteratorYamlStream(result).backend = backend
-  result.nextImpl = proc(s: YamlStream, e: var YamlStreamEvent): bool =
-    e = IteratorYamlStream(s).backend()
-    if finished(IteratorYamlStream(s).backend):
-      s.isFinished = true
-      result = false
-    else: result = true
+  proc initYamlStream*(backend: iterator(): YamlStreamEvent): YamlStream =
+    result = new(IteratorYamlStream)
+    result.peeked = false
+    result.isFinished = false
+    IteratorYamlStream(result).backend = backend
+    result.nextImpl = proc(s: YamlStream, e: var YamlStreamEvent): bool =
+      e = IteratorYamlStream(s).backend()
+      if finished(IteratorYamlStream(s).backend):
+        s.isFinished = true
+        result = false
+      else: result = true
+
+type
+  BufferYamlStream = ref object of YamlStream
+    pos: int
+    buf: seq[YamlStreamEvent] not nil
+
+proc newBufferYamlStream(): BufferYamlStream not nil =
+  BufferYamlStream(peeked: false, isFinished: false, buf: @[], pos: 0,
+      nextImpl: proc(s: YamlStream, e: var YamlStreamEvent): bool =
+        let bys = BufferYamlStream(s)
+        if bys.pos == bys.buf.len:
+          result = false
+          s.isFinished = true
+        else:
+          e = bys.buf[bys.pos]
+          inc(bys.pos)
+          result = true
+  )
 
 proc next*(s: YamlStream): YamlStreamEvent =
   if s.peeked:

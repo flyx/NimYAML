@@ -244,6 +244,7 @@ type
     refs: Table[pointer, AnchorId]
     style: AnchorStyle
     nextAnchorId: AnchorId
+    put*: proc(e: YamlStreamEvent) {.raises: [], closure.}
 
   YamlNodeKind* = enum
     yScalar, yMapping, ySequence
@@ -327,9 +328,6 @@ type
     ## ``lineContent`` are only available if the costructing proc also does
     ## parsing, because otherwise this information is not available to the
     ## costruction proc.
-
-  RawYamlStream* = iterator(): YamlStreamEvent {.raises: [YamlStreamError].}## \
-    ## Stream of ``YamlStreamEvent``s returned by ``representObject`` procs.
 
 const
   # failsafe schema
@@ -453,9 +451,10 @@ proc `==`*(left, right: AnchorId): bool {.borrow.}
 proc `$`*(id: AnchorId): string {.borrow.}
 proc hash*(id: AnchorId): Hash {.borrow.}
 
-proc initYamlStream*(backend: iterator(): YamlStreamEvent):
-    YamlStream {.raises: [].}
-  ## Creates a new ``YamlStream`` that uses the given iterator as backend.
+when not defined(JS):
+  proc initYamlStream*(backend: iterator(): YamlStreamEvent):
+      YamlStream {.raises: [].}
+    ## Creates a new ``YamlStream`` that uses the given iterator as backend.
 proc next*(s: YamlStream): YamlStreamEvent {.raises: [YamlStreamError].}
   ## Get the next item of the stream. Requires ``finished(s) == true``.
   ## If the backend yields an exception, that exception will be encapsulated
@@ -611,18 +610,18 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   ## for constructing the value. The object may be constructed from an alias
   ## node which will be resolved using the ``ConstructionContext``.
 
-proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext):
-    RawYamlStream {.raises: [].}
+proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext)
+    {.raises: [YamlStreamError].}
   ## Represents an arbitrary Nim reference value as YAML object. The object
-  ## may be  represented as alias node if it is already present in the
+  ## may be represented as alias node if it is already present in the
   ## ``SerializationContext``.
 
-proc representChild*(value: string, ts: TagStyle, c: SerializationContext):
-    RawYamlStream {.inline.}
+proc representChild*(value: string, ts: TagStyle, c: SerializationContext)
+    {.inline, raises: [].}
   ## Represents a Nim string. Supports nil strings.
 
 proc representChild*[O](value: O, ts: TagStyle,
-                        c: SerializationContext): RawYamlStream {.raises: [].}
+                        c: SerializationContext) {.raises: [YamlStreamError].}
   ## Represents an arbitrary Nim object as YAML object.
 
 proc construct*[T](s: var YamlStream, target: var T)

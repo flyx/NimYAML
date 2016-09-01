@@ -86,14 +86,13 @@ proc loadDOM*(s: Stream): YamlDocument
     else: internalError("Unexpected exception: " & e.parent.repr)
 
 proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
-                   tagLib: TagLibrary): RawYamlStream {.raises: [].}=
+                   tagLib: TagLibrary) {.raises: [].}=
   let p = cast[pointer](n)
   if a != asNone and c.refs.hasKey(p):
     if c.refs.getOrDefault(p) == yAnchorNone:
       c.refs[p] = c.nextAnchorId
       c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-    result = iterator(): YamlStreamEvent {.raises: [].} =
-      yield aliasEvent(c.refs.getOrDefault(p))
+    c.put(aliasEvent(c.refs.getOrDefault(p)))
     return
   var
     tagId: TagId
@@ -108,69 +107,44 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
   of asNone: anchor = yAnchorNone
   of asTidy: anchor = cast[AnchorId](n)
   of asAlways: anchor = c.refs.getOrDefault(p)
-  result = iterator(): YamlStreamEvent =
-    case n.kind
-    of yScalar: yield scalarEvent(n.content, tagId, anchor)
-    of ySequence:
-      yield startSeqEvent(tagId, anchor)
-      for item in n.children:
-        var events = serializeNode(item, c, a, tagLib)
-        while true:
-          let event = events()
-          if finished(events): break
-          yield event
-      yield endSeqEvent()
-    of yMapping:
-      yield startMapEvent(tagId, anchor)
-      for i in n.pairs:
-        var events = serializeNode(i.key, c, a, tagLib)
-        while true:
-          let event = events()
-          if finished(events): break
-          yield event
-        events = serializeNode(i.value, c, a, tagLib)
-        while true:
-          let event = events()
-          if finished(events): break
-          yield event
-      yield endMapEvent()
+    
+  case n.kind
+  of yScalar: c.put(scalarEvent(n.content, tagId, anchor))
+  of ySequence:
+    c.put(startSeqEvent(tagId, anchor))
+    for item in n.children:
+      serializeNode(item, c, a, tagLib)
+    c.put(endSeqEvent())
+  of yMapping:
+    c.put(startMapEvent(tagId, anchor))
+    for i in n.pairs:
+      serializeNode(i.key, c, a, tagLib)
+      serializeNode(i.value, c, a, tagLib)
+    c.put(endMapEvent())
 
 template processAnchoredEvent(target: untyped, c: SerializationContext): typed =
   let anchorId = c.refs.getOrDefault(cast[pointer](target))
   if anchorId != yAnchorNone: target = anchorId
   else: target = yAnchorNone
-  yield event
 
 proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
     YamlStream {.raises: [YamlStreamError].} =
   var
-    context = newSerializationContext(a)
-    events = serializeNode(doc.root, context, a, tagLib)
+    bys = newBufferYamlStream()
+    c = newSerializationContext(a, proc(e: YamlStreamEvent) {.raises: [].} =
+      bys.buf.add(e)
+    )
+  c.put(startDocEvent())
+  serializeNode(doc.root, c, a, tagLib)
+  c.put(endDocEvent())
   if a == asTidy:
-    var backend = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
-      var output = newSeq[YamlStreamEvent]()
-      while true:
-        let event = events()
-        if finished(events): break
-        output.add(event)
-      yield startDocEvent()
-      for event in output.mitems():
-        case event.kind
-        of yamlScalar: processAnchoredEvent(event.scalarAnchor, context)
-        of yamlStartMap: processAnchoredEvent(event.mapAnchor, context)
-        of yamlStartSeq: processAnchoredEvent(event.seqAnchor, context)
-        else: yield event
-      yield endDocEvent()
-    result = initYamlStream(backend)
-  else:
-    var backend = iterator(): YamlStreamEvent {.raises: [YamlStreamError].} =
-      yield startDocEvent()
-      while true:
-        let event = events()
-        if finished(events): break
-        yield event
-      yield endDocEvent()
-    result = initYamlStream(backend)
+    for event in bys.buf.mitems():
+      case event.kind
+      of yamlScalar: processAnchoredEvent(event.scalarAnchor, c)
+      of yamlStartMap: processAnchoredEvent(event.mapAnchor, c)
+      of yamlStartSeq: processAnchoredEvent(event.seqAnchor, c)
+      else: discard
+  result = bys
 
 proc dumpDOM*(doc: YamlDocument, target: Stream,
               anchorStyle: AnchorStyle = asTidy,
