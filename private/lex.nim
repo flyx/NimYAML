@@ -4,7 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import lexbase, streams, strutils
+import lexbase, streams, strutils, unicode
 
 type
   StringSource* = object
@@ -43,13 +43,14 @@ type
 
 # templates
 
-template advance(lex: YamlLexer[BaseLexer], step: int = 1) =
+proc advance(lex: YamlLexer[BaseLexer], step: int = 1) {.inline.} =
   lex.source.bufpos.inc(step)
   lex.c = lex.source.buf[lex.source.bufpos]
 
-template advance(lex: YamlLexer[StringSource], step: int = 1) =
+proc advance(lex: YamlLexer[StringSource], step: int = 1) {.inline.} =
   lex.source.pos.inc(step)
-  lex.c = lex.source.src[lex.source.pos]
+  if lex.source.pos >= lex.source.src.len: lex.c = EndOfFile
+  else: lex.c = lex.source.src[lex.source.pos]
 
 # lexer states
 
@@ -62,7 +63,7 @@ proc expectLineEnd[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc blockStyle[T](lex: YamlLexer[T], t: var LexerToken): bool {.locks:0.}
 proc blockStyleInline[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc plainScalarPart[T](lex: YamlLexer[T], t: var LexerToken): bool
-proc flowStyle[T](lex: YamlLexer[T], t: var LexerToken): bool {.locks:0.}
+proc flowStyle[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc streamEnd[T](lex: YamlLexer[T], t: var LexerToken): bool
 
 # interface
@@ -92,6 +93,11 @@ const
   spaceOrLineEnd = {' ', '\t', '\l', '\c', EndOfFile}
   digits         = {'0'..'9'}
   flowIndicators = {'[', ']', '{', '}', ','}
+  
+  UTF8NextLine           = toUTF8(0x85.Rune)
+  UTF8NonBreakingSpace   = toUTF8(0xA0.Rune)
+  UTF8LineSeparator      = toUTF8(0x2028.Rune)
+  UTF8ParagraphSeparator = toUTF8(0x2029.Rune)
 
 template debug(message: string) {.dirty.} =
   when defined(yamlDebug):
@@ -100,20 +106,24 @@ template debug(message: string) {.dirty.} =
 
 template lexCR(lex: YamlLexer[BaseLexer]) =
   lex.source.bufpos = lex.source.handleCR(lex.source.bufpos)
+  lex.c = lex.source.buf[lex.source.bufpos]
 
 template lexCR(lex: YamlLexer[StringSource]) =
   lex.source.pos.inc()
   if lex.source.src[lex.source.pos] == '\l': lex.source.pos.inc()
   lex.source.lineStart = lex.source.pos
   lex.source.line.inc()
+  lex.c = lex.source.src[lex.source.pos]
 
 template lexLF(lex: YamlLexer[BaseLexer]) =
   lex.source.bufpos = lex.source.handleLF(lex.source.bufpos)
+  lex.c = lex.source.buf[lex.source.bufpos]
 
 template lexLF(lex: YamlLexer[StringSource]) =
   lex.source.pos.inc()
   lex.source.lineStart = lex.source.pos
   lex.source.line.inc()
+  lex.c = lex.source.src[lex.source.pos]
 
 template lineNumber(lex: YamlLexer[BaseLexer]): int =
   lex.source.lineNumber
@@ -382,11 +392,127 @@ proc flowIndicator[T](lex: YamlLexer[T], indicator: LexerToken,
     when inFlow: lex.stored = flowStyle[T]
     else: lex.stored = blockStyle[T]
 
+proc addMultiple(s: var string, c: char, num: int) {.raises: [], inline.} =
+  for i in 1..num:
+    s.add(c)
+
+proc processQuotedWhitespace(lex: YamlLexer, newlines: var int) =
+  block outer:
+    let beforeSpace = lex.buf.len
+    while true:
+      case lex.c
+      of ' ', '\t': lex.buf.add(lex.c)
+      of '\l':
+        lex.lexLF()
+        break
+      of '\c':
+        lex.lexCR()
+        break
+      else: break outer
+      lex.advance()
+    lex.buf.setLen(beforeSpace)
+    while true:
+      case lex.c
+      of ' ', '\t': discard
+      of '\l':
+        lex.lexLF()
+        newlines.inc()
+        continue
+      of '\c':
+        lex.lexCR()
+        newlines.inc()
+        continue
+      else:
+        if newlines == 0: discard
+        elif newlines == 1: lex.buf.add(' ')
+        else: lex.buf.addMultiple('\l', newlines - 1)
+        break
+      lex.advance()
+
 proc singleQuotedScalar[T](lex: YamlLexer[T]) =
-  discard
-  
+  debug("lex: singleQuotedScalar")
+  lex.advance()
+  while true:
+    case lex.c
+    of '\'':
+      lex.advance()
+      if lex.c == '\'': lex.buf.add('\'')
+      else: break
+    of EndOfFile: raise lex.generateError("Unfinished single quoted string")
+    of '\l', '\c', '\t', ' ':
+      var newlines = 1
+      lex.processQuotedWhitespace(newlines)
+      continue
+    else: lex.buf.add(lex.c)
+    lex.advance()
+
+proc unicodeSequence(lex: YamlLexer, length: int) =
+  debug("lex: unicodeSequence")
+  var unicodeChar = 0.int
+  for i in countup(0, length - 1):
+    lex.advance()
+    let digitPosition = length - i - 1
+    case lex.c
+    of EndOFFile, '\l', '\c':
+      raise lex.generateError("Unfinished unicode escape sequence")
+    of '0' .. '9':
+      unicodeChar = unicodechar or (int(lex.c) - 0x30) shl (digitPosition * 4)
+    of 'A' .. 'F':
+      unicodeChar = unicodechar or (int(lex.c) - 0x37) shl (digitPosition * 4)
+    of 'a' .. 'f':
+      unicodeChar = unicodechar or (int(lex.c) - 0x57) shl (digitPosition * 4)
+    else:
+      raise lex.generateError(
+          "Invalid character in unicode escape sequence: " &
+          escape("" & lex.c))
+  lex.buf.add(toUTF8(Rune(unicodeChar)))
+
 proc doubleQuotedScalar[T](lex: YamlLexer[T]) =
-  discard
+  debug("lex: doubleQuotedScalar")
+  lex.advance()
+  while true:
+    case lex.c
+    of EndOfFile:
+      raise lex.generateError("Unfinished double quoted string")
+    of '\\':
+      lex.advance()
+      case lex.c
+      of EndOfFile:
+        raise lex.generateError("Unfinished escape sequence")
+      of '0':       lex.buf.add('\0')
+      of 'a':       lex.buf.add('\x07')
+      of 'b':       lex.buf.add('\x08')
+      of '\t', 't': lex.buf.add('\t')
+      of 'n':       lex.buf.add('\l')
+      of 'v':       lex.buf.add('\v')
+      of 'f':       lex.buf.add('\f')
+      of 'r':       lex.buf.add('\c')
+      of 'e':       lex.buf.add('\e')
+      of ' ':       lex.buf.add(' ')
+      of '"':       lex.buf.add('"')
+      of '/':       lex.buf.add('/')
+      of '\\':      lex.buf.add('\\')
+      of 'N':       lex.buf.add(UTF8NextLine)
+      of '_':       lex.buf.add(UTF8NonBreakingSpace)
+      of 'L':       lex.buf.add(UTF8LineSeparator)
+      of 'P':       lex.buf.add(UTF8ParagraphSeparator)
+      of 'x':       lex.unicodeSequence(2)
+      of 'u':       lex.unicodeSequence(4)
+      of 'U':       lex.unicodeSequence(8)
+      of '\l', '\c':
+        var newlines = 0
+        lex.processQuotedWhitespace(newlines)
+        continue
+      else: raise lex.generateError("Illegal character in escape sequence")
+    of '"':
+      lex.advance()
+      break
+    of '\l', '\c', '\t', ' ':
+      var newlines = 1
+      lex.processQuotedWhitespace(newlines)
+      continue
+    else: lex.buf.add(lex.c)
+    lex.advance()
 
 proc blockStyleInline[T](lex: YamlLexer[T], t: var LexerToken): bool =
   case lex.c
@@ -452,12 +578,18 @@ proc plainScalarPart[T](lex: YamlLexer[T], t: var LexerToken): bool =
               break
           of space: discard
           else: break
+      of lineEnd:
+        lex.nextImpl = expectLineEnd[T]
+        lex.stored = if lex.inFlow: flowStyle[T] else: blockStyle[T]
+        break
       of flowIndicators:
         if lex.inFlow:
           lex.nextImpl = lex.stored
           break
       of ':':
-        if not lex.nextIsPlainSafe(lex.inFlow): break outer
+        if not lex.nextIsPlainSafe(lex.inFlow):
+          lex.nextImpl = blockStyleInline[T]
+          break outer
       else: discard
   t = ltScalarPart
   result = true
