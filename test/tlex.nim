@@ -32,8 +32,10 @@ proc actualRepr(lex: YamlLexer, t: LexerToken): string =
 proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
   let lex = newYamlLexer(input)
   lex.init()
-  var i = 0
-  var blockScalarEnd = -1
+  var
+    i = 0
+    blockScalarEnd = -1
+    flowDepth = 0
   for expectedToken in expected:
     inc(i)
     try:
@@ -61,6 +63,12 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
             "Wrong chomp indicator at #" & $i & ": Expected " &
             $expectedToken.chomp & ", got " & $lex.chomp
         blockScalarEnd = lex.indentation
+      of ltBraceOpen, ltBracketOpen:
+        inc(flowDepth)
+        if flowDepth == 1: lex.setFlow(true)
+      of ltBraceClose, ltBracketClose:
+        dec(flowDepth)
+        if flowDepth == 0: lex.setFlow(false)
       else: discard
     except YamlLexerError:
       let e = (ref YamlLexerError)(getCurrentException())
@@ -95,6 +103,11 @@ proc docE(): TokenWithValue = TokenWithValue(kind: ltDocumentEnd)
 proc bs(folded: bool, chomp: ChompType): TokenWithValue =
   TokenWithValue(kind: ltBlockScalarHeader, folded: folded, chomp: chomp)
 proc el(): TokenWithValue = TokenWithValue(kind: ltEmptyLine)
+proc ao(): TokenWithValue = TokenWithValue(kind: ltBracketOpen)
+proc ac(): TokenWithValue = TokenWithValue(kind: ltBracketClose)
+proc oo(): TokenWithValue = TokenWithValue(kind: ltBraceOpen)
+proc oc(): TokenWithValue = TokenWithValue(kind: ltBraceClose)
+proc c(): TokenWithValue = TokenWithValue(kind: ltComma)
 
 suite "Lexer":
   test "Empty document":
@@ -156,3 +169,7 @@ suite "Lexer":
         sp("one"), mv(), bs(true, ctStrip), i(3), sp(" foo"), i(2), sp("bar"),
         i(0), sp("two"), mv(), bs(false, ctKeep), i(1), sp("bar"), i(2),
         sp(" baz"), se())
+  
+  test "Flow indicators":
+    assertEquals("bla]: {c: d, [e]: f}", i(0), sp("bla]"), mv(), oo(), sp("c"),
+        mv(), sp("d"), c(), ao(), sp("e"), ac(), mv(), sp("f"), oc(), se())

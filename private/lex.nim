@@ -432,12 +432,13 @@ proc possibleIndicatorChar[T](lex: YamlLexer[T], indicator: LexerToken,
       lex.nextImpl = expectLineEnd[T]
 
 proc flowIndicator[T](lex: YamlLexer[T], indicator: LexerToken,
-    t: var LexerToken, inFlow: static[bool]): bool {.inline.} =
+    t: var LexerToken): bool {.inline.} =
   t = indicator
   lex.advance()
   while lex.c in space: lex.advance()
   if lex.c in lineEnd:
     lex.nextImpl = expectLineEnd[T]
+  result = true
 
 proc addMultiple(s: var string, c: char, num: int) {.raises: [], inline.} =
   for i in 1..num: s.add(c)
@@ -581,10 +582,11 @@ proc blockStyleInline[T](lex: YamlLexer[T], t: var LexerToken): bool =
     if lex.inFlow: lex.nextImpl = plainScalarPart[T]
     else: lex.nextImpl = blockScalarHeader[T]
     result = false
-  of '{': result = lex.flowIndicator(ltBraceOpen, t, false)
-  of '}': result = lex.flowIndicator(ltBraceClose, t, false)
-  of '[': result = lex.flowIndicator(ltBracketOpen, t, false)
-  of ']': result = lex.flowIndicator(ltBracketClose, t, false)
+  of '{': result = lex.flowIndicator(ltBraceOpen, t)
+  of '}': result = lex.flowIndicator(ltBraceClose, t)
+  of '[': result = lex.flowIndicator(ltBracketOpen, t)
+  of ']': result = lex.flowIndicator(ltBracketClose, t)
+  of ',': result = lex.flowIndicator(ltComma, t)
   else:
     lex.nextImpl = plainScalarPart[T]
     result = false
