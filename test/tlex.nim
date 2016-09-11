@@ -3,8 +3,8 @@ import ../private/lex
 import unittest, strutils
 
 const tokensWithValue =
-    [ltScalarPart, ltQuotedScalar, ltYamlVersion, ltTagShorthand, ltTagUri,
-     ltUnknownDirective, ltUnknownDirectiveParams]
+    {ltScalarPart, ltQuotedScalar, ltYamlVersion, ltTagShorthand, ltTagUri,
+     ltUnknownDirective, ltUnknownDirectiveParams, ltLiteralTag}
 
 type
   TokenWithValue = object
@@ -16,12 +16,14 @@ type
     of ltBlockScalarHeader:
       folded: bool
       chomp: ChompType
+    of ltTagHandle:
+      handle, suffix: string
     else: discard
 
 proc actualRepr(lex: YamlLexer, t: LexerToken): string =
   result = $t
   case t
-  of tokensWithValue:
+  of tokensWithValue + {ltTagHandle}:
     result.add("(" & escape(lex.buf) & ")")
   of ltIndentation:
     result.add("(" & $lex.indentation & ")")
@@ -69,6 +71,17 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
       of ltBraceClose, ltBracketClose:
         dec(flowDepth)
         if flowDepth == 0: lex.setFlow(false)
+      of ltTagHandle:
+        let
+          handle = lex.buf.substr(0, lex.shorthandEnd)
+          suffix = lex.buf.substr(lex.shorthandEnd + 1)
+        doAssert handle == expectedToken.handle,
+            "Wrong handle at #" & $i & ": Expected " & expectedToken.handle &
+            ", got " & handle
+        doAssert suffix == expectedToken.suffix,
+            "Wrong suffix at #" & $i & ": Expected " & expectedToken.suffix &
+            ", got " & suffix
+        lex.buf = ""
       else: discard
     except YamlLexerError:
       let e = (ref YamlLexerError)(getCurrentException())
@@ -108,6 +121,10 @@ proc ac(): TokenWithValue = TokenWithValue(kind: ltBracketClose)
 proc oo(): TokenWithValue = TokenWithValue(kind: ltBraceOpen)
 proc oc(): TokenWithValue = TokenWithValue(kind: ltBraceClose)
 proc c(): TokenWithValue = TokenWithValue(kind: ltComma)
+proc th(handle, suffix: string): TokenWithValue =
+  TokenWithValue(kind: ltTagHandle, handle: handle, suffix: suffix)
+proc lt(v: string): TokenWithValue =
+  TokenWithValue(kind: ltLiteralTag, value: v)
 
 suite "Lexer":
   test "Empty document":
@@ -177,3 +194,12 @@ suite "Lexer":
   test "Adjacent map values in flow style":
     assertEquals("{\"foo\":bar, [1]\l:egg}", i(0), oo(), qs("foo"), mv(),
         sp("bar"), c(), ao(), sp("1"), ac(), mv(), sp("egg"), oc(), se())
+
+  test "Tag handles":
+    assertEquals("- !!str string\l- !local local\l- !e! e", i(0), si(),
+        th("!!", "str"), sp("string"), i(0), si(), th("!", "local"),
+        sp("local"), i(0), si(), th("!e!", ""), sp("e"), se())
+
+  test "Literal tag handle":
+    assertEquals("!<tag:yaml.org,2002:str> string", i(0),
+        lt("tag:yaml.org,2002:str"), sp("string"), se())

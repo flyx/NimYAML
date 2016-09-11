@@ -69,6 +69,8 @@ const
   spaceOrLineEnd = {' ', '\t', '\l', '\c', EndOfFile}
   digits         = {'0'..'9'}
   flowIndicators = {'[', ']', '{', '}', ','}
+  uriChars       = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', ':',
+      '@', '&', '-', '=', '+', '$', '_', '.', '~', '*', '\'', '(', ')'}
 
   UTF8NextLine           = toUTF8(0x85.Rune)
   UTF8NonBreakingSpace   = toUTF8(0xA0.Rune)
@@ -153,6 +155,15 @@ proc nextIsPlainSafe(lex: YamlLexer, t: typedesc[StringSource],
   of flowIndicators: result = not inFlow
   else: result = true
 
+proc mark(lex: YamlLexer, t: typedesc[BaseLexer]): int = lex.blSource.bufpos
+proc mark(lex: YamlLexer, t: typedesc[StringSource]): int = lex.sSource.pos
+
+proc afterMark(lex: YamlLexer, t: typedesc[BaseLexer], m: int): int =
+  lex.blSource.bufpos - m
+
+proc afterMark(lex: YamlLexer, t: typedesc[StringSource], m: int): int =
+  lex.sSource.pos - m
+
 # lexer states
 
 proc outsideDoc[T](lex: YamlLexer): bool
@@ -169,6 +180,7 @@ proc insideLine[T](lex: YamlLexer): bool
 proc plainScalarPart[T](lex: YamlLexer): bool
 proc blockScalarHeader[T](lex: YamlLexer): bool
 proc blockScalar[T](lex: YamlLexer): bool
+proc tagHandle[T](lex: YamlLexer): bool
 proc streamEnd(lex: YamlLexer): bool
 
 # implementation
@@ -574,6 +586,9 @@ proc insideLine[T](lex: YamlLexer): bool =
   of '[': result = flowIndicator[T](lex, ltBracketOpen)
   of ']': result = flowIndicator[T](lex, ltBracketClose)
   of ',': result = flowIndicator[T](lex, ltComma)
+  of '!':
+    lex.nextState = tagHandle[T]
+    result = false
   else:
     lex.nextState = plainScalarPart[T]
     result = false
@@ -678,6 +693,71 @@ proc blockScalar[T](lex: YamlLexer): bool =
   result = true
   lex.nextState = expectLineEnd[T]
 
+proc byteSequence[T](lex: YamlLexer) =
+  debug("lex: byteSequence")
+  var charCode = 0.int8
+  for i in 0 .. 1:
+    lex.advance(T)
+    let digitPosition = int8(1 - i)
+    case lex.c
+    of EndOfFile, '\l', 'r':
+      raise generateError[T](lex, "Unfinished octet escape sequence")
+    of '0' .. '9':
+      charCode = charCode or (int8(lex.c) - 0x30.int8) shl (digitPosition * 4)
+    of 'A' .. 'F':
+      charCode = charCode or (int8(lex.c) - 0x37.int8) shl (digitPosition * 4)
+    of 'a' .. 'f':
+      charCode = charCode or (int8(lex.c) - 0x57.int8) shl (digitPosition * 4)
+    else:
+      raise generateError[T](lex, "Invalid character in octet escape sequence")
+  lex.buf.add(char(charCode))
+
+proc tagHandle[T](lex: YamlLexer): bool =
+  debug("lex: tagHandle")
+  lex.advance(T)
+  if lex.c == '<':
+    lex.advance(T)
+    if lex.c == '!':
+      lex.buf.add('!')
+      lex.advance(T)
+    while true:
+      case lex.c
+      of spaceOrLineEnd: raise generateError[T](lex, "Unclosed verbatim tag")
+      of '%': byteSequence[T](lex)
+      of uriChars + {','}: lex.buf.add(lex.c)
+      of '>': break
+      else: raise generateError[T](lex, "Illegal character in verbatim tag")
+      lex.advance(T)
+    lex.advance(T)
+    lex.cur = ltLiteralTag
+  else:
+    lex.shorthandEnd = 0
+    let m = lex.mark(T)
+    lex.buf.add('!')
+    while true:
+      case lex.c
+      of spaceOrLineEnd: break
+      of '!':
+        if lex.shorthandEnd != 0:
+          raise generateError[T](lex, "Illegal character in tag suffix")
+        lex.shorthandEnd = lex.afterMark(T, m) + 1
+        lex.buf.add('!')
+      of ',':
+        if lex.shorthandEnd > 0: break # ',' after shorthand is flow indicator
+        lex.buf.add(',')
+      of '%':
+        if lex.shorthandEnd == 0:
+          raise generateError[T](lex, "Illegal character in tag handle")
+        byteSequence[T](lex)
+      of uriChars: lex.buf.add(lex.c)
+      else: raise generateError[T](lex, "Illegal character in tag handle")
+      lex.advance(T)
+    lex.cur = ltTagHandle
+  while lex.c in space: lex.advance(T)
+  if lex.c in lineEnd: lex.nextState = expectLineEnd[T]
+  else: lex.nextState = insideLine[T]
+  result = true
+
 proc streamEnd(lex: YamlLexer): bool =
   debug("lex: streamEnd")
   lex.cur = ltStreamEnd
@@ -718,6 +798,13 @@ proc next*(lex: YamlLexer) =
 
 proc setFlow*(lex: YamlLexer, value: bool) =
   lex.inFlow = value
+  # in flow mode, no indentation tokens are generated because they are not
+  # necessary. actually, the lexer will behave wrongly if we do that, because
+  # adjacent values need to check if the preceding token was a JSON value, and
+  # if indentation tokens are generated, that information is not available.
+  # therefore, we do not use insideDoc in flow mode. another reason is that this
+  # would erratically check for document markers (---, ...) which are simply
+  # scalars in flow mode.
   if value: lex.lineStartState = lex.insideLineImpl
   else: lex.lineStartState = lex.insideDocImpl
 
