@@ -61,14 +61,6 @@ proc advance(lex: YamlLexer[StringSource], step: int = 1) {.inline.} =
   if lex.source.pos >= lex.source.src.len: lex.c = EndOfFile
   else: lex.c = lex.source.src[lex.source.pos]
 
-proc peek(lex: YamlLexer[StringSource], at: int = 1): char {.inline.} =
-  let index = lex.source.pos + at
-  if index >= lex.source.src.len: result = EndOfFile
-  else: result = lex.source.src[index]
-
-proc peek(lex: YamlLexer[BaseLexer], at: int = 1): char {.inline.} =
-  lex.source.buf[lex.source.bufpos + at]
-
 # lexer states
 
 proc outsideDoc[T](lex: YamlLexer[T], t: var LexerToken): bool
@@ -80,8 +72,8 @@ proc expectLineEnd[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc possibleDirectivesEnd[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc possibleDocumentEnd[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc afterSeqInd[T](lex: YamlLexer[T], t: var LexerToken): bool
-proc blockStyle[T](lex: YamlLexer[T], t: var LexerToken): bool {.locks:0.}
-proc blockStyleInline[T](lex: YamlLexer[T], t: var LexerToken): bool
+proc insideDoc[T](lex: YamlLexer[T], t: var LexerToken): bool {.locks:0.}
+proc insideLine[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc plainScalarPart[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc blockScalarHeader[T](lex: YamlLexer[T], t: var LexerToken): bool
 proc blockScalar[T](lex: YamlLexer[T], t: var LexerToken): bool
@@ -103,7 +95,7 @@ proc newYamlLexer*(source: string, startAt: int = 0):
 proc init*[T](lex: YamlLexer[T]) =
   lex.nextImpl = outsideDoc[T]
   lex.lineStartImpl = outsideDoc[T]
-  lex.inlineImpl = blockStyleInline[T]
+  lex.inlineImpl = insideLine[T]
 
 proc next*(lex: YamlLexer): LexerToken =
   while not lex.nextImpl(lex, result): discard
@@ -113,8 +105,8 @@ proc setFlow*[T](lex: YamlLexer[T], value: bool) =
 
 proc endBlockScalar*[T](lex: YamlLexer[T]) =
   assert lex.nextImpl == blockScalar[T], "Expected blockScalar, got " & lex.nextImpl.repr
-  lex.inlineImpl = blockStyleInline[T]
-  lex.nextImpl = blockStyleInline[T]
+  lex.inlineImpl = insideLine[T]
+  lex.nextImpl = insideLine[T]
 
 # implementation
 
@@ -310,7 +302,7 @@ proc expectLineEnd[T](lex: YamlLexer[T], t: var LexerToken): bool =
 
 proc possibleDirectivesEnd[T](lex: YamlLexer[T], t: var LexerToken): bool =
   debug("lex: possibleDirectivesEnd")
-  lex.lineStartImpl = blockStyle[T]
+  lex.lineStartImpl = insideDoc[T]
   lex.advance()
   if lex.c == '-':
     lex.advance()
@@ -318,7 +310,7 @@ proc possibleDirectivesEnd[T](lex: YamlLexer[T], t: var LexerToken): bool =
       lex.advance()
       if lex.c in spaceOrLineEnd:
         t = ltDirectivesEnd
-        lex.nextImpl = blockStyleInline[T]
+        lex.nextImpl = insideLine[T]
         return true
       lex.buf.add('-')
     lex.buf.add('-')
@@ -335,7 +327,7 @@ proc afterSeqInd[T](lex: YamlLexer[T], t: var LexerToken): bool =
   result = true
   t = ltSeqItemInd
   if lex.c notin lineEnd: lex.advance()
-  lex.nextImpl = blockStyleInline[T]
+  lex.nextImpl = insideLine[T]
 
 proc possibleDocumentEnd[T](lex: YamlLexer[T], t: var LexerToken): bool =
   debug("lex: possibleDocumentEnd")
@@ -388,16 +380,16 @@ proc outsideDoc[T](lex: YamlLexer[T], t: var LexerToken): bool =
     if lex.c in spaceOrLineEnd + {'#'}:
       lex.nextImpl = expectLineEnd[T]
       return false
-    lex.nextImpl = blockStyleInline[T]
+    lex.nextImpl = insideLine[T]
   else:
     lex.indentation = 0
-    lex.nextImpl = blockStyleInline[T]
-  lex.lineStartImpl = blockStyle[T]
+    lex.nextImpl = insideLine[T]
+  lex.lineStartImpl = insideDoc[T]
   t = ltIndentation
   result = true
 
-proc blockStyle[T](lex: YamlLexer[T], t: var LexerToken): bool =
-  debug("lex: blockStyle")
+proc insideDoc[T](lex: YamlLexer[T], t: var LexerToken): bool =
+  debug("lex: insideDoc")
   lex.indentation = 0
   case lex.c
   of '-':
@@ -561,8 +553,8 @@ proc doubleQuotedScalar[T](lex: YamlLexer[T]) =
     else: lex.buf.add(lex.c)
     lex.advance()
 
-proc blockStyleInline[T](lex: YamlLexer[T], t: var LexerToken): bool =
-  debug("lex: blockStyleInline")
+proc insideLine[T](lex: YamlLexer[T], t: var LexerToken): bool =
+  debug("lex: insideLine")
   case lex.c
   of ':': result = lex.possibleIndicatorChar(ltMapValInd, t)
   of '?': result = lex.possibleIndicatorChar(ltMapKeyInd, t)
@@ -612,12 +604,12 @@ proc plainScalarPart[T](lex: YamlLexer[T], t: var LexerToken): bool =
             if lex.nextIsPlainSafe(lex.inFlow): break
             else:
               lex.buf.setLen(lenBeforeSpace)
-              lex.nextImpl = blockStyleInline[T]
+              lex.nextImpl = insideLine[T]
               break outer
           of flowIndicators:
             if lex.inFlow:
               lex.buf.setLen(lenBeforeSpace)
-              lex.nextImpl = blockStyleInline[T]
+              lex.nextImpl = insideLine[T]
               break outer
             else:
               lex.buf.add(lex.c)
@@ -630,11 +622,11 @@ proc plainScalarPart[T](lex: YamlLexer[T], t: var LexerToken): bool =
         break
       of flowIndicators:
         if lex.inFlow:
-          lex.nextImpl = blockStyleInline[T]
+          lex.nextImpl = insideLine[T]
           break
       of ':':
         if not lex.nextIsPlainSafe(lex.inFlow):
-          lex.nextImpl = blockStyleInline[T]
+          lex.nextImpl = insideLine[T]
           break outer
       else: discard
   t = ltScalarPart
