@@ -38,9 +38,10 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
   for expectedToken in expected:
     inc(i)
     try:
-      let t = lex.next()
-      doAssert t == expectedToken.kind, "Wrong token kind at #" & $i &
-          ": Expected " & $expectedToken.kind & ", got " & lex.actualRepr(t)
+      lex.next()
+      doAssert lex.cur == expectedToken.kind, "Wrong token kind at #" & $i &
+          ": Expected " & $expectedToken.kind & ", got " &
+          lex.actualRepr(lex.cur)
       case expectedToken.kind
       of tokensWithValue:
         doAssert lex.buf == expectedToken.value, "Wrong token content at #" &
@@ -172,3 +173,7 @@ suite "Lexer":
   test "Flow indicators":
     assertEquals("bla]: {c: d, [e]: f}", i(0), sp("bla]"), mv(), oo(), sp("c"),
         mv(), sp("d"), c(), ao(), sp("e"), ac(), mv(), sp("f"), oc(), se())
+
+  test "Adjacent map values in flow style":
+    assertEquals("{\"foo\":bar, [1]\l:egg}", i(0), oo(), qs("foo"), mv(),
+        sp("bar"), c(), ao(), sp("1"), ac(), mv(), sp("egg"), oc(), se())
