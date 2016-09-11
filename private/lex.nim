@@ -43,6 +43,7 @@ type
     blockScalarIndent: int
     c: char
     tokenLineGetter: proc(lex: YamlLexer): string
+    searchColonImpl: proc(lex: YamlLexer): bool
 
   YamlLexer* = ref YamlLexerObj
 
@@ -156,6 +157,15 @@ proc nextIsPlainSafe(lex: YamlLexer, t: typedesc[StringSource],
   of spaceOrLineEnd: result = false
   of flowIndicators: result = not inFlow
   else: result = true
+
+proc getPos(lex: YamlLexer, t: typedesc[BaseLexer]): int = lex.blSource.bufpos
+proc getPos(lex: YamlLexer, t: typedesc[StringSource]): int = lex.sSource.pos
+
+proc at(lex: YamlLexer, t: typedesc[BaseLexer], pos: int): char {.inline.} =
+  lex.blSource.buf[pos]
+
+proc at(lex: YamlLexer, t: typedesc[StringSource], pos: int): char {.inline.} =
+  lex.sSource.src[pos]
 
 proc mark(lex: YamlLexer, t: typedesc[BaseLexer]): int = lex.blSource.bufpos
 proc mark(lex: YamlLexer, t: typedesc[StringSource]): int = lex.sSource.pos
@@ -855,6 +865,78 @@ proc streamEnd(lex: YamlLexer): bool =
 proc tokenLine[T](lex: YamlLexer): string =
   result = lex.lineWithMarker(T)
 
+proc searchColon[T](lex: YamlLexer): bool =
+  var flowDepth = if lex.cur in [ltBraceOpen, ltBracketOpen]: 1 else: 0
+  let start = lex.getPos(T)
+  var
+    peek = start
+    recentAllowsAdjacent = lex.cur == ltQuotedScalar
+  result = false
+
+  proc skipPlainScalarContent(lex: YamlLexer) {.inline.} =
+    while true:
+      inc(peek)
+      case lex.at(T, peek)
+      of ']', '}', ',':
+        if flowDepth > 0 or lex.inFlow: break
+      of '#':
+        if lex.at(T, peek - 1) in space: break
+      of ':':
+        if lex.at(T, peek + 1) in spaceOrLineEnd: break
+      of lineEnd: break
+      else: discard
+
+  while peek < start + 1024:
+    case lex.at(T, peek)
+    of ':':
+      if flowDepth == 0:
+        if recentAllowsAdjacent or lex.at(T, peek + 1) in spaceOrLineEnd:
+          result = true
+          break
+        lex.skipPlainScalarContent()
+        continue
+    of '{', '[': inc(flowDepth)
+    of '}', ']':
+      dec(flowDepth)
+      if flowDepth < 0:
+        if lex.inFlow: break
+        else:
+          flowDepth = 0
+          lex.skipPlainScalarContent()
+          continue
+      recentAllowsAdjacent = true
+    of lineEnd: break
+    of '"':
+      while true:
+        inc(peek)
+        case lex.at(T, peek)
+        of lineEnd, '"': break
+        of '\\': inc(peek)
+        else: discard
+      if lex.at(T, peek) != '"': break
+      recentAllowsAdjacent = true
+    of '\'':
+      inc(peek)
+      while lex.at(T, peek) notin {'\''} + lineEnd: inc(peek)
+      if lex.at(T, peek) != '\'': break
+      recentAllowsAdjacent = true
+    of '?', ',':
+      if flowDepth == 0: break
+    of '#':
+      if lex.at(T, peek - 1) in space: break
+      lex.skipPlainScalarContent()
+      continue
+    of '&', '*', '!':
+      inc(peek)
+      while lex.at(T, peek) notin spaceOrLineEnd: inc(peek)
+      recentAllowsAdjacent = false
+      continue
+    of space: discard
+    else:
+      lex.skipPlainScalarContent()
+      continue
+    inc(peek)
+
 # interface
 
 proc init*[T](lex: YamlLexer) =
@@ -864,6 +946,7 @@ proc init*[T](lex: YamlLexer) =
   lex.insideLineImpl = insideLine[T]
   lex.insideDocImpl = insideDoc[T]
   lex.tokenLineGetter = tokenLine[T]
+  lex.searchColonImpl = searchColon[T]
 
 proc newYamlLexer*(source: Stream): YamlLexer =
   let blSource = cast[ptr BaseLexer](alloc(sizeof(BaseLexer)))
@@ -907,3 +990,6 @@ proc endBlockScalar*(lex: YamlLexer) =
 
 proc getTokenLine*(lex: YamlLexer): string =
   result = lex.tokenLineGetter(lex)
+
+proc isImplicitKeyStart*(lex: YamlLexer): bool =
+  result = lex.searchColonImpl(lex)

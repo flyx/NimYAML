@@ -90,6 +90,21 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
       echo e.lineContent
       assert false
 
+proc assertLookahead(input: string, expected: bool, tokensBefore: int = 1) =
+  let lex = newYamlLexer(input)
+  var flowDepth = 0
+  for i in 0..tokensBefore:
+    lex.next()
+    case lex.cur
+    of ltBraceOpen, ltBracketOpen:
+      inc(flowDepth)
+      if flowDepth == 1: lex.setFlow(true)
+    of ltBraceClose, ltBracketClose:
+      dec(flowDepth)
+      if flowDepth == 0: lex.setFlow(false)
+    else: discard
+  doAssert lex.isImplicitKeyStart() == expected
+
 proc i(indent: int): TokenWithValue =
   TokenWithValue(kind: ltIndentation, indentation: indent)
 proc sp(v: string): TokenWithValue =
@@ -211,3 +226,34 @@ suite "Lexer":
     assertEquals("&a foo: {&b b: *a, *b : c}", i(0), an("a"), sp("foo"), mv(),
         oo(), an("b"), sp("b"), mv(), al("a"), c(), al("b"), mv(), sp("c"),
         oc(), se())
+
+suite "Lookahead":
+  test "Simple Scalar":
+    assertLookahead("abcde", false)
+
+  test "Simple Mapping":
+    assertLookahead("a: b", true)
+
+  test "Colon inside plain scalar":
+    assertLookahead("abc:de", false)
+
+  test "Colon inside quoted scalar":
+    assertLookahead("'abc: de'", false)
+
+  test "Quotes inside plain scalar":
+    assertLookahead("abc\'\"de: foo", true)
+
+  test "Flow indicator inside plain scalar":
+    assertLookahead("abc}]: de", true)
+
+  test "Complex key":
+    assertLookahead("[1, 2, \"3\"]: foo", true)
+
+  test "Flow value":
+    assertLookahead("{a: b}", false)
+
+  test "In flow context":
+    assertLookahead("[ abcde]: foo", false, 2)
+
+  test "Adjacent value":
+    assertLookahead("[\"abc\":de]", true, 2)
