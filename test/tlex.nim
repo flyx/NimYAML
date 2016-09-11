@@ -227,6 +227,23 @@ suite "Lexer":
         oo(), an("b"), sp("b"), mv(), al("a"), c(), al("b"), mv(), sp("c"),
         oc(), se())
 
+  test "Empty lines":
+    assertEquals("""block: foo
+
+  bar
+
+    baz
+flow: {
+  foo
+
+  bar: baz
+
+
+  mi
+}""", i(0), sp("block"), mv(), sp("foo"), el(), i(2), sp("bar"), el(), i(4),
+    sp("baz"), i(0), sp("flow"), mv(), oo(), sp("foo"), el(), sp("bar"), mv(),
+    sp("baz"), el(), el(), sp("mi"), oc(), se())
+
 suite "Lookahead":
   test "Simple Scalar":
     assertLookahead("abcde", false)

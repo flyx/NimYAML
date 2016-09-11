@@ -34,12 +34,15 @@ type
     # ltTagHandle
     shorthandEnd*: int
 
+    # may be modified from outside; will be consumed at plain scalar starts
+    newlines*: int
+
     # internals
     source: pointer
     inFlow: bool
     literalEndIndent: int
-    nextState, lineStartState, inlineState, insideLineImpl, insideDocImpl:
-        LexerState
+    nextState, lineStartState, inlineState, insideLineImpl, insideDocImpl,
+        insideFlowImpl: LexerState
     blockScalarIndent: int
     c: char
     tokenLineGetter: proc(lex: YamlLexer): string
@@ -221,6 +224,7 @@ proc possibleDirectivesEnd[T](lex: YamlLexer): bool
 proc possibleDocumentEnd[T](lex: YamlLexer): bool
 proc afterSeqInd[T](lex: YamlLexer): bool
 proc insideDoc[T](lex: YamlLexer): bool {.locks:0.}
+proc insideFlow[T](lex: YamlLexer): bool
 proc insideLine[T](lex: YamlLexer): bool
 proc plainScalarPart[T](lex: YamlLexer): bool
 proc blockScalarHeader[T](lex: YamlLexer): bool
@@ -251,6 +255,13 @@ proc directiveName[T](lex: YamlLexer) =
   while lex.c notin spaceOrLineEnd:
     lex.buf.add(lex.c)
     lex.advance(T)
+
+proc consumeNewlines(lex: YamlLexer) =
+  case lex.newlines
+  of 0: return
+  of 1: lex.buf.add(' ')
+  else: lex.buf.add(repeat('\l', lex.newlines - 1))
+  lex.newlines = 0
 
 proc yamlVersion[T](lex: YamlLexer): bool =
   debug("lex: yamlVersion")
@@ -372,13 +383,16 @@ proc possibleDirectivesEnd[T](lex: YamlLexer): bool =
         lex.cur = ltDirectivesEnd
         lex.nextState = insideLine[T]
         return true
+      lex.consumeNewlines()
       lex.buf.add('-')
+    else: lex.consumeNewlines()
     lex.buf.add('-')
   elif lex.c in spaceOrLineEnd:
     lex.indentation = 0
     lex.cur = ltIndentation
     lex.nextState = afterSeqInd[T]
     return true
+  else: lex.consumeNewlines()
   lex.buf.add('-')
   lex.nextState = plainScalarPart[T]
   result = false
@@ -401,8 +415,11 @@ proc possibleDocumentEnd[T](lex: YamlLexer): bool =
         lex.nextState = expectLineEnd[T]
         lex.lineStartState = outsideDoc[T]
         return true
+      lex.consumeNewlines()
       lex.buf.add('.')
+    else: lex.consumeNewlines()
     lex.buf.add('.')
+  else: lex.consumeNewlines()
   lex.buf.add('.')
   lex.nextState = plainScalarPart[T]
   result = false
@@ -472,10 +489,22 @@ proc insideDoc[T](lex: YamlLexer): bool =
   lex.cur = ltIndentation
   result = true
 
+proc insideFlow[T](lex: YamlLexer): bool =
+  debug("lex: insideFlow")
+  startToken[T](lex)
+  while lex.c in space: lex.advance(T)
+  if lex.c in lineEnd + {'#'}:
+    lex.cur = ltEmptyLine
+    lex.nextState = expectLineEnd[T]
+    return true
+  lex.nextState = insideLine[T]
+  result = false
+
 proc possibleIndicatorChar[T](lex: YamlLexer, indicator: LexerToken,
     jsonContext: bool = false): bool =
   startToken[T](lex)
   if not(jsonContext) and lex.nextIsPlainSafe(T, false):
+    lex.consumeNewlines()
     lex.nextState = plainScalarPart[T]
     result = false
   else:
@@ -640,6 +669,7 @@ proc insideLine[T](lex: YamlLexer): bool =
     result = true
   of '>', '|':
     startToken[T](lex)
+    lex.consumeNewlines()
     if lex.inFlow: lex.nextState = plainScalarPart[T]
     else: lex.nextState = blockScalarHeader[T]
     result = false
@@ -662,6 +692,7 @@ proc insideLine[T](lex: YamlLexer): bool =
         "Reserved characters cannot start a plain scalar")
   else:
     startToken[T](lex)
+    lex.consumeNewlines()
     lex.nextState = plainScalarPart[T]
     result = false
 
@@ -945,6 +976,7 @@ proc init*[T](lex: YamlLexer) =
   lex.inlineState = insideLine[T]
   lex.insideLineImpl = insideLine[T]
   lex.insideDocImpl = insideDoc[T]
+  lex.insideFlowImpl = insideFlow[T]
   lex.tokenLineGetter = tokenLine[T]
   lex.searchColonImpl = searchColon[T]
 
@@ -955,7 +987,7 @@ proc newYamlLexer*(source: Stream): YamlLexer =
       dealloc(x.source)
   )
   result[] = YamlLexerObj(source: blSource, inFlow: false, buf: "",
-      c: blSource[].buf[blSource[].bufpos])
+      c: blSource[].buf[blSource[].bufpos], newlines: 0)
   init[BaseLexer](result)
 
 proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer =
@@ -966,7 +998,7 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer =
       dealloc(x.source)
   )
   result[] = YamlLexerObj(buf: "", source: sSource, inFlow: false,
-      c: sSource.src[startAt])
+      c: sSource.src[startAt], newlines: 0)
   init[StringSource](result)
 
 proc next*(lex: YamlLexer) =
@@ -978,10 +1010,10 @@ proc setFlow*(lex: YamlLexer, value: bool) =
   # necessary. actually, the lexer will behave wrongly if we do that, because
   # adjacent values need to check if the preceding token was a JSON value, and
   # if indentation tokens are generated, that information is not available.
-  # therefore, we do not use insideDoc in flow mode. another reason is that this
-  # would erratically check for document markers (---, ...) which are simply
-  # scalars in flow mode.
-  if value: lex.lineStartState = lex.insideLineImpl
+  # therefore, we use insideFlow instead of insideDoc in flow mode. another
+  # reason is that this would erratically check for document markers (---, ...)
+  # which are simply scalars in flow mode.
+  if value: lex.lineStartState = lex.insideFlowImpl
   else: lex.lineStartState = lex.insideDocImpl
 
 proc endBlockScalar*(lex: YamlLexer) =
