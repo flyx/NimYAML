@@ -4,7 +4,8 @@ import unittest, strutils
 
 const tokensWithValue =
     {ltScalarPart, ltQuotedScalar, ltYamlVersion, ltTagShorthand, ltTagUri,
-     ltUnknownDirective, ltUnknownDirectiveParams, ltLiteralTag}
+     ltUnknownDirective, ltUnknownDirectiveParams, ltLiteralTag, ltAnchor,
+     ltAlias}
 
 type
   TokenWithValue = object
@@ -125,6 +126,8 @@ proc th(handle, suffix: string): TokenWithValue =
   TokenWithValue(kind: ltTagHandle, handle: handle, suffix: suffix)
 proc lt(v: string): TokenWithValue =
   TokenWithValue(kind: ltLiteralTag, value: v)
+proc an(v: string): TokenWithValue = TokenWithValue(kind: ltAnchor, value: v)
+proc al(v: string): TokenWithValue = TokenWithValue(kind: ltAlias, value: v)
 
 suite "Lexer":
   test "Empty document":
@@ -203,3 +206,8 @@ suite "Lexer":
   test "Literal tag handle":
     assertEquals("!<tag:yaml.org,2002:str> string", i(0),
         lt("tag:yaml.org,2002:str"), sp("string"), se())
+
+  test "Anchors and aliases":
+    assertEquals("&a foo: {&b b: *a, *b : c}", i(0), an("a"), sp("foo"), mv(),
+        oo(), an("b"), sp("b"), mv(), al("a"), c(), al("b"), mv(), sp("c"),
+        oc(), se())

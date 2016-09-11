@@ -181,6 +181,8 @@ proc plainScalarPart[T](lex: YamlLexer): bool
 proc blockScalarHeader[T](lex: YamlLexer): bool
 proc blockScalar[T](lex: YamlLexer): bool
 proc tagHandle[T](lex: YamlLexer): bool
+proc anchor[T](lex: YamlLexer): bool
+proc alias[T](lex: YamlLexer): bool
 proc streamEnd(lex: YamlLexer): bool
 
 # implementation
@@ -589,6 +591,15 @@ proc insideLine[T](lex: YamlLexer): bool =
   of '!':
     lex.nextState = tagHandle[T]
     result = false
+  of '&':
+    lex.nextState = anchor[T]
+    result = false
+  of '*':
+    lex.nextState = alias[T]
+    result = false
+  of '@', '`':
+    raise generateError[T](lex,
+        "Reserved characters cannot start a plain scalar")
   else:
     lex.nextState = plainScalarPart[T]
     result = false
@@ -756,6 +767,29 @@ proc tagHandle[T](lex: YamlLexer): bool =
   while lex.c in space: lex.advance(T)
   if lex.c in lineEnd: lex.nextState = expectLineEnd[T]
   else: lex.nextState = insideLine[T]
+  result = true
+
+proc anchorName[T](lex: YamlLexer) =
+  debug("lex: anchorName")
+  while true:
+    lex.advance(T)
+    case lex.c
+    of spaceOrLineEnd, '[', ']', '{', '}', ',': break
+    else: lex.buf.add(lex.c)
+  while lex.c in space: lex.advance(T)
+  if lex.c in lineEnd: lex.nextState = expectLineEnd[T]
+  else: lex.nextState = insideLine[T]
+
+proc anchor[T](lex: YamlLexer): bool =
+  debug("lex: anchor")
+  anchorName[T](lex)
+  lex.cur = ltAnchor
+  result = true
+
+proc alias[T](lex: YamlLexer): bool =
+  debug("lex: alias")
+  anchorName[T](lex)
+  lex.cur = ltAlias
   result = true
 
 proc streamEnd(lex: YamlLexer): bool =
