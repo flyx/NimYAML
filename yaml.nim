@@ -17,7 +17,7 @@
 ## this enhances interoperability with other languages.
 
 import streams, unicode, lexbase, tables, strutils, json, hashes, queues,
-       macros, typetraits, parseutils
+       macros, typetraits, parseutils, private/lex
 export streams, tables, json
 
 when defined(yamlDebug): import terminal
@@ -143,14 +143,6 @@ type
     ##   ``1.2``.
     ## - If there is an unknown directive encountered.
 
-  FastParseLevelKind = enum
-    fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
-    fplSinglePairValue, fplScalar, fplDocument
-
-  FastParseLevel = object
-    kind: FastParseLevelKind
-    indentation: int
-
   YamlParser* = ref object
     ## A parser object. Retains its ``TagLibrary`` across calls to
     ## `parse <#parse,YamlParser,Stream>`_. Can be used
@@ -160,8 +152,6 @@ type
     tagLib: TagLibrary
     callback: WarningCallback
     anchors: Table[string, AnchorId]
-    lexer: BaseLexer
-    tokenstart: int
 
   PresentationStyle* = enum
     ## Different styles for YAML character stream output.
