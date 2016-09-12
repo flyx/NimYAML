@@ -113,6 +113,9 @@ type
     ## always yield a well-formed ``YamlStream`` and expect it to be
     ## well-formed if they take it as input parameter.
     nextImpl: proc(s: YamlStream, e: var YamlStreamEvent): bool
+    lastTokenContextImpl:
+        proc(s: YamlStream, line, column: var int,
+             lineContent: var string): bool {.raises: [].}
     isFinished: bool
     peeked: bool
     cached: YamlStreamEvent
@@ -459,6 +462,11 @@ proc `peek=`*(s: YamlStream, value: YamlStreamEvent) {.raises: [].}
 proc finished*(s: YamlStream): bool {.raises: [YamlStreamError].}
   ## ``true`` if no more items are available in the stream. Handles exceptions
   ## of the backend like ``next()``.
+proc getLastTokenContext*(s: YamlStream, line, column: var int,
+    lineContent: var string): bool
+  ## ``true`` if source context information is available about the last returned
+  ## token. If ``true``, line, column and lineContent are set to position and
+  ## line content where the last token has been read from.
 iterator items*(s: YamlStream): YamlStreamEvent
     {.raises: [YamlStreamError].} =
   ## Iterate over all items of the stream. You may not use ``peek()`` on the
@@ -510,21 +518,6 @@ proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
                     callback: WarningCallback = nil): YamlParser {.raises: [].}
   ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
   ## whenever the parser yields a warning.
-
-proc getLineNumber*(p: YamlParser): int {.raises: [].}
-  ## Get the line number (1-based) of the recently yielded parser token.
-  ## Useful for error reporting at later loading stages.
-
-proc getColNumber*(p: YamlParser): int {.raises: [].}
-  ## Get the column number (1-based) of the recently yielded parser token.
-  ## Useful for error reporting at later parsing stages.
-
-proc getLineContent*(p: YamlParser, marker: bool = true): string {.raises: [].}
-  ## Get the content of the input line containing the recently yielded parser
-  ## token. Useful for error reporting at later parsing stages. The line will
-  ## be terminated by ``"\n"``. If ``marker`` is ``true``, a second line will
-  ## be returned containing a ``^`` at the position of the recent parser
-  ## token.
 
 proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [YamlParserError].}
   ## Parse the given stream as YAML character stream.

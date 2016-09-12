@@ -161,9 +161,7 @@ proc loadToJson*(s: Stream): seq[JsonNode] =
     return constructJson(events)
   except YamlConstructionError:
     var e = (ref YamlConstructionError)(getCurrentException())
-    e.line = parser.getLineNumber()
-    e.column = parser.getColNumber()
-    e.lineContent = parser.getLineContent()
+    discard events.getLastTokenContext(e.line, e.column, e.lineContent)
     raise e
   except YamlStreamError:
     let e = getCurrentException()

@@ -4,6 +4,7 @@ task build, "Compile the YAML module into a library":
   setCommand "c", "yaml"
 
 task tests, "Run all tests":
+  --d:yamlDebug
   --r
   --verbosity:0
   setCommand "c", "test/tests"

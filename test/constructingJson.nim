@@ -18,7 +18,8 @@ proc ensureEqual(yamlIn, jsonIn: string) =
     yamlResult = constructJson(s)
     jsonResult = parseJson(jsonIn)
   assert yamlResult.len == 1
-  assert(jsonResult == yamlResult[0])
+  assert(jsonResult == yamlResult[0], "Expected: " & $jsonResult & ", got: " &
+      $yamlResult[0])
 
 suite "Constructing JSON":
   test "Constructing JSON: Simple Sequence":

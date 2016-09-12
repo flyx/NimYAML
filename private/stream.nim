@@ -4,6 +4,11 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+proc noLastContext(s: YamlStream, line, column: var int,
+    lineContent: var string): bool =
+  (line, column, lineContent) = (-1, -1, "")
+  result = false
+
 when not defined(JS):
   type IteratorYamlStream = ref object of YamlStream
     backend: iterator(): YamlStreamEvent
@@ -19,6 +24,7 @@ when not defined(JS):
         s.isFinished = true
         result = false
       else: result = true
+    result.lastTokenContextImpl = noLastContext
 
 type
   BufferYamlStream = ref object of YamlStream
@@ -27,6 +33,7 @@ type
 
 proc newBufferYamlStream(): BufferYamlStream not nil =
   BufferYamlStream(peeked: false, isFinished: false, buf: @[], pos: 0,
+      lastTokenContextImpl: noLastContext,
       nextImpl: proc(s: YamlStream, e: var YamlStreamEvent): bool =
         let bys = BufferYamlStream(s)
         if bys.pos == bys.buf.len:
@@ -88,3 +95,7 @@ proc finished*(s: YamlStream): bool =
       var e = newException(YamlStreamError, cur.msg)
       e.parent = cur
       raise e
+
+proc getLastTokenContext*(s: YamlStream, line, column: var int,
+    lineContent: var string): bool =
+  result = s.lastTokenContextImpl(s, line, column, lineContent)

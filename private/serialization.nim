@@ -762,9 +762,7 @@ proc load*[K](input: Stream, target: var K) =
   try: construct(events, target)
   except YamlConstructionError:
     var e = (ref YamlConstructionError)(getCurrentException())
-    e.line = parser.getLineNumber()
-    e.column = parser.getColNumber()
-    e.lineContent = parser.getLineContent()
+    discard events.getLastTokenContext(e.line, e.column, e.lineContent)
     raise e
   except YamlStreamError:
     let e = (ref YamlStreamError)(getCurrentException())
