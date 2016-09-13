@@ -748,7 +748,10 @@ proc construct*[T](s: var YamlStream, target: var T) =
   except YamlConstructionError:
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
-    raise (ref YamlStreamError)(getCurrentException())
+    let cur = getCurrentException()
+    var e = newException(YamlStreamError, cur.msg)
+    e.parent = cur.parent
+    raise e
   except Exception:
     # may occur while calling s()
     var ex = newException(YamlStreamError, "")

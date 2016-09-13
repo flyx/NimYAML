@@ -114,6 +114,16 @@ proc initDocValues(c: ParserContext) {.raises: [].} =
   c.anchor = yAnchorNone
   c.ancestry.add(FastParseLevel(kind: fplDocument, indentation: -1))
 
+proc advance(c: ParserContext) {.inline.} =
+  try: c.lex.next()
+  except YamlLexerError:
+    let e = (ref YamlLexerError)(getCurrentException())
+    let pe = newException(YamlParserError, e.msg)
+    pe.line = e.line
+    pe.column = e.column
+    pe.lineContent = e.lineContent
+    raise pe
+
 proc handleAnchor(c: ParserContext) {.raises: [YamlParserError].} =
   if c.level.kind != fplUnknown: raise c.generateError("Unexpected token")
   if c.anchor != yAnchorNone:
@@ -122,6 +132,7 @@ proc handleAnchor(c: ParserContext) {.raises: [YamlParserError].} =
   c.p.anchors[c.lex.buf] = c.anchor
   c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
   c.lex.buf.setLen(0)
+  c.advance()
 
 proc continueMultilineScalar(c: ParserContext) {.raises: [].} =
   c.lex.buf.add(if c.newlines == 1: " " else: repeat('\l', c.newlines - 1))
@@ -144,6 +155,7 @@ proc handleTagHandle(c: ParserContext) {.raises: [YamlParserError].} =
   else:
     try: c.tag = c.p.tagLib.tags[c.lex.buf]
     except KeyError: c.tag = c.p.tagLib.registerUri(c.lex.buf)
+  c.advance()
 
 proc handlePossibleMapStart(c: ParserContext, e: var YamlStreamEvent,
     flow: bool = false, single: bool = false): bool =
@@ -178,13 +190,17 @@ proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
     raise c.generateError("Unexpected map key indicator (expected '- ')")
   of fplSinglePairKey, fplSinglePairValue, fplDocument:
     internalError("Unexpected level kind: " & $c.level.kind)
-  c.lex.next()
+  c.advance()
   if c.lex.cur != ltIndentation:
+    # this enables the parser to properly parse compact structures, like
+    # a: - a
+    #    - b
+    # and such. At the first `-`, the indentation must equal its level to be
+    # parsed properly.   
     c.lex.indentation = c.lex.curStartPos.column - 1
 
 proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
     bool =
-  echo "handleBlockSequenceIndicator"
   result = false
   case c.level.kind
   of fplUnknown:
@@ -198,8 +214,11 @@ proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
     c.ancestry.add(c.level)
     c.level = initLevel(fplUnknown)
   else: raise c.generateError("Illegal sequence item in map")
-  c.lex.next()
+  c.advance()
   if c.lex.cur != ltIndentation:
+    # see comment in previous proc, this time with structures like
+    # - - a
+    #   - b
     c.lex.indentation = c.lex.curStartPos.column - 1
 
 proc handleBlockItemStart(c: ParserContext, e: var YamlStreamEvent): bool =
@@ -230,12 +249,12 @@ proc handleFlowItemStart(c: ParserContext, e: var YamlStreamEvent): bool =
 proc handleFlowPlainScalar(c: ParserContext) =
   while c.lex.cur in {ltScalarPart, ltEmptyLine}:
     c.lex.newlines.inc()
-    c.lex.next()
+    c.advance()
   c.lex.newlines = 0
 
 proc handleBlockScalar(c: ParserContext) =
   while true:
-    c.lex.next()
+    c.advance()
     case c.lex.cur
     of ltScalarPart: discard
     of ltEmptyLine: c.lex.newlines.inc()
@@ -385,13 +404,12 @@ proc handleMapValueIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
     raise c.generateError("Unexpected map value indicator (expected '- ')")
   of fplSinglePairKey, fplSinglePairValue, fplDocument:
     internalError("Unexpected level kind: " & $c.level.kind)
-  c.lex.next()
+  c.advance()
 
 template handleObjectEnd(c: ParserContext, mayHaveEmptyValue: bool = false):
     bool =
   var result = false
   c.level = c.ancestry.pop()
-  echo "popped ", c.level.kind
   when mayHaveEmptyValue:
     if c.level.kind == fplSinglePairValue:
       result = true
@@ -418,27 +436,27 @@ proc leaveFlowLevel(c: ParserContext, e: var YamlStreamEvent): bool =
 parserState initial:
   case c.lex.cur
   of ltYamlDirective:
-    c.lex.next()
+    c.advance()
     assert c.lex.cur == ltYamlVersion, $c.lex.cur
     if c.lex.buf != "1.2":
       c.callCallback("Version is not 1.2, but " & c.lex.buf)
     c.lex.buf.setLen(0)
-    c.lex.next()
+    c.advance()
   of ltTagDirective:
-    c.lex.next()
+    c.advance()
     assert c.lex.cur == ltTagShorthand
     var tagShorthand: string
     shallowCopy(tagShorthand, c.lex.buf)
     c.lex.buf = ""
-    c.lex.next()
+    c.advance()
     assert c.lex.cur == ltTagUri
     c.shorthands[tagShorthand] = c.lex.buf
     c.lex.buf.setLen(0)
-    c.lex.next()
+    c.advance()
   of ltUnknownDirective:
     c.callCallback("Unknown directive: " & c.lex.buf)
     c.lex.buf.setLen(0)
-    c.lex.next()
+    c.advance()
     assert c.lex.cur == ltUnknownDirectiveParams
   of ltIndentation:
     e = startDocEvent()
@@ -448,14 +466,14 @@ parserState initial:
   of ltDirectivesEnd:
     e = startDocEvent()
     result = true
-    c.lex.next()
+    c.advance()
     state = blockObjectStart
   else: internalError("Unexpected lexer token: " & $c.lex.cur)
 
 parserState blockLineStart:
   case c.lex.cur
   of ltIndentation: discard
-  of ltEmptyLine: c.lex.next()
+  of ltEmptyLine: c.advance()
   of ltStreamEnd:
     c.closeEverything()
     stored = afterDocument
@@ -467,11 +485,10 @@ parserState blockLineStart:
       state = blockObjectStart
 
 parserState blockObjectStart:
-  echo "blockObjectStart: ", c.lex.cur
   case c.lex.cur
-  of ltEmptyLine: c.lex.next()
+  of ltEmptyLine: c.advance()
   of ltIndentation:
-    c.lex.next()
+    c.advance()
     state = blockLineStart
   of ltDirectivesEnd:
     c.closeEverything()
@@ -485,7 +502,7 @@ parserState blockObjectStart:
     result = c.handleMapValueIndicator(e)
   of ltQuotedScalar:
     result = c.handleBlockItemStart(e)
-    c.lex.next()
+    c.advance()
     state = scalarEnd
   of ltBlockScalarHeader:
     result = c.handleBlockItemStart(e)
@@ -494,7 +511,7 @@ parserState blockObjectStart:
   of ltScalarPart:
     result = c.handleBlockItemStart(e)
     while true:
-      c.lex.next()
+      c.advance()
       c.lex.newlines.inc()
       case c.lex.cur
       of ltEmptyLine: c.lex.newlines.inc()
@@ -542,7 +559,7 @@ parserState plainScalarEnd:
 parserState blockAfterObject:
   case c.lex.cur
   of ltIndentation:
-    c.lex.next()
+    c.advance()
     state = blockLineStart
   of ltMapValInd:
     case c.level.kind
@@ -563,7 +580,7 @@ parserState blockAfterObject:
       raise c.generateError("Illegal token (expected sequence item)")
     of fplSinglePairKey, fplSinglePairValue, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
-    c.lex.next()
+    c.advance()
     state = blockObjectStart
   of ltStreamEnd:
     c.closeEverything()
@@ -581,7 +598,7 @@ parserState objectEnd:
 
 parserState expectDocEnd:
   case c.lex.cur
-  of ltIndentation, ltEmptyLine: c.lex.next()
+  of ltIndentation, ltEmptyLine: c.advance()
   of ltDirectivesEnd:
     e = endDocEvent()
     result = true
@@ -608,7 +625,7 @@ parserState startDoc:
 parserState afterDocument:
   case c.lex.cur
   of ltStreamEnd: c.isFinished = true
-  of ltIndentation, ltEmptyLine, ltDocumentEnd: c.lex.next()
+  of ltIndentation, ltEmptyLine, ltDocumentEnd: c.advance()
   else:
     c.initDocValues()
     state = initial
@@ -694,16 +711,16 @@ parserState flow:
     e = c.objectStart(yamlStartSeq)
     result = true
     c.flowdepth.inc()
-    c.lex.next()
+    c.advance()
   of ltBraceClose:
     yAssert(c.level.kind == fplUnknown)
     c.level = c.ancestry.pop()
-    c.lex.next()
+    c.advance()
     state = leaveFlowMap
   of ltBracketClose:
     yAssert(c.level.kind == fplUnknown)
     c.level = c.ancestry.pop()
-    c.lex.next()
+    c.advance()
     state = leaveFlowSeq
   of ltComma:
     yAssert(c.level.kind == fplUnknown)
@@ -731,7 +748,7 @@ parserState flow:
       internalError("Unexpected level kind: " & $c.level.kind)
     c.ancestry.add(c.level)
     c.level = initLevel(fplUnknown)
-    c.lex.next()
+    c.advance()
   of ltMapValInd:
     c.level = c.ancestry.pop()
     case c.level.kind
@@ -759,7 +776,7 @@ parserState flow:
       c.level.kind = fplSinglePairValue
     of fplUnknown, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
-    if c.level.kind != fplSinglePairKey: c.lex.next()
+    if c.level.kind != fplSinglePairKey: c.advance()
     c.ancestry.add(c.level)
     c.level = initLevel(fplUnknown)
   of ltQuotedScalar:
@@ -790,7 +807,7 @@ parserState flow:
       else:
         raise c.generateError("Unexpected token")
     c.explicitFlowKey = true
-    c.lex.next()
+    c.advance()
   of ltScalarPart:
     if c.handleFlowItemStart(e): return true
     c.handleFlowPlainScalar()
@@ -861,7 +878,7 @@ parserState flowAfterObject:
     of fplUnknown, fplSinglePairKey, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
     result = c.leaveFlowLevel(e)
-    c.lex.next()
+    c.advance()
   of ltBraceClose:
     case c.level.kind
     of fplMapKey, fplMapValue: discard
@@ -870,7 +887,7 @@ parserState flowAfterObject:
     of fplUnknown, fplSinglePairKey, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
     result = c.leaveFlowLevel(e)
-    c.lex.next()
+    c.advance()
   of ltComma:
     case c.level.kind
     of fplSequence: discard
@@ -890,7 +907,7 @@ parserState flowAfterObject:
     c.ancestry.add(c.level)
     c.level = initLevel(fplUnknown)
     state = flow
-    c.lex.next()
+    c.advance()
   of ltMapValInd:
     case c.level.kind
     of fplSequence, fplMapKey:
@@ -901,7 +918,7 @@ parserState flowAfterObject:
     c.ancestry.add(c.level)
     c.level = initLevel(fplUnknown)
     state = flow
-    c.lex.next()
+    c.advance()
   of ltStreamEnd:
     raise c.generateError("Unclosed flow content")
   else:
@@ -926,9 +943,9 @@ proc init(c: ParserContext, p: YamlParser) =
   c.peeked = false
   c.nextImpl = stateInitial
   c.explicitFlowKey = false
-  try: c.lex.next()
-  except: discard # TODO
-
+  c.lastTokenContextImpl = lastTokenContext
+  c.advance()
+  
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   let c = new(ParserContext)
   try: c.lex = newYamlLexer(s)

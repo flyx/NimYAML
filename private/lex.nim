@@ -300,7 +300,6 @@ proc yamlVersion[T](lex: YamlLexer): bool =
     lex.advance(T)
   if lex.c notin spaceOrLineEnd:
     raise generateError[T](lex, "Invalid YAML version number")
-  echo "Yaml version!"
   lex.cur = ltYamlVersion
   result = true
   lex.nextState = expectLineEnd[T]
@@ -388,6 +387,7 @@ proc expectLineEnd[T](lex: YamlLexer): bool =
 
 proc possibleDirectivesEnd[T](lex: YamlLexer): bool =
   debug("lex: possibleDirectivesEnd")
+  lex.indentation = 0
   lex.lineStartState = lex.insideDocImpl  # could be insideDoc[T]
   lex.advance(T)
   if lex.c == '-':
@@ -403,15 +403,14 @@ proc possibleDirectivesEnd[T](lex: YamlLexer): bool =
     else: lex.consumeNewlines()
     lex.buf.add('-')
   elif lex.c in spaceOrLineEnd:
-    echo "spacey"
-    lex.indentation = 0
     lex.cur = ltIndentation
     lex.nextState = afterSeqInd[T]
     return true
   else: lex.consumeNewlines()
   lex.buf.add('-')
+  lex.cur = ltIndentation
   lex.nextState = plainScalarPart[T]
-  result = false
+  result = true
 
 proc afterSeqInd[T](lex: YamlLexer): bool =
   result = true
@@ -443,7 +442,6 @@ proc possibleDocumentEnd[T](lex: YamlLexer): bool =
 proc outsideDoc[T](lex: YamlLexer): bool =
   debug("lex: outsideDoc")
   startToken[T](lex)
-  echo lex.c
   case lex.c
   of '%':
     lex.advance(T)
@@ -999,7 +997,7 @@ proc init*[T](lex: YamlLexer) =
   lex.searchColonImpl = searchColon[T]
 
 proc newYamlLexer*(source: Stream): YamlLexer =
-  let blSource = cast[ptr BaseLexer](alloc(sizeof(BaseLexer)))
+  let blSource = cast[ptr BaseLexer](alloc0(sizeof(BaseLexer)))
   blSource[].open(source)
   new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
       dealloc(x.source)
