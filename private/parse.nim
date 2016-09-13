@@ -262,21 +262,6 @@ proc handleFlowPlainScalar(c: ParserContext) =
     c.advance()
   c.lex.newlines = 0
 
-proc handleBlockScalar(c: ParserContext) =
-  while true:
-    c.advance()
-    case c.lex.cur
-    of ltScalarPart: discard
-    of ltEmptyLine: c.lex.newlines.inc()
-    of ltIndentation:
-      if c.lex.indentation <= c.ancestry[^1].indentation:
-        # TODO: handle clipping
-        break
-    of ltStreamEnd, ltDirectivesEnd, ltDocumentEnd:
-      # TODO: handle clipping
-      break
-    else: internalError("Unexpected token: " & $c.lex.cur)
-
 # --- macros for defining parser states ---
 
 template capitalize(s: string): string =
@@ -467,7 +452,9 @@ parserState initial:
     c.callCallback("Unknown directive: " & c.lex.buf)
     c.lex.buf.setLen(0)
     c.advance()
-    assert c.lex.cur == ltUnknownDirectiveParams
+    if c.lex.cur == ltUnknownDirectiveParams:
+      c.lex.buf.setLen(0)
+      c.advance()
   of ltIndentation:
     e = startDocEvent()
     result = true
@@ -499,6 +486,7 @@ parserState blockObjectStart:
   of ltEmptyLine: c.advance()
   of ltIndentation:
     c.advance()
+    c.level.indentation = UnknownIndentation
     state = blockLineStart
   of ltDirectivesEnd:
     c.closeEverything()
@@ -513,10 +501,6 @@ parserState blockObjectStart:
   of ltQuotedScalar:
     result = c.handleBlockItemStart(e)
     c.advance()
-    state = scalarEnd
-  of ltBlockScalarHeader:
-    result = c.handleBlockItemStart(e)
-    c.handleBlockScalar()
     state = scalarEnd
   of ltScalarPart:
     result = c.handleBlockItemStart(e)

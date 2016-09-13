@@ -28,9 +28,6 @@ type
     buf*: string not nil
     # ltIndentation
     indentation*: int
-    # ltBlockScalarHeader
-    moreIndented*, folded*: bool
-    chomp*: ChompType
     # ltTagHandle
     shorthandEnd*: int
 
@@ -44,6 +41,8 @@ type
     nextState, lineStartState, inlineState, insideLineImpl, insideDocImpl,
         insideFlowImpl, outsideDocImpl: LexerState
     blockScalarIndent: int
+    folded: bool
+    chomp: ChompType
     c: char
     tokenLineGetter: proc(lex: YamlLexer, marker: bool): string {.raises: [].}
     searchColonImpl: proc(lex: YamlLexer): bool
@@ -242,6 +241,9 @@ proc insideLine[T](lex: YamlLexer): bool
 proc plainScalarPart[T](lex: YamlLexer): bool
 proc blockScalarHeader[T](lex: YamlLexer): bool
 proc blockScalar[T](lex: YamlLexer): bool
+proc indentationAfterBlockScalar[T](lex: YamlLexer): bool
+proc dirEndAfterBlockScalar[T](lex: YamlLexer): bool
+proc docEndAfterBlockScalar[T](lex: YamlLexer): bool
 proc tagHandle[T](lex: YamlLexer): bool
 proc anchor[T](lex: YamlLexer): bool
 proc alias[T](lex: YamlLexer): bool
@@ -270,7 +272,7 @@ proc directiveName[T](lex: YamlLexer) =
     lex.buf.add(lex.c)
     lex.advance(T)
 
-proc consumeNewlines(lex: YamlLexer) {.raises: [].} =
+proc consumeNewlines(lex: YamlLexer) {.inline, raises: [].} =
   case lex.newlines
   of 0: return
   of 1: lex.buf.add(' ')
@@ -397,7 +399,7 @@ proc possibleDirectivesEnd[T](lex: YamlLexer): bool =
       if lex.c in spaceOrLineEnd:
         lex.cur = ltDirectivesEnd
         while lex.c in space: lex.advance(T)
-        lex.nextState = insideLine[T]
+        lex.nextState = lex.insideLineImpl
         return true
       lex.consumeNewlines()
       lex.buf.add('-')
@@ -419,7 +421,7 @@ proc afterSeqInd[T](lex: YamlLexer): bool =
   if lex.c notin lineEnd:
     lex.advance(T)
     while lex.c in space: lex.advance(T)
-  lex.nextState = insideLine[T]
+  lex.nextState = lex.insideLineImpl
 
 proc possibleDocumentEnd[T](lex: YamlLexer): bool =
   debug("lex: possibleDocumentEnd")
@@ -502,8 +504,6 @@ proc insideDoc[T](lex: YamlLexer): bool =
       lex.cur = ltEmptyLine
       lex.nextState = expectLineEnd[T]
       return true
-    of '\t':
-      raise generateError[T](lex, "'\\t' cannot start any token")
     else:
       lex.nextState = lex.inlineState
   else: lex.nextState = lex.inlineState
@@ -771,6 +771,7 @@ proc blockScalarHeader[T](lex: YamlLexer): bool =
   lex.chomp = ctClip
   lex.blockScalarIndent = UnknownIndentation
   lex.folded = lex.c == '>'
+  startToken[T](lex)
   while true:
     lex.advance(T)
     case lex.c
@@ -792,32 +793,122 @@ proc blockScalarHeader[T](lex: YamlLexer): bool =
           "Illegal character in block scalar header: '" & escape("" & lex.c) &
           '\'')
   lex.nextState = expectLineEnd[T]
-  lex.inlineState = blockScalar[T]
-  lex.cur = ltBlockScalarHeader
-  result = true
+  lex.lineStartState = blockScalar[T]
+  result = false
 
 proc blockScalar[T](lex: YamlLexer): bool =
-  debug("lex: blockScalarLine")
-  startToken[T](lex)
-  result = false
-  if lex.blockScalarIndent == UnknownIndentation:
-    lex.blockScalarIndent = lex.indentation
-  elif lex.c == '#':
-    lex.nextState = expectLineEnd[T]
-    return false
-  elif lex.indentation < lex.blockScalarIndent:
-    raise generateError[T](lex, "Too little indentation in block scalar")
-  elif lex.indentation > lex.blockScalarIndent or lex.c == '\t':
-    lex.moreIndented = true
-    lex.buf.addMultiple(' ', lex.indentation - lex.blockScalarIndent)
-    lex.curStartPos.column -= lex.indentation - lex.blockScalarIndent
-  else: lex.moreIndented = false
-  while lex.c notin lineEnd:
-    lex.buf.add(lex.c)
-    lex.advance(T)
-  lex.cur = ltScalarPart
+  debug("lex: blockScalar")
+  block outer:
+    if lex.blockScalarIndent == UnknownIndentation:
+      while true:
+        lex.blockScalarIndent = 0
+        while lex.c == ' ':
+          lex.blockScalarIndent.inc()
+          lex.advance(T)
+        case lex.c
+        of '\l': lex.lexLF(T)
+        of '\c': lex.lexCR(T)
+        of EndOfFile:
+          lex.nextState = streamEnd
+          break outer
+        else:
+          if lex.blockScalarIndent <= lex.indentation:
+            lex.indentation = lex.blockScalarIndent
+            lex.nextState = indentationAfterBlockScalar[T]
+            break outer
+          lex.indentation = lex.blockScalarIndent
+          break
+    var recentWasMoreIndented = false
+    while true:
+      block lineStart:
+        case lex.c
+        of '-':
+          if lex.indentation < lex.blockScalarIndent:
+            lex.nextState = indentationAfterBlockScalar[T]
+            break outer
+          discard possibleDirectivesEnd[T](lex)
+          case lex.cur
+          of ltDirectivesEnd:
+            lex.nextState = dirEndAfterBlockScalar[T]
+            break outer
+          of ltIndentation:
+            if lex.nextState == afterSeqInd[T]:
+              lex.consumeNewlines()
+              lex.buf.add("- ")
+          else: discard
+        of '.':
+          if lex.indentation < lex.blockScalarIndent:
+            lex.nextState = indentationAfterBlockScalar[T]
+            break outer
+          if possibleDocumentEnd[T](lex):
+            lex.nextState = docEndAfterBlockScalar[T]
+            discard
+        of spaceOrLineEnd:
+          while lex.c == ' ' and lex.indentation < lex.blockScalarIndent:
+            lex.indentation.inc()
+            lex.advance(T)
+          case lex.c
+          of '\l':
+            lex.newlines.inc()
+            lex.lexLF(T)
+            lex.indentation = 0
+            continue
+          of '\c':
+            lex.newlines.inc()
+            lex.lexCR(T)
+            lex.indentation = 0
+            continue
+          of EndOfFile:
+            lex.nextState = streamEnd
+            break outer
+          of ' ':
+            recentWasMoreIndented = true
+            lex.buf.add(repeat('\l', lex.newlines))
+            lex.newlines = 0
+            break lineStart
+          else: discard
+        else: discard
+    
+        if lex.indentation < lex.blockScalarIndent:
+          lex.nextState = indentationAfterBlockScalar[T]
+          break outer
+    
+        if lex.folded and not recentWasMoreIndented: lex.consumeNewlines()
+        else:
+          recentWasMoreIndented = false
+          lex.buf.add(repeat('\l', lex.newlines))
+          lex.newlines = 0
+      
+      while lex.c notin lineEnd:
+        lex.buf.add(lex.c)
+        lex.advance(T)
+  case lex.chomp
+  of ctStrip: discard
+  of ctClip: lex.buf.add('\l')
+  of ctKeep: lex.buf.add(repeat('\l', lex.newlines))
+  lex.newlines = 0
+  lex.lineStartState = insideDoc[T]
+  lex.cur = ltQuotedScalar
   result = true
+
+proc indentationAfterBlockScalar[T](lex: YamlLexer): bool =
+  if lex.c == '#':
+    lex.nextState = expectLineEnd[T]
+    result = false
+  else:
+    lex.cur = ltIndentation
+    result = true
+    lex.nextState = lex.lineStartState
+
+proc dirEndAfterBlockScalar[T](lex: YamlLexer): bool =
+  lex.cur = ltDirectivesEnd
+  while lex.c in space: lex.advance(T)
+  lex.nextState = lex.insideLineImpl
+  
+proc docEndAfterBlockScalar[T](lex: YamlLexer): bool =
+  lex.cur = ltDocumentEnd
   lex.nextState = expectLineEnd[T]
+  lex.lineStartState = lex.outsideDocImpl
 
 proc byteSequence[T](lex: YamlLexer) =
   debug("lex: byteSequence")
@@ -1009,7 +1100,7 @@ proc newYamlLexer*(source: Stream): YamlLexer =
       dealloc(x.source)
   )
   result[] = YamlLexerObj(source: blSource, inFlow: false, buf: "",
-      c: blSource[].buf[blSource[].bufpos], newlines: 0)
+      c: blSource[].buf[blSource[].bufpos], newlines: 0, folded: true)
   init[BaseLexer](result)
 
 proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer =
@@ -1020,7 +1111,7 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer =
       dealloc(x.source)
   )
   result[] = YamlLexerObj(buf: "", source: sSource, inFlow: false,
-      c: sSource.src[startAt], newlines: 0)
+      c: sSource.src[startAt], newlines: 0, folded: true)
   init[StringSource](result)
 
 proc next*(lex: YamlLexer) =
@@ -1041,6 +1132,7 @@ proc setFlow*(lex: YamlLexer, value: bool) =
 proc endBlockScalar*(lex: YamlLexer) =
   lex.inlineState = lex.insideLineImpl
   lex.nextState = lex.insideLineImpl
+  lex.folded = true
 
 proc getTokenLine*(lex: YamlLexer, marker: bool = true): string =
   result = lex.tokenLineGetter(lex, marker)
