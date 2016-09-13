@@ -396,6 +396,7 @@ proc possibleDirectivesEnd[T](lex: YamlLexer): bool =
       lex.advance(T)
       if lex.c in spaceOrLineEnd:
         lex.cur = ltDirectivesEnd
+        while lex.c in space: lex.advance(T)
         lex.nextState = insideLine[T]
         return true
       lex.consumeNewlines()
@@ -415,7 +416,9 @@ proc possibleDirectivesEnd[T](lex: YamlLexer): bool =
 proc afterSeqInd[T](lex: YamlLexer): bool =
   result = true
   lex.cur = ltSeqItemInd
-  if lex.c notin lineEnd: lex.advance(T)
+  if lex.c notin lineEnd:
+    lex.advance(T)
+    while lex.c in space: lex.advance(T)
   lex.nextState = insideLine[T]
 
 proc possibleDocumentEnd[T](lex: YamlLexer): bool =
@@ -494,10 +497,13 @@ proc insideDoc[T](lex: YamlLexer): bool =
     while lex.c == ' ':
       lex.indentation.inc()
       lex.advance(T)
-    if lex.c in spaceOrLineEnd:
+    case lex.c
+    of lineEnd:
       lex.cur = ltEmptyLine
       lex.nextState = expectLineEnd[T]
       return true
+    of '\t':
+      raise generateError[T](lex, "'\\t' cannot start any token")
     else:
       lex.nextState = lex.inlineState
   else: lex.nextState = lex.inlineState
@@ -518,7 +524,7 @@ proc insideFlow[T](lex: YamlLexer): bool =
 proc possibleIndicatorChar[T](lex: YamlLexer, indicator: LexerToken,
     jsonContext: bool = false): bool =
   startToken[T](lex)
-  if not(jsonContext) and lex.nextIsPlainSafe(T, false):
+  if not(jsonContext) and lex.nextIsPlainSafe(T, lex.inFlow):
     lex.consumeNewlines()
     lex.nextState = plainScalarPart[T]
     result = false
