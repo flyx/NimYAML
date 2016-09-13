@@ -161,7 +161,9 @@ proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
     result = true
   of fplMapValue:
     if c.level.indentation != c.lex.indentation:
-      raise c.generateError("Invalid p.indentation of map key indicator")
+      raise c.generateError("Invalid p.indentation of map key indicator " &
+          "(expected" & $c.level.indentation & ", got " & $c.lex.indentation &
+          ")")
     e = scalarEvent("", yTagQuestionMark, yAnchorNone)
     result = true
     c.level.kind = fplMapKey
@@ -176,10 +178,9 @@ proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
     raise c.generateError("Unexpected map key indicator (expected '- ')")
   of fplSinglePairKey, fplSinglePairValue, fplDocument:
     internalError("Unexpected level kind: " & $c.level.kind)
-  # TODO: why was this there?
-  # c.lexer.skipWhitespace()
-  # c.indentation = c.lexer.getColNumber(c.lexer.bufpos)
   c.lex.next()
+  if c.lex.cur != ltIndentation:
+    c.lex.indentation = c.lex.curStartPos.column - 1
 
 proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
     bool =
@@ -191,14 +192,15 @@ proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
     result = true
   of fplSequence:
     if c.level.indentation != c.lex.indentation:
-      raise c.generateError("Invalid p.indentation of block sequence indicator")
+      raise c.generateError(
+          "Invalid p.indentation of block sequence indicator (expected " &
+          $c.level.indentation & ", got " & $c.lex.indentation & ")")
     c.ancestry.add(c.level)
     c.level = initLevel(fplUnknown)
   else: raise c.generateError("Illegal sequence item in map")
-  # TODO: why was this there?
-  # c.lexer.skipWhitespace()
-  # c.indentation = c.lexer.getColNumber(c.lexer.bufpos)
   c.lex.next()
+  if c.lex.cur != ltIndentation:
+    c.lex.indentation = c.lex.curStartPos.column - 1
 
 proc handleBlockItemStart(c: ParserContext, e: var YamlStreamEvent): bool =
   result = false
@@ -321,11 +323,11 @@ macro parserState(name: untyped, impl: untyped): typed =
 
 # --- parser states ---
 
-parserStates(initial, blockObjectStart, blockAfterObject, scalarEnd,
-             plainScalarEnd, objectEnd, expectDocEnd, startDoc, afterDocument,
-             closeStream, closeMoreIndentedLevels, emitEmptyScalar, tagHandle,
-             anchor, alias, flow, leaveFlowMap, leaveFlowSeq, flowAfterObject,
-             leaveFlowSinglePairMap)
+parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
+             scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
+             afterDocument, closeStream, closeMoreIndentedLevels, 
+             emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
+             leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
 
 proc closeEverything(c: ParserContext) =
   c.lex.indentation = -1
@@ -420,6 +422,8 @@ parserState initial:
     assert c.lex.cur == ltYamlVersion, $c.lex.cur
     if c.lex.buf != "1.2":
       c.callCallback("Version is not 1.2, but " & c.lex.buf)
+    c.lex.buf.setLen(0)
+    c.lex.next()
   of ltTagDirective:
     c.lex.next()
     assert c.lex.cur == ltTagShorthand
@@ -430,6 +434,7 @@ parserState initial:
     assert c.lex.cur == ltTagUri
     c.shorthands[tagShorthand] = c.lex.buf
     c.lex.buf.setLen(0)
+    c.lex.next()
   of ltUnknownDirective:
     c.callCallback("Unknown directive: " & c.lex.buf)
     c.lex.buf.setLen(0)
@@ -447,31 +452,33 @@ parserState initial:
     state = blockObjectStart
   else: internalError("Unexpected lexer token: " & $c.lex.cur)
 
-parserState blockObjectStart:
-  var atLineStart = false
-  while c.lex.cur in {ltEmptyLine, ltIndentation}:
-    atLineStart = true
-    c.lex.next()
-  if atLineStart and (c.lex.indentation < c.ancestry[^1].indentation or
-      (c.lex.indentation == c.ancestry[^1].indentation and
-          (c.lex.cur != ltSeqItemInd or c.ancestry[^1].kind != fplSequence))):
-    state = closeMoreIndentedLevels
-    stored = blockObjectStart
-    return false
+parserState blockLineStart:
+  case c.lex.cur
+  of ltIndentation: discard
+  of ltEmptyLine: c.lex.next()
+  of ltStreamEnd:
+    c.closeEverything()
+    stored = afterDocument
+  else:
+    if c.lex.indentation <= c.ancestry[^1].indentation:
+      state = closeMoreIndentedLevels
+      stored = blockObjectStart
+    else:
+      state = blockObjectStart
 
+parserState blockObjectStart:
   echo "blockObjectStart: ", c.lex.cur
   case c.lex.cur
+  of ltEmptyLine: c.lex.next()
+  of ltIndentation:
+    c.lex.next()
+    state = blockLineStart
   of ltDirectivesEnd:
     c.closeEverything()
     stored = startDoc
-    return false
   of ltDocumentEnd:
     c.closeEverything()
     stored = afterDocument
-    return false
-  of ltEmptyLine, ltIndentation:
-    c.lex.next()
-    return false
   of ltMapKeyInd:
     result = c.handleMapKeyIndicator(e)
   of ltMapValInd:
@@ -486,7 +493,16 @@ parserState blockObjectStart:
     state = scalarEnd
   of ltScalarPart:
     result = c.handleBlockItemStart(e)
-    c.handleFlowPlainScalar()
+    while true:
+      c.lex.next()
+      c.lex.newlines.inc()
+      case c.lex.cur
+      of ltEmptyLine: c.lex.newlines.inc()
+      of ltIndentation:
+        if c.lex.indentation <= c.ancestry[^1].indentation: break
+      of ltScalarPart: discard
+      else: break
+    c.lex.newlines = 0
     state = plainScalarEnd
     stored = blockAfterObject
   of ltSeqItemInd:
@@ -527,7 +543,7 @@ parserState blockAfterObject:
   case c.lex.cur
   of ltIndentation:
     c.lex.next()
-    state = blockObjectStart
+    state = blockLineStart
   of ltMapValInd:
     case c.level.kind
     of fplUnknown:
