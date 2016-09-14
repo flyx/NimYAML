@@ -339,7 +339,7 @@ macro parserState(name: untyped, impl: untyped): typed =
 
 parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
              scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
-             afterDocument, closeStream, closeMoreIndentedLevels, 
+             endDoc, afterDocument, closeStream, closeMoreIndentedLevels, 
              emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
              leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
 
@@ -465,11 +465,15 @@ parserState initial:
     result = true
     c.advance()
     state = blockObjectStart
+  of ltDocumentEnd:
+    e = startDocEvent()
+    result = true
+    state = endDoc
   else: internalError("Unexpected lexer token: " & $c.lex.cur)
 
 parserState blockLineStart:
   case c.lex.cur
-  of ltIndentation: discard
+  of ltIndentation: c.advance()
   of ltEmptyLine: c.advance()
   of ltStreamEnd:
     c.closeEverything()
@@ -502,16 +506,24 @@ parserState blockObjectStart:
     result = c.handleBlockItemStart(e)
     c.advance()
     state = scalarEnd
+  of ltBlockScalarHeader:
+    c.lex.indentation = c.ancestry[^1].indentation
+    c.advance()
+    assert c.lex.cur == ltBlockScalar
+    if c.level.indentation == UnknownIndentation:
+      c.level.indentation = c.lex.indentation
+    c.advance()
+    state = scalarEnd
   of ltScalarPart:
     result = c.handleBlockItemStart(e)
     while true:
       c.advance()
-      c.lex.newlines.inc()
       case c.lex.cur
-      of ltEmptyLine: c.lex.newlines.inc()
       of ltIndentation:
         if c.lex.indentation <= c.ancestry[^1].indentation: break
+        c.lex.newlines.inc()
       of ltScalarPart: discard
+      of ltEmptyLine: c.lex.newlines.inc()
       else: break
     c.lex.newlines = 0
     state = plainScalarEnd
@@ -534,6 +546,9 @@ parserState blockObjectStart:
     result = c.handleBlockItemStart(e)
     c.lex.setFlow(true)
     state = flow
+  of ltStreamEnd:
+    c.closeEverything()
+    stored = afterDocument
   else:
     raise c.generateError("Unexpected token: " & $c.lex.cur)
 
@@ -617,10 +632,15 @@ parserState startDoc:
   result = true
   state = blockObjectStart
 
+parserState endDoc:
+  e = endDocEvent()
+  result = true
+  state = initial
+
 parserState afterDocument:
   case c.lex.cur
   of ltStreamEnd: c.isFinished = true
-  of ltIndentation, ltEmptyLine, ltDocumentEnd: c.advance()
+  of ltEmptyLine: c.advance()
   else:
     c.initDocValues()
     state = initial
