@@ -523,6 +523,7 @@ parserState blockObjectStart:
     state = scalarEnd
   of ltScalarPart:
     result = c.handleBlockItemStart(e)
+    let cachedPos = c.lex.curStartPos
     while true:
       c.advance()
       case c.lex.cur
@@ -532,6 +533,7 @@ parserState blockObjectStart:
       of ltScalarPart: discard
       of ltEmptyLine: c.lex.newlines.inc()
       else: break
+    c.lex.curStartPos = cachedPos
     c.lex.newlines = 0
     state = plainScalarEnd
     stored = blockAfterObject

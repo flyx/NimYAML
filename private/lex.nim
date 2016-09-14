@@ -195,7 +195,7 @@ proc lineWithMarker(lex: YamlLexer, t: typedesc[BaseLexer], marker: bool):
   if lex.curStartPos.line == lex.blSource.lineNumber:
     result = lex.blSource.getCurrentLine(false)
     if marker: result.add(spaces(lex.curStartPos.column - 1) & "^\n")
-  else: result = nil
+  else: result = ""
 
 proc lineWithMarker(lex: YamlLexer, t: typedesc[StringSource], marker: bool):
     string =
@@ -219,8 +219,7 @@ proc lineWithMarker(lex: YamlLexer, t: typedesc[StringSource], marker: bool):
       dec(lineStartIndex)
       dec(lineEndIndex)
     dec(curLine)
-  result = lex.sSource.src.substr(lineStartIndex,
-      lineEndIndex - lineStartIndex - 1) & "\n"
+  result = lex.sSource.src.substr(lineStartIndex, lineEndIndex - 1) & "\n"
   if marker: result.add(spaces(lex.curStartPos.column - 1) & "^\n")
 
 # lexer states
