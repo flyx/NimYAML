@@ -28,10 +28,10 @@ task documentation, "Generate documentation":
   setCommand "nop"
 
 task bench, "Benchmarking":
-  --d:release
   --r
   --w:off
   --hints:off
+  --d:release
   setCommand "c", "bench/bench"
 
 task clean, "Remove all generated files":

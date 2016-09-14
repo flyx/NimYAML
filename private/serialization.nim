@@ -748,23 +748,24 @@ proc construct*[T](s: var YamlStream, target: var T) =
   except YamlConstructionError:
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
-    raise (ref YamlStreamError)(getCurrentException())
+    let cur = getCurrentException()
+    var e = newException(YamlStreamError, cur.msg)
+    e.parent = cur.parent
+    raise e
   except Exception:
     # may occur while calling s()
     var ex = newException(YamlStreamError, "")
     ex.parent = getCurrentException()
     raise ex
 
-proc load*[K](input: Stream, target: var K) =
+proc load*[K](input: Stream | string, target: var K) =
   var
     parser = newYamlParser(serializationTagLibrary)
     events = parser.parse(input)
   try: construct(events, target)
   except YamlConstructionError:
     var e = (ref YamlConstructionError)(getCurrentException())
-    e.line = parser.getLineNumber()
-    e.column = parser.getColNumber()
-    e.lineContent = parser.getLineContent()
+    discard events.getLastTokenContext(e.line, e.column, e.lineContent)
     raise e
   except YamlStreamError:
     let e = (ref YamlStreamError)(getCurrentException())
@@ -803,3 +804,11 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
   try: present(events, target, serializationTagLibrary, options)
   except YamlStreamError:
     internalError("Unexpected exception: " & getCurrentException().repr)
+
+proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions):
+    string =
+  var s = newStringStream()
+  dump(value, s, tagStyle, anchorStyle, options)
+  shallowCopy(result, s.data)

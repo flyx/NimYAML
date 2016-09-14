@@ -138,20 +138,17 @@ var
 
 block:
     multibench(cYaml1k, 100):
-        var s = newStringStream(yaml1k)
-        let res = loadDOM(s)
+        let res = loadDOM(yaml1k)
         assert res.root.kind == yMapping
 
 block:
     multibench(cYaml10k, 100):
-        var s = newStringStream(yaml10k)
-        let res = loadDOM(s)
+        let res = loadDOM(yaml10k)
         assert res.root.kind == yMapping
 
 block:
     multibench(cYaml100k, 100):
-        var s = newStringStream(yaml100k)
-        let res = loadDOM(s)
+        let res = loadDOM(yaml100k)
         assert res.root.kind == yMapping
 
 block:

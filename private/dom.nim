@@ -70,7 +70,7 @@ proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
   n = s.next()
   yAssert n.kind == yamlEndDoc
 
-proc loadDOM*(s: Stream): YamlDocument
+proc loadDOM*(s: Stream | string): YamlDocument
     {.raises: [IOError, YamlParserError, YamlConstructionError].} =
   var
     tagLib = initExtendedTagLibrary()

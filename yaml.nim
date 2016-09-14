@@ -17,7 +17,7 @@
 ## this enhances interoperability with other languages.
 
 import streams, unicode, lexbase, tables, strutils, json, hashes, queues,
-       macros, typetraits, parseutils
+       macros, typetraits, parseutils, private/lex
 export streams, tables, json
 
 when defined(yamlDebug): import terminal
@@ -113,6 +113,9 @@ type
     ## always yield a well-formed ``YamlStream`` and expect it to be
     ## well-formed if they take it as input parameter.
     nextImpl: proc(s: YamlStream, e: var YamlStreamEvent): bool
+    lastTokenContextImpl:
+        proc(s: YamlStream, line, column: var int,
+             lineContent: var string): bool {.raises: [].}
     isFinished: bool
     peeked: bool
     cached: YamlStreamEvent
@@ -143,14 +146,6 @@ type
     ##   ``1.2``.
     ## - If there is an unknown directive encountered.
 
-  FastParseLevelKind = enum
-    fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
-    fplSinglePairValue, fplScalar, fplDocument
-
-  FastParseLevel = object
-    kind: FastParseLevelKind
-    indentation: int
-
   YamlParser* = ref object
     ## A parser object. Retains its ``TagLibrary`` across calls to
     ## `parse <#parse,YamlParser,Stream>`_. Can be used
@@ -160,8 +155,6 @@ type
     tagLib: TagLibrary
     callback: WarningCallback
     anchors: Table[string, AnchorId]
-    lexer: BaseLexer
-    tokenstart: int
 
   PresentationStyle* = enum
     ## Different styles for YAML character stream output.
@@ -469,6 +462,11 @@ proc `peek=`*(s: YamlStream, value: YamlStreamEvent) {.raises: [].}
 proc finished*(s: YamlStream): bool {.raises: [YamlStreamError].}
   ## ``true`` if no more items are available in the stream. Handles exceptions
   ## of the backend like ``next()``.
+proc getLastTokenContext*(s: YamlStream, line, column: var int,
+    lineContent: var string): bool
+  ## ``true`` if source context information is available about the last returned
+  ## token. If ``true``, line, column and lineContent are set to position and
+  ## line content where the last token has been read from.
 iterator items*(s: YamlStream): YamlStreamEvent
     {.raises: [YamlStreamError].} =
   ## Iterate over all items of the stream. You may not use ``peek()`` on the
@@ -521,24 +519,12 @@ proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
   ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
   ## whenever the parser yields a warning.
 
-proc getLineNumber*(p: YamlParser): int {.raises: [].}
-  ## Get the line number (1-based) of the recently yielded parser token.
-  ## Useful for error reporting at later loading stages.
-
-proc getColNumber*(p: YamlParser): int {.raises: [].}
-  ## Get the column number (1-based) of the recently yielded parser token.
-  ## Useful for error reporting at later parsing stages.
-
-proc getLineContent*(p: YamlParser, marker: bool = true): string {.raises: [].}
-  ## Get the content of the input line containing the recently yielded parser
-  ## token. Useful for error reporting at later parsing stages. The line will
-  ## be terminated by ``"\n"``. If ``marker`` is ``true``, a second line will
-  ## be returned containing a ``^`` at the position of the recent parser
-  ## token.
-
 proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [YamlParserError].}
   ## Parse the given stream as YAML character stream.
   ## The only Exception that can be raised comes from opening the Stream.
+
+proc parse*(p: YamlParser, str: string): YamlStream
+    {.raises: [YamlParserError].}
 
 proc defineOptions*(style: PresentationStyle = psDefault,
                     indentationStep: int = 2,
@@ -628,7 +614,7 @@ proc construct*[T](s: var YamlStream, target: var T)
     {.raises: [YamlStreamError].}
   ## Constructs a Nim value from a YAML stream.
 
-proc load*[K](input: Stream, target: var K)
+proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, YamlParserError].}
   ## Loads a Nim value from a YAML character stream.
 
@@ -643,6 +629,13 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].}
   ## Dump a Nim value as YAML character stream.
+
+proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions):
+    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                      YamlStreamError].}
+  ## Dump a Nim value as YAML into a string
 
 var
   serializationTagLibrary* = initSerializationTagLibrary() ## \
@@ -750,7 +743,7 @@ setTagUri(float64, "!nim:system:float64", yTagNimFloat64)
 include private.tagLibrary
 include private.events
 include private.json
-include private.streams
+include private.stream
 include private.presenter
 include private.parse
 include private.hints

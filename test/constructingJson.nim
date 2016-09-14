@@ -12,13 +12,21 @@ proc wc(line, column: int, lineContent: string, message: string) =
   echo "Warning (", line, ",", column, "): ", message, "\n", lineContent
 
 proc ensureEqual(yamlIn, jsonIn: string) =
-  var
-    parser = newYamlParser(initCoreTagLibrary(), wc)
-    s = parser.parse(newStringStream(yamlIn))
-    yamlResult = constructJson(s)
-    jsonResult = parseJson(jsonIn)
-  assert yamlResult.len == 1
-  assert(jsonResult == yamlResult[0])
+  try:
+    var
+      parser = newYamlParser(initCoreTagLibrary(), wc)
+      s = parser.parse(newStringStream(yamlIn))
+      yamlResult = constructJson(s)
+      jsonResult = parseJson(jsonIn)
+    assert yamlResult.len == 1
+    assert(jsonResult == yamlResult[0], "Expected: " & $jsonResult & ", got: " &
+        $yamlResult[0])
+  except YamlStreamError:
+    let e = (ref YamlParserError)(getCurrentException().parent)
+    echo "error occurred: " & e.msg
+    echo "line: ", e.line, ", column: ", e.column
+    echo e.lineContent
+    raise e
 
 suite "Constructing JSON":
   test "Constructing JSON: Simple Sequence":

@@ -156,25 +156,19 @@ block:
 
 block:
     multibench(cYaml1k, 100):
-        var
-            s = newStringStream(json1k)
-            events = parser.parse(s)
+        var events = parser.parse(json1k)
         let res = constructJson(events)
         assert res[0].kind == JObject
 
 block:
     multibench(cYaml10k, 100):
-        var
-            s = newStringStream(json10k)
-            events = parser.parse(s)
+        var events = parser.parse(json10k)
         let res = constructJson(events)
         assert res[0].kind == JObject
 
 block:
     multibench(cYaml100k, 100):
-        var
-            s = newStringStream(json100k)
-            events = parser.parse(s)
+        var events = parser.parse(json100k)
         let res = constructJson(events)
         assert res[0].kind == JObject
 
