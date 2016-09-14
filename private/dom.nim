@@ -20,7 +20,8 @@ proc initYamlDoc*(root: YamlNode): YamlDocument = result.root = root
 proc composeNode(s: var YamlStream, tagLib: TagLibrary,
                  c: ConstructionContext):
     YamlNode {.raises: [YamlStreamError, YamlConstructionError].} =
-  let start = s.next()
+  var start: YamlStreamEvent
+  shallowCopy(start, s.next())
   new(result)
   try:
     case start.kind
@@ -64,7 +65,8 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
 proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
     {.raises: [YamlStreamError, YamlConstructionError].} =
   var context = newConstructionContext()
-  var n = s.next()
+  var n: YamlStreamEvent
+  shallowCopy(n, s.next())
   yAssert n.kind == yamlStartDoc
   result.root = composeNode(s, tagLib, context)
   n = s.next()

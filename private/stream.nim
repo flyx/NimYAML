@@ -69,7 +69,7 @@ proc next*(s: YamlStream): YamlStreamEvent =
 
 proc peek*(s: YamlStream): YamlStreamEvent =
   if not s.peeked:
-    s.cached = s.next()
+    shallowCopy(s.cached, s.next())
     s.peeked = true
   shallowCopy(result, s.cached)
 

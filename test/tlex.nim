@@ -5,7 +5,7 @@ import unittest, strutils
 const tokensWithValue =
     {ltScalarPart, ltQuotedScalar, ltYamlVersion, ltTagShorthand, ltTagUri,
      ltUnknownDirective, ltUnknownDirectiveParams, ltLiteralTag, ltAnchor,
-     ltAlias}
+     ltAlias, ltBlockScalar}
 
 type
   TokenWithValue = object
@@ -14,9 +14,6 @@ type
       value: string
     of ltIndentation:
       indentation: int
-    of ltBlockScalarHeader:
-      folded: bool
-      chomp: ChompType
     of ltTagHandle:
       handle, suffix: string
     else: discard
@@ -28,8 +25,6 @@ proc actualRepr(lex: YamlLexer, t: LexerToken): string =
     result.add("(" & escape(lex.buf) & ")")
   of ltIndentation:
     result.add("(" & $lex.indentation & ")")
-  of ltBlockScalarHeader:
-    result.add("(" & $lex.folded & ", " & $lex.chomp & ")")
   else: discard
 
 proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
@@ -58,14 +53,6 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
         if lex.indentation <= blockScalarEnd:
           lex.endBlockScalar()
           blockScalarEnd = -1
-      of ltBlockScalarHeader:
-        doAssert lex.folded == expectedToken.folded,
-            "Wrong folded indicator at #" & $i & ": Expected " &
-            $expectedToken.folded & ", got " & $lex.folded
-        doAssert lex.chomp == expectedToken.chomp,
-            "Wrong chomp indicator at #" & $i & ": Expected " &
-            $expectedToken.chomp & ", got " & $lex.chomp
-        blockScalarEnd = lex.indentation
       of ltBraceOpen, ltBracketOpen:
         inc(flowDepth)
         if flowDepth == 1: lex.setFlow(true)
@@ -129,8 +116,9 @@ proc tu(v: string): TokenWithValue =
   TokenWithValue(kind: ltTagUri, value: v)
 proc dirE(): TokenWithValue = TokenWithValue(kind: ltDirectivesEnd)
 proc docE(): TokenWithValue = TokenWithValue(kind: ltDocumentEnd)
-proc bs(folded: bool, chomp: ChompType): TokenWithValue =
-  TokenWithValue(kind: ltBlockScalarHeader, folded: folded, chomp: chomp)
+proc bsh(): TokenWithValue = TokenWithValue(kind: ltBlockScalarHeader)
+proc bs(v: string): TokenWithValue =
+  TokenWithValue(kind: ltBlockScalar, value: v)
 proc el(): TokenWithValue = TokenWithValue(kind: ltEmptyLine)
 proc ao(): TokenWithValue = TokenWithValue(kind: ltBracketOpen)
 proc ac(): TokenWithValue = TokenWithValue(kind: ltBracketClose)
@@ -196,14 +184,12 @@ suite "Lexer":
         docE(), du("UNKNOWN"), dp("warbl"), se())
 
   test "Block scalar":
-    assertEquals("|\l  a\l\l  b\l # comment", i(0), bs(false, ctClip), i(2),
-        sp("a"), el(), i(2), sp("b"), i(1), se())
+    assertEquals("|\l  a\l\l  b\l # comment", i(0), bsh(), bs("a\l\lb\l"), se())
 
   test "Block Scalars":
     assertEquals("one : >2-\l   foo\l  bar\ltwo: |+\l bar\l  baz", i(0),
-        sp("one"), mv(), bs(true, ctStrip), i(3), sp(" foo"), i(2), sp("bar"),
-        i(0), sp("two"), mv(), bs(false, ctKeep), i(1), sp("bar"), i(2),
-        sp(" baz"), se())
+        sp("one"), mv(), bsh(), bs(" foo\lbar"), i(0), sp("two"), mv(), bsh(),
+        bs("bar\l baz"), se())
 
   test "Flow indicators":
     assertEquals("bla]: {c: d, [e]: f}", i(0), sp("bla]"), mv(), oo(), sp("c"),

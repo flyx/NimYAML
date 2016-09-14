@@ -75,10 +75,11 @@ proc emptyScalar(c: ParserContext): YamlStreamEvent {.raises: [], inline.} =
   c.tag = yTagQuestionMark
   c.anchor = yAnchorNone
 
-proc currentScalar(c: ParserContext): YamlStreamEvent {.raises: [], inline.} =
-  result = YamlStreamEvent(kind: yamlScalar, scalarTag: c.tag,
-                           scalarAnchor: c.anchor)
-  shallowCopy(result.scalarContent, c.lex.buf)
+proc currentScalar(c: ParserContext, e: var YamlStreamEvent)
+    {.raises: [], inline.} =
+  e = YamlStreamEvent(kind: yamlScalar, scalarTag: c.tag,
+                      scalarAnchor: c.anchor)
+  shallowCopy(e.scalarContent, c.lex.buf)
   c.lex.buf = cast[string not nil](newStringOfCap(256))
   c.tag = yTagQuestionMark
   c.anchor = yAnchorNone
@@ -563,13 +564,13 @@ parserState blockObjectStart:
 
 parserState scalarEnd:
   if c.tag == yTagQuestionMark: c.tag = yTagExclamationMark
-  e = c.currentScalar()
+  c.currentScalar(e)
   result = true
   state = objectEnd
   stored = blockAfterObject
 
 parserState plainScalarEnd:
-  e = c.currentScalar()
+  c.currentScalar(e)
   result = true
   state = objectEnd
   stored = blockAfterObject
@@ -807,7 +808,7 @@ parserState flow:
   of ltQuotedScalar:
     if c.handleFlowItemStart(e): return true
     if c.tag == yTagQuestionMark: c.tag = yTagExclamationMark
-    e = c.currentScalar()
+    c.currentScalar(e)
     result = true
     state = objectEnd
     stored = flowAfterObject
@@ -837,7 +838,7 @@ parserState flow:
   of ltScalarPart:
     if c.handleFlowItemStart(e): return true
     c.handleFlowPlainScalar()
-    e = c.currentScalar()
+    c.currentScalar(e)
     result = true
     state = objectEnd
     stored = flowAfterObject

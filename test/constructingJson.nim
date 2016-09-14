@@ -29,13 +29,13 @@ proc ensureEqual(yamlIn, jsonIn: string) =
     raise e
 
 suite "Constructing JSON":
-  test "Constructing JSON: Simple Sequence":
+  test "Simple Sequence":
     ensureEqual("- 1\n- 2\n- 3", "[1, 2, 3]")
     
-  test "Constructing JSON: Simple Map":
+  test "Simple Map":
     ensureEqual("a: b\nc: d", """{"a": "b", "c": "d"}""")
     
-  test "Constructing JSON: Complex Structure":
+  test "Complex Structure":
     ensureEqual("""
 %YAML 1.2
 ---

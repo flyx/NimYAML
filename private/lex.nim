@@ -1148,7 +1148,7 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
   try:
     let sSource = safeAlloc[StringSource]()
     sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1)
-    shallowCopy(sSource[].src, source)
+    sSource[].src = source
     new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
         dealloc(x.source)
     )

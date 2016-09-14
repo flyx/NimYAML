@@ -129,10 +129,12 @@ proc genYamlString(size: int, maxStringLen: int,
     result = target.data
     
 var
-    cYaml1k, cYaml10k, cYaml100k, cLibYaml1k, cLibYaml10k, cLibYaml100k: int64
+    cYaml1k, cYaml10k, cYaml100k, cLibYaml1k, cLibYaml10k, cLibYaml100k,
+        cYaml1m, cLibYaml1m: int64
     yaml1k   = genYamlString(1, 32, psDefault)
     yaml10k  = genYamlString(10, 32, psDefault)
     yaml100k = genYamlString(100, 32, psDefault)
+    yaml1m  = genYamlString(1000, 32, psDefault)
     tagLib   = initExtendedTagLibrary()
     parser = newYamlParser(tagLib)
 
@@ -152,6 +154,11 @@ block:
         assert res.root.kind == yMapping
 
 block:
+    multibench(cYaml1m, 2):
+        let res = loadDOM(yaml1m)
+        assert res.root.kind == yMapping
+
+block:
     multibench(cLibYaml1k, 100):
         let res = nimlets_yaml.load(yaml1k)
         assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
@@ -164,6 +171,11 @@ block:
 block:
     multibench(cLibYaml100k, 100):
         let res = nimlets_yaml.load(yaml100k)
+        assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
+
+block:
+    multibench(cLibYaml1m, 2):
+        let res = nimlets_yaml.load(yaml1m)
         assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
 
 proc writeResult(caption: string, num: int64) =
@@ -184,3 +196,7 @@ setForegroundColor(fgWhite)
 writeStyled "100k input\n----------\n"
 writeResult "NimYAML: ", cYaml100k div 1000
 writeResult "LibYAML: ", cLibYaml100k div 1000
+setForegroundColor(fgWhite)
+writeStyled "1m input\n---------\n"
+writeResult "NimYAML: ", cYaml1m div 1000
+writeResult "LibYAML: ", cLibYaml1m div 1000
