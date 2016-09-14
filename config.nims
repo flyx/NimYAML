@@ -31,6 +31,7 @@ task bench, "Benchmarking":
   --r
   --w:off
   --hints:off
+  --d:release
   setCommand "c", "bench/bench"
 
 task clean, "Remove all generated files":
