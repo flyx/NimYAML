@@ -202,8 +202,8 @@ proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
   c.advance()
   if c.lex.cur != ltIndentation:
     # this enables the parser to properly parse compact structures, like
-    # a: - a
-    #    - b
+    # ? - a
+    #   - b
     # and such. At the first `-`, the indentation must equal its level to be
     # parsed properly.   
     c.lex.indentation = c.lex.curStartPos.column - 1
@@ -339,7 +339,7 @@ macro parserState(name: untyped, impl: untyped): typed =
 
 parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
              scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
-             endDoc, afterDocument, closeStream, closeMoreIndentedLevels, 
+             afterDocument, closeStream, closeMoreIndentedLevels, 
              emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
              leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
 
@@ -400,6 +400,11 @@ proc handleMapValueIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
   of fplSinglePairKey, fplSinglePairValue, fplDocument:
     internalError("Unexpected level kind: " & $c.level.kind)
   c.advance()
+  if c.lex.cur != ltIndentation:
+    # see comment in handleMapKeyIndicator, this time with structures like
+    # a: - a
+    #    - b
+    c.lex.indentation = c.lex.curStartPos.column - 1
 
 template handleObjectEnd(c: ParserContext, mayHaveEmptyValue: bool = false):
     bool =
@@ -427,6 +432,7 @@ proc leaveFlowLevel(c: ParserContext, e: var YamlStreamEvent): bool =
   else:
     c.storedState = stateFlowAfterObject
   c.nextImpl = stateObjectEnd
+  c.advance()
 
 parserState initial:
   case c.lex.cur
@@ -466,9 +472,8 @@ parserState initial:
     c.advance()
     state = blockObjectStart
   of ltDocumentEnd:
-    e = startDocEvent()
-    result = true
-    state = endDoc
+    c.advance()
+    state = afterDocument
   else: internalError("Unexpected lexer token: " & $c.lex.cur)
 
 parserState blockLineStart:
@@ -496,6 +501,7 @@ parserState blockObjectStart:
     c.closeEverything()
     stored = startDoc
   of ltDocumentEnd:
+    c.advance()
     c.closeEverything()
     stored = afterDocument
   of ltMapKeyInd:
@@ -530,7 +536,7 @@ parserState blockObjectStart:
     stored = blockAfterObject
   of ltSeqItemInd:
     result = c.handleBlockSequenceIndicator(e)
-  of ltTagHandle:
+  of ltTagHandle, ltLiteralTag:
     result = c.handleBlockItemStart(e)
     state = tagHandle
     stored = blockObjectStart
@@ -593,7 +599,6 @@ parserState blockAfterObject:
   of ltDirectivesEnd:
     c.closeEverything()
     stored = startDoc
-    c.advance()
   of ltStreamEnd:
     c.closeEverything()
     stored = afterDocument
@@ -618,6 +623,7 @@ parserState expectDocEnd:
     e = endDocEvent()
     result = true
     state = afterDocument
+    c.advance()
   of ltStreamEnd:
     e = endDocEvent()
     result = true
@@ -630,12 +636,8 @@ parserState startDoc:
   c.initDocValues()
   e = startDocEvent()
   result = true
+  c.advance()
   state = blockObjectStart
-
-parserState endDoc:
-  e = endDocEvent()
-  result = true
-  state = initial
 
 parserState afterDocument:
   case c.lex.cur
@@ -647,7 +649,6 @@ parserState afterDocument:
 
 parserState closeStream:
   case c.level.kind
-  of fplUnknown: discard c.ancestry.pop()
   of fplDocument: discard
   else:
     case c.endLevel(e)
@@ -670,6 +671,7 @@ parserState closeMoreIndentedLevels:
            (c.lex.indentation == parent.indentation and
             c.level.kind == fplUnknown and parent.kind != fplSequence):
           state = stored
+          debug("Not closing because sequence indicator")
           return false
       debug("Closing because parent.indentation (" & $parent.indentation &
             ") >= indentation(" & $c.lex.indentation & ")")
@@ -679,9 +681,13 @@ parserState closeMoreIndentedLevels:
       of lerAdditionalMapEnd: return true
       discard c.handleObjectEnd(false)
       return result
+    debug("Not closing level because parent.indentation (" &
+        $parent.indentation & ") < indentation(" & $c.lex.indentation &
+        ")")
     if c.level.kind == fplDocument: state = expectDocEnd
     else: state = stored
   elif c.lex.indentation == c.level.indentation:
+    debug("Closing document")
     let res = c.endLevel(e)
     yAssert(res == lerOne)
     result = true
@@ -733,12 +739,10 @@ parserState flow:
   of ltBraceClose:
     yAssert(c.level.kind == fplUnknown)
     c.level = c.ancestry.pop()
-    c.advance()
     state = leaveFlowMap
   of ltBracketClose:
     yAssert(c.level.kind == fplUnknown)
     c.level = c.ancestry.pop()
-    c.advance()
     state = leaveFlowSeq
   of ltComma:
     yAssert(c.level.kind == fplUnknown)
@@ -805,7 +809,7 @@ parserState flow:
     state = objectEnd
     stored = flowAfterObject
     c.advance()
-  of ltTagHandle:
+  of ltTagHandle, ltLiteralTag:
     if c.handleFlowItemStart(e): return true
     c.handleTagHandle()
   of ltAnchor:
@@ -896,7 +900,6 @@ parserState flowAfterObject:
     of fplUnknown, fplSinglePairKey, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
     result = c.leaveFlowLevel(e)
-    c.advance()
   of ltBraceClose:
     case c.level.kind
     of fplMapKey, fplMapValue: discard
@@ -905,7 +908,6 @@ parserState flowAfterObject:
     of fplUnknown, fplSinglePairKey, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
     result = c.leaveFlowLevel(e)
-    c.advance()
   of ltComma:
     case c.level.kind
     of fplSequence: discard

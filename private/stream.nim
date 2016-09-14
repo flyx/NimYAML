@@ -49,6 +49,7 @@ proc next*(s: YamlStream): YamlStreamEvent =
   if s.peeked:
     s.peeked = false
     shallowCopy(result, s.cached)
+    return
   else:
     yAssert(not s.isFinished)
     try:

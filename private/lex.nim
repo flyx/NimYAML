@@ -911,15 +911,18 @@ proc blockScalar[T](lex: YamlLexer): bool =
   lex.lineStartState = insideDoc[T]
   lex.cur = ltBlockScalar
   result = true
+  echo "exiting block scalar with indentation=" & $lex.indentation
 
 proc indentationAfterBlockScalar[T](lex: YamlLexer): bool =
-  if lex.c == '#':
+  if lex.indentation == 0:
+    lex.nextState = lex.insideDocImpl
+  elif lex.c == '#':
     lex.nextState = expectLineEnd[T]
     result = false
   else:
     lex.cur = ltIndentation
     result = true
-    lex.nextState = lex.lineStartState
+    lex.nextState = lex.insideLineImpl
 
 proc dirEndAfterBlockScalar[T](lex: YamlLexer): bool =
   lex.cur = ltDirectivesEnd
@@ -1139,6 +1142,7 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer =
 
 proc next*(lex: YamlLexer) =
   while not lex.nextState(lex): discard
+  debug("lexer -> " & $lex.cur)
 
 proc setFlow*(lex: YamlLexer, value: bool) =
   lex.inFlow = value
