@@ -28,7 +28,6 @@ task documentation, "Generate documentation":
   setCommand "nop"
 
 task bench, "Benchmarking":
-  --d:release
   --r
   --w:off
   --hints:off

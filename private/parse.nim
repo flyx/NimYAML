@@ -54,6 +54,7 @@ proc illegalToken(c: ParserContext, expected: string = ""):
   if expected.len > 0: msg.add(" (expected " & expected & ")")
   msg.add(": " & $c.lex.cur)
   result = c.generateError(msg)
+  echo result.line, ", ", result.column
 
 proc callCallback(c: ParserContext, msg: string) {.raises: [YamlParserError].} =
   try:

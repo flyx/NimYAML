@@ -523,6 +523,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream {.raises: [YamlParserError].}
   ## Parse the given stream as YAML character stream.
   ## The only Exception that can be raised comes from opening the Stream.
 
+proc parse*(p: YamlParser, str: string): YamlStream
+    {.raises: [YamlParserError].}
+
 proc defineOptions*(style: PresentationStyle = psDefault,
                     indentationStep: int = 2,
                     newlines: NewLineStyle = nlOSDefault,
@@ -611,7 +614,7 @@ proc construct*[T](s: var YamlStream, target: var T)
     {.raises: [YamlStreamError].}
   ## Constructs a Nim value from a YAML stream.
 
-proc load*[K](input: Stream, target: var K)
+proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, YamlParserError].}
   ## Loads a Nim value from a YAML character stream.
 
@@ -626,6 +629,13 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].}
   ## Dump a Nim value as YAML character stream.
+
+proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions):
+    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                      YamlStreamError].}
+  ## Dump a Nim value as YAML into a string
 
 var
   serializationTagLibrary* = initSerializationTagLibrary() ## \

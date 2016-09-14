@@ -804,6 +804,19 @@ proc blockScalarHeader[T](lex: YamlLexer): bool =
   lex.cur = ltBlockScalarHeader
   result = true
 
+proc blockScalarAfterLineStart[T](lex: YamlLexer,
+    recentWasMoreIndented: var bool): bool =
+  if lex.indentation < lex.blockScalarIndent:
+    lex.nextState = indentationAfterBlockScalar[T]
+    return false
+
+  if lex.folded and not recentWasMoreIndented: lex.consumeNewlines()
+  else:
+    recentWasMoreIndented = false
+    lex.buf.add(repeat('\l', lex.newlines))
+    lex.newlines = 0
+  result = true
+
 proc blockScalarLineStart[T](lex: YamlLexer, recentWasMoreIndented: var bool):
     bool =
   while true:
@@ -854,17 +867,7 @@ proc blockScalarLineStart[T](lex: YamlLexer, recentWasMoreIndented: var bool):
         return true
       else: break
     else: break
-
-  if lex.indentation < lex.blockScalarIndent:
-    lex.nextState = indentationAfterBlockScalar[T]
-    return false
-
-  if lex.folded and not recentWasMoreIndented: lex.consumeNewlines()
-  else:
-    recentWasMoreIndented = false
-    lex.buf.add(repeat('\l', lex.newlines))
-    lex.newlines = 0
-  result = true
+  result = blockScalarAfterLineStart[T](lex, recentWasMoreIndented)
 
 proc blockScalar[T](lex: YamlLexer): bool =
   debug("lex: blockScalar")
@@ -895,13 +898,18 @@ proc blockScalar[T](lex: YamlLexer): bool =
           break
     else:
       lex.blockScalarIndent += lex.indentation
-    if not blockScalarLineStart[T](lex, recentWasMoreIndented): break outer
+    if lex.c notin {'.', '-'} or lex.indentation == 0:
+      if not blockScalarLineStart[T](lex, recentWasMoreIndented): break outer
+    else:
+      if not blockScalarAfterLineStart[T](lex, recentWasMoreIndented):
+        break outer
     while true:
       while lex.c notin lineEnd:
         lex.buf.add(lex.c)
         lex.advance(T)
       if not blockScalarLineStart[T](lex, recentWasMoreIndented): break outer
   
+  debug("lex: leaving block scalar at indentation " & $lex.indentation)
   case lex.chomp
   of ctStrip: discard
   of ctClip:
@@ -911,7 +919,6 @@ proc blockScalar[T](lex: YamlLexer): bool =
   lex.lineStartState = insideDoc[T]
   lex.cur = ltBlockScalar
   result = true
-  echo "exiting block scalar with indentation=" & $lex.indentation
 
 proc indentationAfterBlockScalar[T](lex: YamlLexer): bool =
   if lex.indentation == 0:
@@ -1119,25 +1126,37 @@ proc init*[T](lex: YamlLexer) =
   lex.tokenLineGetter = tokenLine[T]
   lex.searchColonImpl = searchColon[T]
 
-proc newYamlLexer*(source: Stream): YamlLexer =
-  let blSource = cast[ptr BaseLexer](alloc0(sizeof(BaseLexer)))
-  blSource[].open(source)
-  new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-      dealloc(x.source)
-  )
-  result[] = YamlLexerObj(source: blSource, inFlow: false, buf: "",
-      c: blSource[].buf[blSource[].bufpos], newlines: 0, folded: true)
+proc safeAlloc[T](): ptr T =
+  try: result = cast[ptr T](alloc0(sizeof(T)))
+  except:
+    discard # TODO
+
+proc newYamlLexer*(source: Stream): YamlLexer {.raises: [].} =
+  try:
+    let blSource = safeAlloc[BaseLexer]()
+    blSource[].open(source)
+    new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+        dealloc(x.source)
+    )
+    result[] = YamlLexerObj(source: blSource, inFlow: false, buf: "",
+        c: blSource[].buf[blSource[].bufpos], newlines: 0, folded: true)
+  except:
+    discard # TODO
   init[BaseLexer](result)
 
-proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer =
-  let sSource = cast[ptr StringSource](alloc(sizeof(StringSource)))
-  sSource[] =
-      StringSource(src: source, pos: startAt, lineStart: startAt, line: 1)
-  new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-      dealloc(x.source)
-  )
-  result[] = YamlLexerObj(buf: "", source: sSource, inFlow: false,
-      c: sSource.src[startAt], newlines: 0, folded: true)
+proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
+    {.raises: [].}=
+  try:
+    let sSource = safeAlloc[StringSource]()
+    sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1)
+    shallowCopy(sSource[].src, source)
+    new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+        dealloc(x.source)
+    )
+    result[] = YamlLexerObj(buf: "", source: sSource, inFlow: false,
+        c: sSource.src[startAt], newlines: 0, folded: true)
+  except:
+    discard # TODO
   init[StringSource](result)
 
 proc next*(lex: YamlLexer) =

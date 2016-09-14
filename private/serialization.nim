@@ -758,7 +758,7 @@ proc construct*[T](s: var YamlStream, target: var T) =
     ex.parent = getCurrentException()
     raise ex
 
-proc load*[K](input: Stream, target: var K) =
+proc load*[K](input: Stream | string, target: var K) =
   var
     parser = newYamlParser(serializationTagLibrary)
     events = parser.parse(input)
@@ -804,3 +804,11 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
   try: present(events, target, serializationTagLibrary, options)
   except YamlStreamError:
     internalError("Unexpected exception: " & getCurrentException().repr)
+
+proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
+              anchorStyle: AnchorStyle = asTidy,
+              options: PresentationOptions = defaultPresentationOptions):
+    string =
+  var s = newStringStream()
+  dump(value, s, tagStyle, anchorStyle, options)
+  shallowCopy(result, s.data)
