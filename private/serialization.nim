@@ -62,12 +62,40 @@ proc representObject*(value: string, ts: TagStyle,
   ## represents a string as YAML scalar
   c.put(scalarEvent(value, tag, yAnchorNone))
 
+proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](s: string): T =
+  result = 0
+  var i = 2
+  while true:
+    case s[i]
+    of '_': discard
+    of '0'..'9': result = result shl 4 or (T(ord(s[i]) - ord('0')) and 0xFF)
+    of 'a'..'f': result = result shl 4 or (T(ord(s[i]) - ord('a') + 10) and 0xFF)
+    of 'A'..'F': result = result shl 4 or (T(ord(s[i]) - ord('A') + 10) and 0xFF)
+    of '\0': break
+    else: raise newException(ValueError, "Invalid character in hex: " & s[i])
+    inc(i)
+
+proc parseOctal[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](s: string): T =
+  var i = 2
+  while true:
+    case s[i]
+    of '_': discard
+    of '0'..'8': result = result * 8 + T((ord(s[i]) - ord('0')))
+    of '\0': break
+    else: raise newException(ValueError, "Invalid character in hex: " & s[i])
+    inc(i)
+
 proc constructObject*[T: int8|int16|int32|int64](
     s: var YamlStream, c: ConstructionContext, result: var T)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs an integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    result = T(parseBiggestInt(item.scalarContent))
+    if item.scalarContent[0] == '0' and (item.scalarContent[1] == 'x' or item.scalarContent[1] == 'X'):
+      result = parseHex[T](item.scalarContent)
+    elif item.scalarContent[0] == '0' and (item.scalarContent[1] == 'o' or item.scalarContent[1] == 'O'):
+      result = parseOctal[T](item.scalarContent)
+    else:
+      result = T(parseBiggestInt(item.scalarContent))
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var int)
@@ -99,10 +127,15 @@ proc representObject*(value: int, tagStyle: TagStyle,
 {.push overflowChecks: on.}
 proc parseBiggestUInt(s: string): uint64 =
   result = 0
-  for c in s:
-    if c in {'0'..'9'}: result *= 10.uint64 + (uint64(c) - uint64('0'))
-    elif c == '_': discard
-    else: raise newException(ValueError, "Invalid char in uint: " & c)
+  if s[0] == '0' and (s[1] == 'x' or s[1] == 'X'):
+    result = parseHex[uint64](s)
+  elif s[0] == '0' and (s[1] == 'o' or s[1] == 'O'):
+    result = parseOctal[uint64](s)
+  else:
+    for c in s:
+      if c in {'0'..'9'}: result = result * 10.uint64 + (uint64(c) - uint64('0'))
+      elif c == '_': discard
+      else: raise newException(ValueError, "Invalid char in uint: " & c)
 {.pop.}
 
 proc constructObject*[T: uint8|uint16|uint32|uint64](
@@ -110,7 +143,7 @@ proc constructObject*[T: uint8|uint16|uint32|uint64](
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct an unsigned integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    result = T(parseBiggestUInt(item.scalarContent))
+    result = T(yaml.parseBiggestUInt(item.scalarContent))
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var uint)
@@ -763,6 +796,27 @@ proc load*[K](input: Stream | string, target: var K) =
     parser = newYamlParser(serializationTagLibrary)
     events = parser.parse(input)
   try: construct(events, target)
+  except YamlConstructionError:
+    var e = (ref YamlConstructionError)(getCurrentException())
+    discard events.getLastTokenContext(e.line, e.column, e.lineContent)
+    raise e
+  except YamlStreamError:
+    let e = (ref YamlStreamError)(getCurrentException())
+    if e.parent of IOError: raise (ref IOError)(e.parent)
+    elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
+    else: internalError("Unexpected exception: " & e.parent.repr)
+
+proc loadMultiDoc*[K](input: Stream, target: var seq[K]) =
+  if target.isNil:
+    target = newSeq[K]()
+  var
+    parser = newYamlParser(serializationTagLibrary)
+    events = parser.parse(input)
+  try:
+    while not events.finished():
+      var item: K
+      construct(events, item)
+      target.add(item)
   except YamlConstructionError:
     var e = (ref YamlConstructionError)(getCurrentException())
     discard events.getLastTokenContext(e.line, e.column, e.lineContent)
