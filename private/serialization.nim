@@ -64,35 +64,29 @@ proc representObject*(value: string, ts: TagStyle,
 
 proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](s: string): T =
   result = 0
-  var i = 2
-  while true:
+  for i in 2..<s.len:
     case s[i]
     of '_': discard
-    of '0'..'9': result = result shl 4 or (T(ord(s[i]) - ord('0')) and 0xFF)
-    of 'a'..'f': result = result shl 4 or (T(ord(s[i]) - ord('a') + 10) and 0xFF)
-    of 'A'..'F': result = result shl 4 or (T(ord(s[i]) - ord('A') + 10) and 0xFF)
-    of '\0': break
-    else: raise newException(ValueError, "Invalid character in hex: " & s[i])
-    inc(i)
+    of '0'..'9': result = result shl 4 or T(ord(s[i]) - ord('0'))
+    of 'a'..'f': result = result shl 4 or T(ord(s[i]) - ord('a') + 10)
+    of 'A'..'F': result = result shl 4 or T(ord(s[i]) - ord('A') + 10)
+    else: raise newException(ValueError, "Invalid character in hex: " & escape("" & s[i]))
 
 proc parseOctal[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](s: string): T =
-  var i = 2
-  while true:
+  for i in 2..<s.len:
     case s[i]
     of '_': discard
-    of '0'..'8': result = result * 8 + T((ord(s[i]) - ord('0')))
-    of '\0': break
-    else: raise newException(ValueError, "Invalid character in hex: " & s[i])
-    inc(i)
+    of '0'..'7': result = result shl 3 + T((ord(s[i]) - ord('0')))
+    else: raise newException(ValueError, "Invalid character in hex: " & escape("" & s[i]))
 
 proc constructObject*[T: int8|int16|int32|int64](
     s: var YamlStream, c: ConstructionContext, result: var T)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs an integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    if item.scalarContent[0] == '0' and (item.scalarContent[1] == 'x' or item.scalarContent[1] == 'X'):
+    if item.scalarContent[0] == '0' and item.scalarContent[1] in {'x', 'X' }:
       result = parseHex[T](item.scalarContent)
-    elif item.scalarContent[0] == '0' and (item.scalarContent[1] == 'o' or item.scalarContent[1] == 'O'):
+    elif item.scalarContent[0] == '0' and item.scalarContent[1] in {'o', 'O'}:
       result = parseOctal[T](item.scalarContent)
     else:
       result = T(parseBiggestInt(item.scalarContent))
@@ -127,9 +121,9 @@ proc representObject*(value: int, tagStyle: TagStyle,
 {.push overflowChecks: on.}
 proc parseBiggestUInt(s: string): uint64 =
   result = 0
-  if s[0] == '0' and (s[1] == 'x' or s[1] == 'X'):
+  if s[0] == '0' and s[1] in {'x', 'X'}:
     result = parseHex[uint64](s)
-  elif s[0] == '0' and (s[1] == 'o' or s[1] == 'O'):
+  elif s[0] == '0' and s[1] in {'o', 'O'}:
     result = parseOctal[uint64](s)
   else:
     for c in s:
@@ -806,7 +800,7 @@ proc load*[K](input: Stream | string, target: var K) =
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & e.parent.repr)
 
-proc loadMultiDoc*[K](input: Stream, target: var seq[K]) =
+proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
   if target.isNil:
     target = newSeq[K]()
   var
