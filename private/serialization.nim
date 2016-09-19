@@ -809,6 +809,9 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions):
     string =
-  var s = newStringStream()
-  dump(value, s, tagStyle, anchorStyle, options)
-  shallowCopy(result, s.data)
+  var events = represent(value,
+      if options.style == psCanonical: tsAll else: tagStyle,
+      if options.style == psJson: asNone else: anchorStyle)
+  try: result = present(events, serializationTagLibrary, options)
+  except YamlStreamError:
+    internalError("Unexpected exception: " & getCurrentException().repr)

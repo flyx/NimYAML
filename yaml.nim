@@ -554,19 +554,34 @@ proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].}
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
 
-proc present*(s: var YamlStream, target: Stream, tagLib: TagLibrary,
+proc present*(s: var YamlStream, target: Stream,
+              tagLib: TagLibrary,
               options: PresentationOptions = defaultPresentationOptions)
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].}
   ## Convert ``s`` to a YAML character stream and write it to ``target``.
 
-proc transform*(input: Stream, output: Stream,
+proc present*(s: var YamlStream, tagLib: TagLibrary,
+              options: PresentationOptions = defaultPresentationOptions):
+    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                      YamlStreamError].}
+  ## Convert ``s`` to a YAML character stream and return it as string.
+
+proc transform*(input: Stream | string, output: Stream,
                 options: PresentationOptions = defaultPresentationOptions)
     {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
                YamlPresenterOutputError].}
   ## Parser ``input`` as YAML character stream and then dump it to ``output``
   ## while resolving non-specific tags to the ones in the YAML core tag
   ## library.
+
+proc transform*(input: Stream | string,
+                options: PresentationOptions = defaultPresentationOptions):
+    string {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
+                      YamlPresenterOutputError].}
+  ## Parser ``input`` as YAML character stream, resolves non-specific tags to
+  ## the ones in the YAML core tag library, and then returns a serialized
+  ## YAML string that represents the stream.
 
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var T)

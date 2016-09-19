@@ -109,7 +109,7 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
   of asNone: anchor = yAnchorNone
   of asTidy: anchor = cast[AnchorId](n)
   of asAlways: anchor = c.refs.getOrDefault(p)
-    
+
   case n.kind
   of yScalar: c.put(scalarEvent(n.content, tagId, anchor))
   of ySequence:

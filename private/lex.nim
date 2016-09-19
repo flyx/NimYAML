@@ -907,7 +907,7 @@ proc blockScalar[T](lex: YamlLexer): bool =
         lex.buf.add(lex.c)
         lex.advance(T)
       if not blockScalarLineStart[T](lex, recentWasMoreIndented): break outer
-  
+
   debug("lex: leaving block scalar at indentation " & $lex.indentation)
   case lex.chomp
   of ctStrip: discard
@@ -935,7 +935,7 @@ proc dirEndAfterBlockScalar[T](lex: YamlLexer): bool =
   while lex.c in space: lex.advance(T)
   lex.nextState = lex.insideLineImpl
   result = true
-  
+
 proc docEndAfterBlockScalar[T](lex: YamlLexer): bool =
   lex.cur = ltDocumentEnd
   lex.nextState = expectLineEnd[T]

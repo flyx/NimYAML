@@ -207,7 +207,7 @@ proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
     # ? - a
     #   - b
     # and such. At the first `-`, the indentation must equal its level to be
-    # parsed properly.   
+    # parsed properly.
     c.lex.indentation = c.lex.curStartPos.column - 1
 
 proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
@@ -341,7 +341,7 @@ macro parserState(name: untyped, impl: untyped): typed =
 
 parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
              scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
-             afterDocument, closeStream, closeMoreIndentedLevels, 
+             afterDocument, closeStream, closeMoreIndentedLevels,
              emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
              leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
 
@@ -969,7 +969,7 @@ proc init(c: ParserContext, p: YamlParser) =
   c.explicitFlowKey = false
   c.lastTokenContextImpl = lastTokenContext
   c.advance()
-  
+
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   let c = new(ParserContext)
   try: c.lex = newYamlLexer(s)
