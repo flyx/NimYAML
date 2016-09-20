@@ -37,7 +37,7 @@ install:
 before_script:
     - export PATH="nim-$BRANCH/bin${PATH:+:$PATH}"
 script:
-    - nim test --verbosity:0
+    - nim tests --verbosity:0
     - nim yamlTestSuite --verbosity:0
 cache:
   directories:
