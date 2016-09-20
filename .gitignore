@@ -1,9 +1,9 @@
 nimcache
 test/tests
-test/parsing
-test/lexing
-test/serializing
-test/constructingJson
+test/tlex
+test/tdom
+test/tserialization
+test/tjson
 test/yamlTestSuite
 test/*.exe
 test/*.pdb

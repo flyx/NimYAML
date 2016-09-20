@@ -4,4 +4,4 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import tlex, constructingJson, serializing, dom
+import tlex, tjson, tserialization, tdom
