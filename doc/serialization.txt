@@ -317,21 +317,20 @@ representObject
 .. code-block:: nim
 
     proc representObject*(value: MyObject, ts: TagStyle = tsNone,
-                          c: SerializationContext): RawYamlStream {.raises: [].}
+                          c: SerializationContext, tag: TagId): {.raises: [].}
 
-This proc should return an iterator over ``YamlStreamEvent`` which represents
-the type. Follow the following guidelines when implementing a custom
-``representObject`` proc:
+This proc should push a list of tokens that represent the type into the
+serialization context via ``c.put``. Follow the following guidelines when
+implementing a custom ``representObject`` proc:
 
 - You can use the helper template
   `presentTag <yaml.html#presentTag,typedesc,TagStyle>`_ for outputting the
   tag.
-- Always output the first tag with a ``yAnchorNone``. Anchors will be set
+- Always output the first token with a ``yAnchorNone``. Anchors will be set
   automatically by ``ref`` type handling.
 - When outputting non-scalar types, you should use the ``representObject``
   implementation of the child types, if possible.
-- Check if the given ``TagStyle`` equals ``tsRootOnly`` and if yes, change it
-  to ``tsNone`` for the child values.
+- Always use the ``tag`` parameter as tag for the first token you generate.
 - Never write a ``representObject`` proc for ``ref`` types.
 
 The following example for representing to a YAML scalar is the actual
@@ -339,28 +338,21 @@ implementation of representing ``int`` types:
 
 .. code-block:: nim
 
-    proc representObject*[T: uint8|uint16|uint32|uint64](
-            value: T, ts: TagStyle, c: SerializationContext):
-            RawYamlStream {.raises: [].} =
-        result = iterator(): YamlStreamEvent =
-            yield scalarEvent($value, presentTag(T, ts), yAnchorNone)
+    proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
+        c: SerializationContext, tag: TagId) {.raises: [].} =
+      ## represents an integer value as YAML scalar
+      c.put(scalarEvent($value, tag, yAnchorNone))
 
 The following example for representing to a YAML non-scalar is the actual
-implementation of representing ``seq`` types:
+implementation of representing ``seq`` and ``set`` types:
 
 .. code-block:: nim
 
-    proc representObject*[T](value: seq[T], ts: TagStyle,
-            c: SerializationContext): RawYamlStream {.raises: [].} =
-        result = iterator(): YamlStreamEvent =
-            let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-            yield YamlStreamEvent(kind: yamlStartSequence,
-                                  seqTag: presentTag(seq[T], ts),
-                                  seqAnchor: yAnchorNone)
-            for item in value:
-                var events = representObject(item, childTagStyle, c)
-                while true:
-                    let event = events()
-                    if finished(events): break
-                    yield event
-            yield YamlStreamEvent(kind: yamlEndSequence)
+    proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
+        c: SerializationContext, tag: TagId) {.raises: [YamlStreamError].} =
+      ## represents a Nim seq as YAML sequence
+      let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+      c.put(startSeqEvent(tag))
+      for item in value:
+        representChild(item, childTagStyle, c)
+      c.put(endSeqEvent())
