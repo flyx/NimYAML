@@ -101,6 +101,54 @@ suite "Serialization":
       except: gotException = true
       assert gotException, "Expected exception, got none."
 
+  test "Load Hex byte (0xFF)":
+    let input = newStringStream("0xFF")
+    var result: byte
+    load(input, result)
+    assert(result == 255)
+
+  test "Load Hex byte (0xC)":
+    let input = newStringStream("0xC")
+    var result: byte
+    load(input, result)
+    assert(result == 12)
+
+  test "Load Octal byte (0o14)":
+    let input = newStringStream("0o14")
+    var result: byte
+    load(input, result)
+    assert(result == 12)
+
+  test "Load byte (14)":
+    let input = newStringStream("14")
+    var result: byte
+    load(input, result)
+    assert(result == 14)
+
+  test "Load Hex int (0xFF)":
+    let input = newStringStream("0xFF")
+    var result: int
+    load(input, result)
+    assert(result == 255)
+
+  test "Load Hex int (0xC)":
+    let input = newStringStream("0xC")
+    var result: int
+    load(input, result)
+    assert(result == 12)
+
+  test "Load Octal int (0o14)":
+    let input = newStringStream("0o14")
+    var result: int
+    load(input, result)
+    assert(result == 12)
+
+  test "Load int (14)":
+    let input = newStringStream("14")
+    var result: int
+    load(input, result)
+    assert(result == 14)
+
   test "Load nil string":
     let input = newStringStream("!nim:nil:string \"\"")
     var result: string
@@ -253,6 +301,21 @@ suite "Serialization":
     let input = (str: "value", i: 42.int32, b: true)
     var output = dump(input, tsNone)
     assertStringEqual "%YAML 1.2\n--- \nstr: value\ni: 42\nb: y", output
+
+  test "Load Multiple Documents":
+    let input = newStringStream("1\n---\n2")
+    var result: seq[int]
+    loadMultiDoc(input, result)
+    assert(result.len == 2)
+    assert result[0] == 1
+    assert result[1] == 2
+
+  test "Load Multiple Documents (Single Doc)":
+    let input = newStringStream("1")
+    var result: seq[int]
+    loadMultiDoc(input, result)
+    assert(result.len == 1)
+    assert result[0] == 1
     
   test "Load custom object":
     let input = newStringStream("firstnamechar: P\nsurname: Pan\nage: 12")
@@ -268,7 +331,7 @@ suite "Serialization":
     assertStringEqual(
         "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
     
-  test "Serialization: Load sequence with explicit tags":
+  test "Load sequence with explicit tags":
     let input = newStringStream("--- !nim:system:seq(" &
         "tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
     var result: seq[string]
