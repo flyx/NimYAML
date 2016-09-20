@@ -4,6 +4,28 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import tables, streams
+import common, stream, taglib, serialization, ../private/internal, parser,
+       presenter
+
+type
+  YamlNodeKind* = enum
+    yScalar, yMapping, ySequence
+
+  YamlNode* = ref YamlNodeObj not nil
+    ## Represents a node in a ``YamlDocument``.
+
+  YamlNodeObj* = object
+    tag*: string
+    case kind*: YamlNodeKind
+    of yScalar: content*: string
+    of ySequence: children*: seq[YamlNode]
+    of yMapping: pairs*: seq[tuple[key, value: YamlNode]]
+
+  YamlDocument* = object
+    ## Represents a YAML document.
+    root*: YamlNode
+
 proc newYamlNode*(content: string, tag: string = "?"): YamlNode =
   YamlNode(kind: yScalar, content: content, tag: tag)
 
@@ -130,17 +152,17 @@ template processAnchoredEvent(target: untyped, c: SerializationContext): typed =
   else: target = yAnchorNone
 
 proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
-    YamlStream {.raises: [YamlStreamError].} =
+    YamlStream {.raises: [].} =
   var
     bys = newBufferYamlStream()
     c = newSerializationContext(a, proc(e: YamlStreamEvent) {.raises: [].} =
-      bys.buf.add(e)
+      bys.put(e)
     )
   c.put(startDocEvent())
   serializeNode(doc.root, c, a, tagLib)
   c.put(endDocEvent())
   if a == asTidy:
-    for event in bys.buf.mitems():
+    for event in bys.mitems():
       case event.kind
       of yamlScalar: processAnchoredEvent(event.scalarAnchor, c)
       of yamlStartMap: processAnchoredEvent(event.mapAnchor, c)

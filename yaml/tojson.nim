@@ -4,6 +4,9 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import json, streams, strutils, tables
+import common, taglib, hints, serialization, stream, ../private/internal, parser
+
 type Level = tuple[node: JsonNode, key: string]
 
 proc initLevel(node: JsonNode): Level {.raises: [].} =
@@ -66,7 +69,20 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
     e.parent = getCurrentException()
     raise e
 
-proc constructJson*(s: var YamlStream): seq[JsonNode] =
+proc constructJson*(s: var YamlStream): seq[JsonNode]
+    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ## Construct an in-memory JSON tree from a YAML event stream. The stream may
+  ## not contain any tags apart from those in ``coreTagLibrary``. Anchors and
+  ## aliases will be resolved. Maps in the input must not contain
+  ## non-scalars as keys. Each element of the result represents one document
+  ## in the YAML stream.
+  ##
+  ## **Warning:** The special float values ``[+-]Inf`` and ``NaN`` will be
+  ## parsed into Nim's JSON structure without error. However, they cannot be
+  ## rendered to a JSON character stream, because these values are not part
+  ## of the JSON specification. Nim's JSON implementation currently does not
+  ## check for these values and will output invalid JSON when rendering one
+  ## of these values into a JSON character stream.
   newSeq(result, 0)
 
   var
@@ -153,7 +169,10 @@ proc constructJson*(s: var YamlStream): seq[JsonNode] =
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
 
-proc loadToJson*(s: Stream): seq[JsonNode] =
+proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].} =
+  ## Uses `YamlParser <#YamlParser>`_ and
+  ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
+  ## from a YAML character stream.
   var
     parser = newYamlParser(initCoreTagLibrary())
     events = parser.parse(s)

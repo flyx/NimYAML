@@ -4,6 +4,72 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import tables, typetraits, strutils, macros, streams
+import parser, common, taglib, presenter, stream, ../private/internal, hints
+
+type
+  SerializationContext* = ref object
+    ## Context information for the process of serializing YAML from Nim values.
+    refs*: Table[pointer, AnchorId]
+    style: AnchorStyle
+    nextAnchorId*: AnchorId
+    put*: proc(e: YamlStreamEvent) {.raises: [], closure.}
+
+  ConstructionContext* = ref object
+    ## Context information for the process of constructing Nim values from YAML.
+    refs*: Table[AnchorId, pointer]
+
+  YamlConstructionError* = object of YamlLoadingError
+    ## Exception that may be raised when constructing data objects from a
+    ## `YamlStream <#YamlStream>`_. The fields ``line``, ``column`` and
+    ## ``lineContent`` are only available if the costructing proc also does
+    ## parsing, because otherwise this information is not available to the
+    ## costruction proc.
+
+# forward declares
+
+proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
+                        result: var T)
+    {.raises: [YamlConstructionError, YamlStreamError].}
+  ## Constructs an arbitrary Nim value from a part of a YAML stream.
+  ## The stream will advance until after the finishing token that was used
+  ## for constructing the value. The ``ConstructionContext`` is needed for
+  ## potential child objects which may be refs.
+
+proc constructChild*(s: var YamlStream, c: ConstructionContext,
+                     result: var string)
+    {.raises: [YamlConstructionError, YamlStreamError].}
+  ## Constructs a Nim value that is a string from a part of a YAML stream.
+  ## This specialization takes care of possible nil strings.
+
+proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
+                        result: var seq[T])
+    {.raises: [YamlConstructionError, YamlStreamError].}
+  ## Constructs a Nim value that is a string from a part of a YAML stream.
+  ## This specialization takes care of possible nil seqs.
+
+proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
+                        result: var ref O)
+    {.raises: [YamlStreamError].}
+  ## Constructs an arbitrary Nim value from a part of a YAML stream.
+  ## The stream will advance until after the finishing token that was used
+  ## for constructing the value. The object may be constructed from an alias
+  ## node which will be resolved using the ``ConstructionContext``.
+
+proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext)
+    {.raises: [YamlStreamError].}
+  ## Represents an arbitrary Nim reference value as YAML object. The object
+  ## may be represented as alias node if it is already present in the
+  ## ``SerializationContext``.
+
+proc representChild*(value: string, ts: TagStyle, c: SerializationContext)
+    {.inline, raises: [].}
+  ## Represents a Nim string. Supports nil strings.
+
+proc representChild*[O](value: O, ts: TagStyle,
+                        c: SerializationContext) {.raises: [YamlStreamError].}
+  ## Represents an arbitrary Nim object as YAML object.
+
 proc newConstructionContext*(): ConstructionContext =
   new(result)
   result.refs = initTable[AnchorId, pointer]()
@@ -118,26 +184,16 @@ proc representObject*(value: int, tagStyle: TagStyle,
     e.parent = getCurrentException()
     raise e
 
-{.push overflowChecks: on.}
-proc parseBiggestUInt(s: string): uint64 =
-  result = 0
-  if s[0] == '0' and s[1] in {'x', 'X'}:
-    result = parseHex[uint64](s)
-  elif s[0] == '0' and s[1] in {'o', 'O'}:
-    result = parseOctal[uint64](s)
-  else:
-    for c in s:
-      if c in {'0'..'9'}: result = result * 10.uint64 + (uint64(c) - uint64('0'))
-      elif c == '_': discard
-      else: raise newException(ValueError, "Invalid char in uint: " & c)
-{.pop.}
-
 proc constructObject*[T: uint8|uint16|uint32|uint64](
     s: var YamlStream, c: ConstructionContext, result: var T)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct an unsigned integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    result = T(yaml.parseBiggestUInt(item.scalarContent))
+    if item.scalarContent[0] == '0' and item.scalarContent[1] in {'x', 'X'}:
+      result = parseHex[T](item.scalarContent)
+    elif item.scalarContent[0] == '0' and item.scalarContent[1] in {'o', 'O'}:
+      result = parseOctal[T](item.scalarContent)
+    else: result = T(parseBiggestUInt(item.scalarContent))
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var uint)
@@ -763,7 +819,9 @@ proc representChild*[O](value: O, ts: TagStyle,
     representObject(value, ts, c,
         if ts == tsNone: yTagQuestionMark else: yamlTag(O))
 
-proc construct*[T](s: var YamlStream, target: var T) =
+proc construct*[T](s: var YamlStream, target: var T)
+    {.raises: [YamlStreamError].} =
+  ## Constructs a Nim value from a YAML stream.
   var context = newConstructionContext()
   try:
     var e = s.next()
@@ -785,7 +843,9 @@ proc construct*[T](s: var YamlStream, target: var T) =
     ex.parent = getCurrentException()
     raise ex
 
-proc load*[K](input: Stream | string, target: var K) =
+proc load*[K](input: Stream | string, target: var K)
+    {.raises: [YamlConstructionError, IOError, YamlParserError].} =
+  ## Loads a Nim value from a YAML character stream.
   var
     parser = newYamlParser(serializationTagLibrary)
     events = parser.parse(input)
@@ -826,16 +886,18 @@ proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
   if a != yAnchorNone: a = q.getOrDefault(cast[pointer](a))
 
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
-                   a: AnchorStyle = asTidy): YamlStream =
+                   a: AnchorStyle = asTidy): YamlStream
+    {.raises: [YamlStreamError].} =
+  ## Represents a Nim value as ``YamlStream``
   var bys = newBufferYamlStream()
   var context = newSerializationContext(a, proc(e: YamlStreamEvent) =
-        bys.buf.add(e)
+        bys.put(e)
       )
-  bys.buf.add(startDocEvent())
+  bys.put(startDocEvent())
   representChild(value, ts, context)
-  bys.buf.add(endDocEvent())
+  bys.put(endDocEvent())
   if a == asTidy:
-    for item in bys.buf.mitems():
+    for item in bys.mitems():
       case item.kind
       of yamlStartMap: item.mapAnchor.setAnchor(context.refs)
       of yamlStartSeq: item.seqAnchor.setAnchor(context.refs)
@@ -845,7 +907,10 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
 
 proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
-              options: PresentationOptions = defaultPresentationOptions) =
+              options: PresentationOptions = defaultPresentationOptions)
+    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+               YamlStreamError].} =
+  ## Dump a Nim value as YAML character stream.
   var events = represent(value,
       if options.style == psCanonical: tsAll else: tagStyle,
       if options.style == psJson: asNone else: anchorStyle)
@@ -856,7 +921,9 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
 proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions):
-    string =
+    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                      YamlStreamError].} =
+  ## Dump a Nim value as YAML into a string
   var events = represent(value,
       if options.style == psCanonical: tsAll else: tagStyle,
       if options.style == psJson: asNone else: anchorStyle)

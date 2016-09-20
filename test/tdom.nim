@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, common
+import unittest, commonTestUtils, streams
 
 suite "DOM":
   test "Composing simple Scalar":

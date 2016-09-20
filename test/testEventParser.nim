@@ -5,19 +5,19 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import lexbase
+import lexbase, streams, tables
 
 type
   LexerToken = enum
     plusStr, minusStr, plusDoc, minusDoc, plusMap, minusMap, plusSeq, minusSeq,
     eqVal, eqAli, chevTag, andAnchor, quotContent, colonContent, noToken
-    
+
   StreamPos = enum
     beforeStream, inStream, afterStream
 
   EventLexer = object of BaseLexer
     content: string
-    
+
   EventStreamError = object of Exception
 
 proc nextToken(lex: var EventLexer): LexerToken =
@@ -156,7 +156,7 @@ template setCurAnchor(val: AnchorId) =
   of yamlAlias: curEvent.aliasTarget = val
   else: raise newException(EventStreamError,
                            $curEvent.kind & " may not have an anchor")
- 
+
 template eventStart(k: YamlStreamEventKind) {.dirty.} =
   assertInStream()
   yieldEvent()

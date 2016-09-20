@@ -6,7 +6,7 @@
 
 import "../yaml"
 
-import unittest, json
+import unittest, json, streams
 
 proc wc(line, column: int, lineContent: string, message: string) =
   echo "Warning (", line, ",", column, "): ", message, "\n", lineContent
@@ -31,10 +31,10 @@ proc ensureEqual(yamlIn, jsonIn: string) =
 suite "Constructing JSON":
   test "Simple Sequence":
     ensureEqual("- 1\n- 2\n- 3", "[1, 2, 3]")
-    
+
   test "Simple Map":
     ensureEqual("a: b\nc: d", """{"a": "b", "c": "d"}""")
-    
+
   test "Complex Structure":
     ensureEqual("""
 %YAML 1.2

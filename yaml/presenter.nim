@@ -4,7 +4,95 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import streams, queues, strutils
+import common, taglib, stream, ../private/internal, hints, parser, stream
+
 type
+  PresentationStyle* = enum
+    ## Different styles for YAML character stream output.
+    ##
+    ## - ``ypsMinimal``: Single-line flow-only output which tries to
+    ##   use as few characters as possible.
+    ## - ``ypsCanonical``: Canonical YAML output. Writes all tags except
+    ##   for the non-specific tags ``?`` and ``!``, uses flow style, quotes
+    ##   all string scalars.
+    ## - ``ypsDefault``: Tries to be as human-readable as possible. Uses
+    ##   block style by default, but tries to condense mappings and
+    ##   sequences which only contain scalar nodes into a single line using
+    ##   flow style.
+    ## - ``ypsJson``: Omits the ``%YAML`` directive and the ``---``
+    ##   marker. Uses flow style. Flattens anchors and aliases, omits tags.
+    ##   Output will be parseable as JSON. ``YamlStream`` to dump may only
+    ##   contain one document.
+    ## - ``ypsBlockOnly``: Formats all output in block style, does not use
+    ##   flow style at all.
+    psMinimal, psCanonical, psDefault, psJson, psBlockOnly
+
+  TagStyle* = enum
+    ## Whether object should be serialized with explicit tags.
+    ##
+    ## - ``tsNone``: No tags will be outputted unless necessary.
+    ## - ``tsRootOnly``: A tag will only be outputted for the root tag and
+    ##   where necessary.
+    ## - ``tsAll``: Tags will be outputted for every object.
+    tsNone, tsRootOnly, tsAll
+
+  AnchorStyle* = enum
+    ## How ref object should be serialized.
+    ##
+    ## - ``asNone``: No anchors will be outputted. Values present at
+    ##   multiple places in the content that should be serialized will be
+    ##   fully serialized at every occurence. If the content is cyclic, this
+    ##   will lead to an endless loop!
+    ## - ``asTidy``: Anchors will only be generated for objects that
+    ##   actually occur more than once in the content to be serialized.
+    ##   This is a bit slower and needs more memory than ``asAlways``.
+    ## - ``asAlways``: Achors will be generated for every ref object in the
+    ##   content to be serialized, regardless of whether the object is
+    ##   referenced again afterwards
+    asNone, asTidy, asAlways
+
+  NewLineStyle* = enum
+    ## What kind of newline sequence is used when presenting.
+    ##
+    ## - ``nlLF``: Use a single linefeed char as newline.
+    ## - ``nlCRLF``: Use a sequence of carriage return and linefeed as
+    ##   newline.
+    ## - ``nlOSDefault``: Use the target operation system's default newline
+    ##   sequence (CRLF on Windows, LF everywhere else).
+    nlLF, nlCRLF, nlOSDefault
+
+  OutputYamlVersion* = enum
+    ## Specify which YAML version number the presenter shall emit. The
+    ## presenter will always emit content that is valid YAML 1.1, but by
+    ## default will write a directive ``%YAML 1.2``. For compatibility with
+    ## other YAML implementations, it is possible to change this here.
+    ##
+    ## It is also possible to specify that the presenter shall not emit any
+    ## YAML version. The generated content is then guaranteed to be valid
+    ## YAML 1.1 and 1.2 (but not 1.0 or any newer YAML version).
+    ov1_2, ov1_1, ovNone
+
+  PresentationOptions* = object
+    ## Options for generating a YAML character stream
+    style*: PresentationStyle
+    indentationStep*: int
+    newlines*: NewLineStyle
+    outputVersion*: OutputYamlVersion
+
+  YamlPresenterJsonError* = object of Exception
+    ## Exception that may be raised by the YAML presenter when it is
+    ## instructed to output JSON, but is unable to do so. This may occur if:
+    ##
+    ## - The given `YamlStream <#YamlStream>`_ contains a map which has any
+    ##   non-scalar type as key.
+    ## - Any float scalar bears a ``NaN`` or positive/negative infinity value
+
+  YamlPresenterOutputError* = object of Exception
+    ## Exception that may be raised by the YAML presenter. This occurs if
+    ## writing character data to the output stream raises any exception.
+    ## The error that has occurred is available from ``parent``.
+
   DumperState = enum
     dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
     dBlockInlineMap, dBlockSequenceItem, dFlowImplicitMapKey, dFlowMapValue,
@@ -15,11 +103,18 @@ type
 
   PresenterTarget = Stream | ptr[string]
 
+const
+  defaultPresentationOptions* =
+        PresentationOptions(style: psDefault, indentationStep: 2,
+                            newlines: nlOSDefault)
+
 proc defineOptions*(style: PresentationStyle = psDefault,
                     indentationStep: int = 2,
                     newlines: NewLineStyle = nlOSDefault,
                     outputVersion: OutputYamlVersion = ov1_2):
-    PresentationOptions =
+    PresentationOptions {.raises: [].} =
+  ## Define a set of options for presentation. Convenience proc that requires
+  ## you to only set those values that should not equal the default.
   PresentationOptions(style: style, indentationStep: indentationStep,
                       newlines: newlines, outputVersion: outputVersion)
 
@@ -607,12 +702,17 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
 
 proc present*(s: var YamlStream, target: Stream,
               tagLib: TagLibrary,
-              options: PresentationOptions = defaultPresentationOptions) =
+              options: PresentationOptions = defaultPresentationOptions)
+    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+               YamlStreamError].} =
+  ## Convert ``s`` to a YAML character stream and write it to ``target``.
   doPresent(s, target, tagLib, options)
 
 proc present*(s: var YamlStream, tagLib: TagLibrary,
               options: PresentationOptions = defaultPresentationOptions):
-    string =
+    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                      YamlStreamError].} =
+  ## Convert ``s`` to a YAML character stream and return it as string.
   result = ""
   doPresent(s, addr result, tagLib, options)
 
@@ -647,7 +747,7 @@ proc doTransform(input: Stream | string, output: PresenterTarget,
             of yTypeUnknown: event.scalarTag = yTagString
           elif event.scalarTag == yTagExclamationMark:
             event.scalarTag = yTagString
-        BufferYamlStream(bys).buf.add(e)
+        BufferYamlStream(bys).put(e)
       present(bys, output, tagLib, options)
     else: present(events, output, tagLib, options)
   except YamlStreamError:
@@ -658,11 +758,20 @@ proc doTransform(input: Stream | string, output: PresenterTarget,
     else: internalError("Unexpected exception: " & e.parent.repr)
 
 proc transform*(input: Stream | string, output: Stream,
-                options: PresentationOptions = defaultPresentationOptions) =
+                options: PresentationOptions = defaultPresentationOptions)
+    {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
+               YamlPresenterOutputError].} =
+  ## Parser ``input`` as YAML character stream and then dump it to ``output``
+  ## while resolving non-specific tags to the ones in the YAML core tag
+  ## library.
   doTransform(input, output, options)
 
 proc transform*(input: Stream | string,
                 options: PresentationOptions = defaultPresentationOptions):
-    string =
+    string {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
+                      YamlPresenterOutputError].} =
+  ## Parser ``input`` as YAML character stream, resolves non-specific tags to
+  ## the ones in the YAML core tag library, and then returns a serialized
+  ## YAML string that represents the stream.
   result = ""
   doTransform(input, addr result, options)

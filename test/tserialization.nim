@@ -5,31 +5,31 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, strutils
+import unittest, strutils, streams, tables
 
 type
   MyTuple = tuple
     str: string
     i: int32
     b: bool
-    
+
   TrafficLight = enum
     tlGreen, tlYellow, tlRed
-    
+
   Person = object
     firstnamechar: char
     surname: string
     age: int32
-    
+
   Node = object
     value: string
     next: ref Node
-    
+
   BetterInt = distinct int
-  
+
   AnimalKind = enum
     akCat, akDog
-  
+
   Animal = object
     name: string
     case kind: AnimalKind
@@ -81,8 +81,8 @@ suite "Serialization":
     var input = newStringStream("-4247")
     var result: int
     load(input, result)
-    assert result == -4247, "result is " & $result 
-    
+    assert result == -4247, "result is " & $result
+
     input = newStringStream($(int64(int32.high) + 1'i64))
     var gotException = false
     try: load(input, result)
@@ -93,7 +93,7 @@ suite "Serialization":
     var input = -4247
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n\"-4247\"", output
-    
+
     when sizeof(int) == sizeof(int64):
       input = int(int32.high) + 1
       var gotException = false
@@ -154,7 +154,7 @@ suite "Serialization":
     var result: string
     load(input, result)
     assert isNil(result)
-  
+
   test "Dump nil string":
     let input: string = nil
     var output = dump(input, tsNone, asTidy, blockOnly)
@@ -167,23 +167,23 @@ suite "Serialization":
     assert result.len == 2
     assert result[0] == "a"
     assert result[1] == "b"
-    
+
   test "Dump string sequence":
     var input = @["a", "b"]
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output
-  
+
   test "Load nil seq":
     let input = newStringStream("!nim:nil:seq \"\"")
     var result: seq[int]
     load(input, result)
     assert isNil(result)
-  
+
   test "Dump nil seq":
     let input: seq[int] = nil
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n!nim:nil:seq \"\"", output
-  
+
   test "Load char set":
     let input = newStringStream("- a\n- b")
     var result: set[char]
@@ -191,12 +191,12 @@ suite "Serialization":
     assert result.card == 2
     assert 'a' in result
     assert 'b' in result
-  
+
   test "Dump char set":
     var input = {'a', 'b'}
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output
-      
+
   test "Load array":
     let input = newStringStream("- 23\n- 42\n- 47")
     var result: array[0..2, int32]
@@ -204,12 +204,12 @@ suite "Serialization":
     assert result[0] == 23
     assert result[1] == 42
     assert result[2] == 47
-  
+
   test "Dump array":
     let input = [23'i32, 42'i32, 47'i32]
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- 23\n- 42\n- 47", output
-    
+
   test "Load Table[int, string]":
     let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
     var result: Table[int32, string]
@@ -217,7 +217,7 @@ suite "Serialization":
     assert result.len == 2
     assert result[23] == "dreiundzwanzig"
     assert result[42] == "zweiundvierzig"
-    
+
   test "Dump Table[int, string]":
     var input = initTable[int32, string]()
     input[23] = "dreiundzwanzig"
@@ -225,7 +225,7 @@ suite "Serialization":
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual("%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig",
         output)
-    
+
   test "Load OrderedTable[tuple[int32, int32], string]":
     let input = newStringStream("- {a: 23, b: 42}: drzw\n- {a: 13, b: 47}: drsi")
     var result: OrderedTable[tuple[a, b: int32], string]
@@ -241,7 +241,7 @@ suite "Serialization":
         assert value == "drsi"
       else: assert false
       i.inc()
-    
+
   test "Dump OrderedTable[tuple[int32, int32], string]":
     var input = initOrderedTable[tuple[a, b: int32], string]()
     input.add((a: 23'i32, b: 42'i32), "dreiundzwanzigzweiundvierzig")
@@ -259,7 +259,7 @@ suite "Serialization":
     a: 13
     b: 47
   : dreizehnsiebenundvierzig""", output)
-    
+
   test "Load Sequences in Sequence":
     let input = newStringStream(" - [1, 2, 3]\n - [4, 5]\n - [6]")
     var result: seq[seq[int32]]
@@ -268,12 +268,12 @@ suite "Serialization":
     assert result[0] == @[1.int32, 2.int32, 3.int32]
     assert result[1] == @[4.int32, 5.int32]
     assert result[2] == @[6.int32]
-    
+
   test "Dump Sequences in Sequence":
     let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32], @[6.int32]]
     var output = dump(input, tsNone)
     assertStringEqual "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]", output
-    
+
   test "Load Enum":
     let input =
       newStringStream("!nim:system:seq(tl)\n- !tl tlRed\n- tlGreen\n- tlYellow")
@@ -283,12 +283,12 @@ suite "Serialization":
     assert result[0] == tlRed
     assert result[1] == tlGreen
     assert result[2] == tlYellow
-    
+
   test "Dump Enum":
     let input = @[tlRed, tlGreen, tlYellow]
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual "%YAML 1.2\n--- \n- tlRed\n- tlGreen\n- tlYellow", output
-    
+
   test "Load Tuple":
     let input = newStringStream("str: value\ni: 42\nb: true")
     var result: MyTuple
@@ -316,7 +316,7 @@ suite "Serialization":
     loadMultiDoc(input, result)
     assert(result.len == 1)
     assert result[0] == 1
-    
+
   test "Load custom object":
     let input = newStringStream("firstnamechar: P\nsurname: Pan\nage: 12")
     var result: Person
@@ -324,13 +324,13 @@ suite "Serialization":
     assert result.firstnamechar == 'P'
     assert result.surname   == "Pan"
     assert result.age == 12
-    
+
   test "Dump custom object":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual(
         "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
-    
+
   test "Load sequence with explicit tags":
     let input = newStringStream("--- !nim:system:seq(" &
         "tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
@@ -338,13 +338,13 @@ suite "Serialization":
     load(input, result)
     assert result[0] == "one"
     assert result[1] == "two"
-    
+
   test "Dump sequence with explicit tags":
     let input = @["one", "two"]
     var output = dump(input, tsAll, asTidy, blockOnly)
     assertStringEqual("%YAML 1.2\n--- !nim:system:seq(" &
         "tag:yaml.org,2002:str) \n- !!str one\n- !!str two", output)
-    
+
   test "Load custom object with explicit root tag":
     let input = newStringStream(
         "--- !nim:custom:Person\nfirstnamechar: P\nsurname: Pan\nage: 12")
@@ -353,14 +353,14 @@ suite "Serialization":
     assert result.firstnamechar == 'P'
     assert result.surname   == "Pan"
     assert result.age       == 12
-    
+
   test "Dump custom object with explicit root tag":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual("%YAML 1.2\n" &
         "--- !nim:custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12",
         output)
-  
+
   test "Load custom variant object":
     let input = newStringStream(
       "---\n- - name: Bastet\n  - kind: akCat\n  - purringIntensity: 7\n" &
@@ -374,7 +374,7 @@ suite "Serialization":
     assert result[1].name == "Anubis"
     assert result[1].kind == akDog
     assert result[1].barkometer == 13
-  
+
   test "Dump custom variant object":
     let input = @[Animal(name: "Bastet", kind: akCat, purringIntensity: 7),
                   Animal(name: "Anubis", kind: akDog, barkometer: 13)]
@@ -395,7 +395,7 @@ suite "Serialization":
     kind: akDog
   - 
     barkometer: 13""", output
-    
+
   test "Dump cyclic data structure":
     var
       a = newNode("a")
@@ -413,15 +413,15 @@ next:
   next: 
     value: c
     next: *a""", output
-    
+
   test "Load cyclic data structure":
     let input = newStringStream("""%YAML 1.2
---- !nim:system:seq(example.net:Node)
-- &a
+--- !nim:system:seq(example.net:Node) 
+- &a 
   value: a
-  next: &b
+  next: &b 
     value: b
-    next: &c
+    next: &c 
       value: c
       next: *a
 - *b
@@ -442,7 +442,7 @@ next:
     assert(result[0].next == result[1])
     assert(result[1].next == result[2])
     assert(result[2].next == result[0])
-    
+
   test "Load nil values":
     let input = newStringStream("- ~\n- !!str ~")
     var result: seq[ref string]
@@ -452,11 +452,11 @@ next:
       echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
       echo ex.lineContent
       raise ex
-        
+
     assert(result.len == 2)
     assert(result[0] == nil)
     assert(result[1][] == "~")
-    
+
   test "Dump nil values":
     var input = newSeq[ref string]()
     input.add(nil)
@@ -466,7 +466,7 @@ next:
     assertStringEqual(
         "%YAML 1.2\n--- !nim:system:seq(tag:yaml.org,2002:str) \n- !!null ~\n- !!str ~",
         output)
-    
+
   test "Custom constructObject":
     let input = newStringStream("- 1\n- !test:BetterInt 2")
     var result: seq[BetterInt]
@@ -474,7 +474,7 @@ next:
     assert(result.len == 2)
     assert(result[0] == 2.BetterInt)
     assert(result[1] == 3.BetterInt)
-    
+
   test "Custom representObject":
     let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
     var output = dump(input, tsAll, asTidy, blockOnly)

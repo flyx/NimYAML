@@ -4,7 +4,29 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import tables, strutils, macros, streams
+import common, taglib, stream, ../private/lex, ../private/internal
+
 type
+  WarningCallback* = proc(line, column: int, lineContent: string,
+                          message: string)
+    ## Callback for parser warnings. Currently, this callback may be called
+    ## on two occasions while parsing a YAML document stream:
+    ##
+    ## - If the version number in the ``%YAML`` directive does not match
+    ##   ``1.2``.
+    ## - If there is an unknown directive encountered.
+
+  YamlParser* = ref object
+    ## A parser object. Retains its ``TagLibrary`` across calls to
+    ## `parse <#parse,YamlParser,Stream>`_. Can be used
+    ## to access anchor names while parsing a YAML character stream, but
+    ## only until the document goes out of scope (i.e. until
+    ## ``yamlEndDocument`` is yielded).
+    tagLib: TagLibrary
+    callback: WarningCallback
+    anchors: Table[string, AnchorId]
+
   FastParseLevelKind = enum
     fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
     fplSinglePairValue, fplDocument
@@ -31,8 +53,51 @@ type
   LevelEndResult = enum
     lerNothing, lerOne, lerAdditionalMapEnd
 
+  YamlLoadingError* = object of Exception
+    ## Base class for all exceptions that may be raised during the process
+    ## of loading a YAML character stream.
+    line*: int ## line number (1-based) where the error was encountered
+    column*: int ## column number (1-based) where the error was encountered
+    lineContent*: string ## \
+      ## content of the line where the error was encountered. Includes a
+      ## second line with a marker ``^`` at the position where the error
+      ## was encountered.
+
+  YamlParserError* = object of YamlLoadingError
+    ## A parser error is raised if the character stream that is parsed is
+    ## not a valid YAML character stream. This stream cannot and will not be
+    ## parsed wholly nor partially and all events that have been emitted by
+    ## the YamlStream the parser provides should be discarded.
+    ##
+    ## A character stream is invalid YAML if and only if at least one of the
+    ## following conditions apply:
+    ##
+    ## - There are invalid characters in an element whose contents is
+    ##   restricted to a limited set of characters. For example, there are
+    ##   characters in a tag URI which are not valid URI characters.
+    ## - An element has invalid indentation. This can happen for example if
+    ##   a block list element indicated by ``"- "`` is less indented than
+    ##   the element in the previous line, but there is no block sequence
+    ##   list open at the same indentation level.
+    ## - The YAML structure is invalid. For example, an explicit block map
+    ##   indicated by ``"? "`` and ``": "`` may not suddenly have a block
+    ##   sequence item (``"- "``) at the same indentation level. Another
+    ##   possible violation is closing a flow style object with the wrong
+    ##   closing character (``}``, ``]``) or not closing it at all.
+    ## - A custom tag shorthand is used that has not previously been
+    ##   declared with a ``%TAG`` directive.
+    ## - Multiple tags or anchors are defined for the same node.
+    ## - An alias is used which does not map to any anchor that has
+    ##   previously been declared in the same document.
+    ## - An alias has a tag or anchor associated with it.
+    ##
+    ## Some elements in this list are vague. For a detailed description of a
+    ## valid YAML character stream, see the YAML specification.
+
 proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
                     callback: WarningCallback = nil): YamlParser =
+  ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
+  ## whenever the parser yields a warning.
   new(result)
   result.tagLib = tagLib
   result.callback = callback
@@ -959,18 +1024,18 @@ proc lastTokenContext(s: YamlStream, line, column: var int,
 # --- parser initialization ---
 
 proc init(c: ParserContext, p: YamlParser) =
+  c.basicInit(lastTokenContext)
   c.p = p
   c.ancestry = newSeq[FastParseLevel]()
   c.initDocValues()
   c.flowdepth = 0
-  c.isFinished = false
-  c.peeked = false
   c.nextImpl = stateInitial
   c.explicitFlowKey = false
-  c.lastTokenContextImpl = lastTokenContext
   c.advance()
 
-proc parse*(p: YamlParser, s: Stream): YamlStream =
+proc parse*(p: YamlParser, s: Stream): YamlStream
+    {.raises: [YamlParserError].} =
+  ## Parse the given stream as YAML character stream.
   let c = new(ParserContext)
   try: c.lex = newYamlLexer(s)
   except:
@@ -984,7 +1049,9 @@ proc parse*(p: YamlParser, s: Stream): YamlStream =
   c.init(p)
   result = c
 
-proc parse*(p: YamlParser, str: string): YamlStream =
+proc parse*(p: YamlParser, str: string): YamlStream
+    {.raises: [YamlParserError].} =
+  ## Parse the given string as YAML character stream.
   let c = new(ParserContext)
   c.lex = newYamlLexer(str)
   c.init(p)
