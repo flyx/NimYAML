@@ -302,6 +302,24 @@ suite "Serialization":
     var output = dump(input, tsNone)
     assertStringEqual "%YAML 1.2\n--- \nstr: value\ni: 42\nb: y", output
 
+  test "Load Tuple - unknown field":
+    let input = "str: value\nfoo: bar\ni: 42\nb: true"
+    var result: MyTuple
+    expect(YamlConstructionError):
+      load(input, result)
+
+  test "Load Tuple - missing field":
+    let input = "str: value\nb: true"
+    var result: MyTuple
+    expect(YamlConstructionError):
+      load(input, result)
+
+  test "Load Tuple - duplicate field":
+    let input = "str: value\ni: 42\nb: true\nb: true"
+    var result: MyTuple
+    expect(YamlConstructionError):
+      load(input, result)
+
   test "Load Multiple Documents":
     let input = newStringStream("1\n---\n2")
     var result: seq[int]
@@ -330,6 +348,24 @@ suite "Serialization":
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual(
         "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
+
+  test "Load custom object - unknown field":
+    let input = "firstnamechar: P\nsurname: Pan\nage: 12\noccupation: free"
+    var result: Person
+    expect(YamlConstructionError):
+      load(input, result)
+
+  test "Load custom object - missing field":
+    let input = "surname: Pan\nage: 12"
+    var result: Person
+    expect(YamlConstructionError):
+      load(input, result)
+
+  test "Load custom object - duplicate field":
+    let input = "firstnamechar: P\nsurname: Pan\nage: 12\nsurname: Pan"
+    var result: Person
+    expect(YamlConstructionError):
+      load(input, result)
 
   test "Load sequence with explicit tags":
     let input = newStringStream("--- !nim:system:seq(" &
@@ -395,6 +431,12 @@ suite "Serialization":
     kind: akDog
   - 
     barkometer: 13""", output
+
+  test "Load custom variant object - missing field":
+    let input = "{name: Bastet, kind: akCat}"
+    var result: Animal
+    expect(YamlConstructionError):
+      load(input, result)
 
   test "Dump cyclic data structure":
     var
