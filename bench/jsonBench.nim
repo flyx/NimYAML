@@ -1,8 +1,8 @@
-import "../yaml", common
+import "../yaml", commonBench
 
 from nimlets_yaml import objKind
 
-import math, strutils, stopwatch, terminal, algorithm, random
+import math, strutils, stopwatch, terminal, algorithm, random, json
 
 proc cmp(left, right: clock): int = cmp(left.nanoseconds(), right.nanoseconds()) 
 

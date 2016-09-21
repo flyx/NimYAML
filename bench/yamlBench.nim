@@ -1,5 +1,5 @@
-import "../yaml", common
-import math, strutils, stopwatch, terminal, algorithm, random
+import "../yaml", commonBench
+import math, strutils, stopwatch, terminal, algorithm, random, streams
 
 from nimlets_yaml import objKind
 
@@ -153,10 +153,10 @@ block:
         let res = loadDOM(yaml100k)
         assert res.root.kind == yMapping
 
-block:
-    multibench(cYaml1m, 2):
-        let res = loadDOM(yaml1m)
-        assert res.root.kind == yMapping
+#block:
+#    multibench(cYaml1m, 2):
+#        let res = loadDOM(yaml1m)
+#        assert res.root.kind == yMapping
 
 block:
     multibench(cLibYaml1k, 100):

@@ -67,7 +67,7 @@ type
     ## available from ``parent``.
 
 proc noLastContext(s: YamlStream, line, column: var int,
-    lineContent: var string): bool =
+    lineContent: var string): bool {.raises: [].} =
   (line, column, lineContent) = (-1, -1, "")
   result = false
 
