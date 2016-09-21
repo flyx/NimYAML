@@ -1,8 +1,20 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## ===============
+## Module yaml.dom
+## ===============
+##
+## This is the DOM API, which enables you to load YAML into a tree-like
+## structure. It can also dump the structure back to YAML. Formally, it
+## represents the *Representation Graph* as defined in the YAML specification.
+##
+## The main interface of this API are ``loadDOM`` and ``dumpDOM``. The other
+## exposed procs are low-level and useful if you want to load or generate parts
+## of a ``YamlStream``.
 
 import tables, streams
 import common, stream, taglib, serialization, ../private/internal, parser,

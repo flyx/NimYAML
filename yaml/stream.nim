@@ -1,8 +1,16 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## ==================
+## Module yaml.stream
+## ==================
+##
+## The stream API provides the basic data structure on which all low-level APIs
+## operate. It is not named ``streams`` to not confuse it with the modle in the
+## stdlib with that name.
 
 import common, ../private/internal
 import taglib

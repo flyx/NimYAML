@@ -1,8 +1,14 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## =================
+## Module yaml.hints
+## =================
+##
+## The hints API enables you to guess the type of YAML scalars.
 
 import macros
 import ../private/internal

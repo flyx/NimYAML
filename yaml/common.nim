@@ -4,6 +4,13 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+## ==================
+## Module yaml.common
+## ==================
+##
+## This module hosts some types which could not be placed in other modules
+## because of inter-module dependencies.
+
 import hashes
 
 type

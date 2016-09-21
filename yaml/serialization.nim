@@ -1,8 +1,20 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## =========================
+## Module yaml.serialization
+## =========================
+##
+## This is the most high-level API of NimYAML. It enables you to parse YAML
+## character streams directly into native YAML types and vice versa. It builds
+## on top of the low-level parser and presenter APIs.
+##
+## It is possible to define custom construction and serialization procs for any
+## type. Please consult the serialization guide on the NimYAML website for more
+## information.
 
 import tables, typetraits, strutils, macros, streams
 import parser, common, taglib, presenter, stream, ../private/internal, hints

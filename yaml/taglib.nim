@@ -1,8 +1,16 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## ==================
+## Module yaml.taglib
+## ==================
+##
+## The taglib API enables you to query real names of tags emitted by the parser
+## and create own tags. It also enables you to define tags for types used with
+## the serialization API.
 
 import tables, macros
 import common

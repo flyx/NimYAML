@@ -1,8 +1,15 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## ==================
+## Module yaml.parser
+## ==================
+##
+## This is the low-level parser API. A ``YamlParser`` enables you to parse any
+## non-nil string or Stream object as YAML character stream.
 
 import tables, strutils, macros, streams
 import common, taglib, stream, ../private/lex, ../private/internal

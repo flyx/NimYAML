@@ -1,8 +1,14 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## =====================
+## Module yaml.presenter
+## =====================
+##
+## This is the presenter API, used for generating YAML character streams.
 
 import streams, queues, strutils
 import common, taglib, stream, ../private/internal, hints, parser, stream

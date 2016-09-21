@@ -1,8 +1,15 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
+
+## ==================
+## Module yaml.tojson
+## ==================
+##
+## The tojson API enables you to parser a YAML character stream into the JSON
+## structures provided by Nim's stdlib.
 
 import json, streams, strutils, tables
 import common, taglib, hints, serialization, stream, ../private/internal, parser
