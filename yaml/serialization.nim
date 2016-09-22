@@ -69,7 +69,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   ## node which will be resolved using the ``ConstructionContext``.
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext)
-    {.raises: [YamlStreamError].}
+    {.raises: [].}
   ## Represents an arbitrary Nim reference value as YAML object. The object
   ## may be represented as alias node if it is already present in the
   ## ``SerializationContext``.
@@ -78,8 +78,7 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext)
     {.inline, raises: [].}
   ## Represents a Nim string. Supports nil strings.
 
-proc representChild*[O](value: O, ts: TagStyle,
-                        c: SerializationContext) {.raises: [YamlStreamError].}
+proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext)
   ## Represents an arbitrary Nim object as YAML object.
 
 proc newConstructionContext*(): ConstructionContext =
@@ -335,7 +334,7 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
   discard s.next()
 
 proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
-    c: SerializationContext, tag: TagId) {.raises: [YamlStreamError].} =
+    c: SerializationContext, tag: TagId) =
   ## represents a Nim seq as YAML sequence
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   c.put(startSeqEvent(tag))
@@ -366,7 +365,7 @@ proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
     raise newException(YamlConstructionError, "Too much array values")
 
 proc representObject*[I, T](value: array[I, T], ts: TagStyle,
-    c: SerializationContext, tag: TagId) {.raises: [YamlStreamError].} =
+    c: SerializationContext, tag: TagId) =
   ## represents a Nim array as YAML sequence
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   c.put(startSeqEvent(tag))
@@ -404,7 +403,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
   discard s.next()
 
 proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
-    c: SerializationContext, tag: TagId) {.raises:[YamlStreamError].} =
+    c: SerializationContext, tag: TagId) =
   ## represents a Nim Table as YAML mapping
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   c.put(startMapEvent(tag))
@@ -450,7 +449,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
   discard s.next()
 
 proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
-    c: SerializationContext, tag: TagId) {.raises: [YamlStreamError].} =
+    c: SerializationContext, tag: TagId) =
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   c.put(startSeqEvent(tag))
   for key, value in value.pairs:
@@ -655,7 +654,7 @@ proc constructObject*[O: object|tuple](
   else: ensureAllFieldsPresent(O, result, matched)
 
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
-    c: SerializationContext, tag: TagId) {.raises: [YamlStreamError].} =
+    c: SerializationContext, tag: TagId) =
   ## represents a Nim object or tuple as YAML mapping
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   when isVariantObject(O): c.put(startSeqEvent(tag, yAnchorNone))
@@ -985,8 +984,7 @@ proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
   if a != yAnchorNone: a = q.getOrDefault(cast[pointer](a))
 
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
-                   a: AnchorStyle = asTidy): YamlStream
-    {.raises: [YamlStreamError].} =
+                   a: AnchorStyle = asTidy): YamlStream =
   ## Represents a Nim value as ``YamlStream``
   var bys = newBufferYamlStream()
   var context = newSerializationContext(a, proc(e: YamlStreamEvent) =
@@ -1020,8 +1018,7 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
 proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions):
-    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-                      YamlStreamError].} =
+    string =
   ## Dump a Nim value as YAML into a string
   var events = represent(value,
       if options.style == psCanonical: tsAll else: tagStyle,

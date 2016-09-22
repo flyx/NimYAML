@@ -215,10 +215,6 @@ proc handleAnchor(c: ParserContext) {.raises: [YamlParserError].} =
   c.lex.buf.setLen(0)
   c.advance()
 
-proc continueMultilineScalar(c: ParserContext) {.raises: [].} =
-  c.lex.buf.add(if c.newlines == 1: " " else: repeat('\l', c.newlines - 1))
-  c.newlines = 0
-
 proc handleTagHandle(c: ParserContext) {.raises: [YamlParserError].} =
   if c.level.kind != fplUnknown: raise c.generateError("Unexpected tag handle")
   if c.tag != yTagQuestionMark:
@@ -413,7 +409,7 @@ macro parserState(name: untyped, impl: untyped): typed =
 
 parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
              scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
-             afterDocument, closeStream, closeMoreIndentedLevels,
+             afterDocument, closeMoreIndentedLevels,
              emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
              leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
 
@@ -722,20 +718,6 @@ parserState afterDocument:
   else:
     c.initDocValues()
     state = initial
-
-parserState closeStream:
-  case c.level.kind
-  of fplDocument: discard
-  else:
-    case c.endLevel(e)
-    of lerNothing: discard
-    of lerOne: result = true
-    of lerAdditionalMapEnd: return true
-    c.level = c.ancestry.pop()
-    if result: return
-  e = endDocEvent()
-  result = true
-  c.isFinished = true
 
 parserState closeMoreIndentedLevels:
   if c.ancestry.len > 0:
