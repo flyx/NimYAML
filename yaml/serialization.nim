@@ -480,33 +480,25 @@ proc yamlTag*(T: typedesc[tuple]):
   try: serializationTagLibrary.tags[uri]
   except KeyError: serializationTagLibrary.registerUri(uri)
 
-proc fieldAnalyzer(t: typedesc): tuple[sections, maxlen: int] {.compileTime.} =
-  result = (1, 0)
+proc fieldCount(t: typedesc): int {.compileTime.} =
+  result = 0
   let tDesc = getType(getType(t)[1])
-  echo "fieldAnalyzer: " & tDesc.treeRepr
   if tDesc.kind == nnkBracketExpr:
     # tuple
-    result.maxlen = tDesc.len - 1
+    result = tDesc.len - 1
   else:
     # object
-    var outerLen = 0
     for child in tDesc[2].children:
-      inc(outerLen)
+      inc(result)
       if child.kind == nnkRecCase:
-        inc(result.sections)
-        var innerLen = 0
         for bIndex in 1..<len(child):
-          inc(innerLen, child[bIndex][1].len)
-        result.maxlen = max(result.maxlen, innerLen)
-    result.maxlen = max(result.maxlen, outerLen)
+          inc(result, child[bIndex][1].len)
 
 macro matchMatrix(t: typedesc): untyped =
   result = newNimNode(nnkBracket)
-  let details = fieldAnalyzer(t)
-  echo "details of " & typetraits.name(t) & ": " & $details
-  for section in 0..<details.sections:
-    for item in 0..<details.maxlen:
-      result.add(newLit(false))
+  let numFields = fieldCount(t)
+  for i in 0..<numFields:
+    result.add(newLit(false))
 
 proc checkDuplicate(t: typedesc, name: string, i: int, matched: NimNode):
     NimNode {.compileTime.} =
@@ -530,34 +522,26 @@ macro ensureAllFieldsPresent(t: typedesc, o: typed, matched: typed): typed =
   result = newStmtList()
   let
     tDesc = getType(getType(t)[1])
-    details = fieldAnalyzer(t)
-  var outerField = 0
-  var section = 0
+  var field = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
-      result.add(checkMissing(t, $child[0], outerField, matched))
-      inc(section)
-      var innerField = 0
+      result.add(checkMissing(t, $child[0], field, matched))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         for item in child[bIndex][1].children:
-          discChecks.add(checkMissing(t, $item, section * details.maxlen +
-              innerField, matched))
-          inc(innerField)
+          inc(field)
+          discChecks.add(checkMissing(t, $item, field, matched))
         result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
             "==", child[bIndex][0]), discChecks)))
     else:
-      result.add(checkMissing(t, $child, outerField, matched))
-    inc(outerField)
+      result.add(checkMissing(t, $child, field, matched))
+    inc(field)
 
 macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
                            name: untyped, o: untyped, matched: untyped): typed =
-  let
-    tDesc = getType(getType(t)[1])
-    details = fieldAnalyzer(t)
+  let tDesc = getType(getType(t)[1])
   result = newNimNode(nnkCaseStmt).add(name)
   var fieldIndex = 0
-  var sectionIndex = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
@@ -573,11 +557,10 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
           newAssignment(discriminant, newIdentNode("value")),
           markAsFound(fieldIndex, matched)))
       result.add(disOb)
-      inc(sectionIndex)
-      var innerFieldIndex = 0
       for bIndex in 1 .. len(child) - 1:
         let discTest = infix(discriminant, "==", child[bIndex][0])
         for item in child[bIndex][1].children:
+          inc(fieldIndex)
           yAssert item.kind == nnkSym
           var ob = newNimNode(nnkOfBranch).add(newStrLitNode($item))
           let field = newDotExpr(o, newIdentNode($item))
@@ -587,12 +570,9 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
               newCall("newException", newIdentNode("YamlConstructionError"),
               infix(newStrLitNode("Field " & $item & " not allowed for " &
               $child[0] & " == "), "&", prefix(discriminant, "$"))))))
-          ob.add(newStmtList(checkDuplicate(t, $item,
-              sectionIndex * details.maxlen + innerFieldIndex, matched), ifStmt,
-              markAsFound(sectionIndex * details.maxlen + innerFieldIndex,
-              matched)))
+          ob.add(newStmtList(checkDuplicate(t, $item, fieldIndex, matched),
+              ifStmt, markAsFound(fieldIndex, matched)))
           result.add(ob)
-          inc(innerFieldIndex)
     else:
       yAssert child.kind == nnkSym
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
@@ -607,7 +587,6 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
       newCall("newException", newIdentNode("YamlConstructionError"),
       infix(newLit("While constructing " & typetraits.name(t) &
              ": Unknown field: "), "&", name)))))
-  echo result.repr
 
 proc isVariantObject(t: typedesc): bool {.compileTime.} =
   let tDesc = getType(t)
@@ -620,7 +599,6 @@ proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim object or tuple from a YAML mapping
-  static: echo "constructOb[" & typetraits.name(O) & "]"
   var matched = matchMatrix(O)
   var e = s.next()
   const
