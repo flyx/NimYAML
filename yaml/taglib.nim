@@ -12,10 +12,21 @@
 ## and create own tags. It also enables you to define tags for types used with
 ## the serialization API.
 
-import tables, macros
-import common
+import tables, macros, hashes
 
 type
+  TagId* = distinct int ## \
+    ## A ``TagId`` identifies a tag URI, like for example
+    ## ``"tag:yaml.org,2002:str"``. The URI corresponding to a ``TagId`` can
+    ## be queried from the `TagLibrary <#TagLibrary>`_ which was
+    ## used to create this ``TagId``; e.g. when you parse a YAML character
+    ## stream, the ``TagLibrary`` of the parser is the one which generates
+    ## the resulting ``TagId`` s.
+    ##
+    ## URI strings are mapped to ``TagId`` s for efficiency  reasons (you
+    ## do not need to compare strings every time) and to be able to
+    ## discover unknown tag URIs early in the parsing process.
+
   TagLibrary* = ref object
     ## A ``TagLibrary`` maps tag URIs to ``TagId`` s.
     ##
@@ -87,10 +98,10 @@ const
     ## The first ``TagId`` which should be assigned to an URI that does not
     ## exist in the ``YamlTagLibrary`` which is used for parsing.
 
-  yAnchorNone*: AnchorId = (-1).AnchorId ## \
-    ## yielded when no anchor was defined for a YAML node
-
   yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
+
+proc `==`*(left, right: TagId): bool {.borrow.}
+proc hash*(id: TagId): Hash {.borrow.}
 
 proc `$`*(id: TagId): string {.raises: [].} =
   case id

@@ -17,7 +17,7 @@
 ## of a ``YamlStream``.
 
 import tables, streams
-import common, stream, taglib, serialization, ../private/internal, parser,
+import stream, taglib, serialization, ../private/internal, parser,
        presenter
 
 type

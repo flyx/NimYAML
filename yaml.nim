@@ -37,10 +37,8 @@
 ##   the presenter.
 ## * The hints API in `hints <yaml/hints.html>`_ provides a simple proc for
 ##   guessing the type of a scalar value.
-## * Finally, some basic types have been placed in `common <yaml/common.html>`_
-##   because of dependencies between the modules.
 
-import yaml.common, yaml.dom, yaml.hints, yaml.parser, yaml.presenter,
+import yaml.dom, yaml.hints, yaml.parser, yaml.presenter,
        yaml.serialization, yaml.stream, yaml.taglib, yaml.tojson
-export yaml.common, yaml.dom, yaml.hints, yaml.parser, yaml.presenter,
+export yaml.dom, yaml.hints, yaml.parser, yaml.presenter,
        yaml.serialization, yaml.stream, yaml.taglib, yaml.tojson

@@ -17,7 +17,7 @@
 ## information.
 
 import tables, typetraits, strutils, macros, streams
-import parser, common, taglib, presenter, stream, ../private/internal, hints
+import parser, taglib, presenter, stream, ../private/internal, hints
 
 type
   SerializationContext* = ref object

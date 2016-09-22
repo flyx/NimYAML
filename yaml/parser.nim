@@ -12,7 +12,7 @@
 ## non-nil string or Stream object as YAML character stream.
 
 import tables, strutils, macros, streams
-import common, taglib, stream, ../private/lex, ../private/internal
+import taglib, stream, ../private/lex, ../private/internal
 
 type
   WarningCallback* = proc(line, column: int, lineContent: string,

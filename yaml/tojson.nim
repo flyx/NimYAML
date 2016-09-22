@@ -12,7 +12,7 @@
 ## structures provided by Nim's stdlib.
 
 import json, streams, strutils, tables
-import common, taglib, hints, serialization, stream, ../private/internal, parser
+import taglib, hints, serialization, stream, ../private/internal, parser
 
 type Level = tuple[node: JsonNode, key: string]
 

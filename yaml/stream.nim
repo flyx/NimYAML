@@ -12,10 +12,18 @@
 ## operate. It is not named ``streams`` to not confuse it with the modle in the
 ## stdlib with that name.
 
-import common, ../private/internal
-import taglib
+import hashes
+import ../private/internal, taglib
 
 type
+  AnchorId* = distinct int ## \
+    ## An ``AnchorId`` identifies an anchor in the current document. It
+    ## becomes invalid as soon as the current document scope is invalidated
+    ## (for example, because the parser yielded a ``yamlEndDocument``
+    ## event). ``AnchorId`` s exists because of efficiency, much like
+    ## ``TagId`` s. The actual anchor name is a presentation detail and
+    ## cannot be queried by the user.
+
   YamlStreamEventKind* = enum
     ## Kinds of YAML events that may occur in an ``YamlStream``. Event kinds
     ## are discussed in `YamlStreamEvent <#YamlStreamEvent>`_.
@@ -73,6 +81,14 @@ type
     ## Exception that may be raised by a ``YamlStream`` when the underlying
     ## backend raises an exception. The error that has occurred is
     ## available from ``parent``.
+
+const
+  yAnchorNone*: AnchorId = (-1).AnchorId ## \
+    ## yielded when no anchor was defined for a YAML node
+
+proc `==`*(left, right: AnchorId): bool {.borrow.}
+proc `$`*(id: AnchorId): string {.borrow.}
+proc hash*(id: AnchorId): Hash {.borrow.}
 
 proc noLastContext(s: YamlStream, line, column: var int,
     lineContent: var string): bool {.raises: [].} =
