@@ -25,8 +25,8 @@ Intermediate Representation
 ===========================
 
 The base of all YAML processing with NimYAML is the
-`YamlStream <yaml.html#YamlStream>`_. This is basically an iterator over
-`YamlStreamEvent <yaml.html#YamlStreamEvent>`_ objects. Every proc that
+`YamlStream <yaml.stream.html#YamlStream>`_. This is basically an iterator over
+`YamlStreamEvent <yaml.stream.html#YamlStreamEvent>`_ objects. Every proc that
 represents a single stage of the loading or dumping process will either take a
 ``YamlStream`` as input or return a ``YamlStream``. Procs that implement the
 whole process in one step hide the ``YamlStream`` from the user. Every proc that
@@ -45,16 +45,17 @@ Loading YAML
 ============
 
 If you want to load YAML character data directly into a native Nim variable, you
-can use `load <yaml.html#load,Stream,K>`_. This is the easiest and recommended
-way to load YAML data. The following paragraphs will explain the steps involved.
+can use `load <yaml.serialization.html#load,,K>`_. This is the easiest and
+recommended way to load YAML data. This section gives an overview about how
+``load`` is implemented. It is absolutely possible to reimplement the loading
+step using the low-level API.
 
-For parsing, a `YamlParser <yaml.html#YamlParser>`_ object is needed. This
-object stores some state while parsing that may be useful for error reporting to
-the user. The
-`parse <yaml.html#parse,YamlParser,Stream>`_ proc implements the YAML processing
-step of the same name. All syntax errors in the input character stream are
-processed by ``parse``, which will raise a ``YamlParserError`` if it encounters
-a syntax error.
+For parsing, a `YamlParser <yaml.parser.html#YamlParser>`_ object is needed.
+This object stores some state while parsing that may be useful for error
+reporting to the user. The `parse <yaml.parser.html#parse,YamlParser,Stream>`_
+proc implements the YAML processing step of the same name. All syntax errors in
+the input character stream are processed by ``parse``, which will raise a
+``YamlParserError`` if it encounters a syntax error.
 
 Transforming a ``YamlStream`` to a native YAML object is done via
 ``construct``. It skips the ``compose`` step for efficiency reasons. As Nim is
@@ -67,19 +68,21 @@ Dumping YAML
 ============
 
 Dumping is preferredly done with
-`dump <yaml.html#dump,K,Stream,PresentationStyle,TagStyle,AnchorStyle,int>`_,
-which serializes a native Nim variable to a character stream. Like ``load``, you
-can use the steps involved separately.
+`dump <yaml.serialization.html#dump,K,Stream,TagStyle,AnchorStyle,PresentationOptions>`_,
+which serializes a native Nim variable to a character stream. As with ``load``,
+the following paragraph describes how ``dump`` is implemented using the
+low-level API.
 
-You transform a variable into a ``YamlStream`` with
-`represent <yaml.html#represent,T,TagStyle,AnchorStyle>`_. Depending on the
-``AnchorStyle`` you specify, this will transform ``ref`` variables with multiple
-instances into anchored elements and aliases (for ``asTidy`` and ``asAlways``)
-or write the same element into all places it occurs (for ``asNone``). Be aware
-that if you use ``asNone``, the value you serialize might not round-trip.
+A Nim value is transformed into a ``YamlStream`` with
+`represent <yaml.serialization.html#represent,T,TagStyle,AnchorStyle>`_.
+Depending on the ``AnchorStyle`` you specify, this will transform ``ref``
+variables with multiple instances into anchored elements and aliases (for
+``asTidy`` and ``asAlways``) or write the same element into all places it
+occurs (for ``asNone``). Be aware that if you use ``asNone``, the value you
+serialize might not round-trip.
 
 Transforming a ``YamlStream`` into YAML character data is done with
-`present <yaml.html#present,YamlStream,Stream,TagLibrary,PresentationStyle,int>`_.
+`present <yaml.presenter.html#present,YamlStream,Stream,TagLibrary,PresentationOptions>`_.
 You can choose from multiple presentation styles. ``psJson`` is not able to
 process some features of ``YamlStream`` s, the other styles support all features
 and are guaranteed to round-trip to the same ``YamlStream`` if you parse the
@@ -90,11 +93,12 @@ The Document Object Model
 
 Much like XML, YAML also defines a *document object model*. If you cannot or do
 not want to load a YAML character stream to native Nim types, you can instead
-load it into a ``YamlDocument``. This ``YamlDocument`` can also be serialized
-into a YAML character stream. All tags will be preserved exactly as they are
-when transforming from and to a ``YamlDocument``. The only important thing to
-remember is that when a value has no tag, it will get the non-specific tag
-``"!"`` for quoted scalars and ``"?"`` for all other nodes.
+load it into a `YamlDocument <yaml.dom.html#YamlDocument>`_. This
+``YamlDocument`` can also be serialized into a YAML character stream. All tags
+will be preserved exactly as they are when transforming from and to a
+``YamlDocument``. The only important thing to remember is that when a value has
+no tag, it will get the non-specific tag ``"!"`` for quoted scalars and ``"?"``
+for all other nodes.
 
 While tags are preserved, anchors will be resolved during loading and re-added
 during serialization. It is allowed for a ``YamlNode`` to occur multiple times

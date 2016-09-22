@@ -8,10 +8,11 @@ Introduction
 NimYAML tries hard to make transforming YAML characters streams to native Nim
 types and vice versa as easy as possible. In simple scenarios, you might not
 need anything else than the two procs
-`dump <yaml.html#dump,K,Stream,PresentationStyle,TagStyle,AnchorStyle,int>`_ and
-`load <yaml.html#load,Stream,K>`_. On the other side, the process should be as
-customizable as possible to allow the user to tightly control how the generated
-YAML character stream will look and how a YAML character stream is interpreted.
+`dump <yaml.serialization.html#dump,K,Stream,TagStyle,AnchorStyle,PresentationOptions>`_
+and `load <yaml.serialization.html#load,,K>`_. On the other side, the process
+should be as customizable as possible to allow the user to tightly control how
+the generated YAML character stream will look and how a YAML character stream is
+interpreted.
 
 An important thing to remember in NimYAML is that unlike in interpreted
 languages like Ruby, Nim cannot load a YAML character stream without knowing the
@@ -42,7 +43,8 @@ added in the future.
 
 This also means that NimYAML is generally able to work with object, tuple and
 enum types defined in the standard library or a third-party library without
-further configuration.
+further configuration, given that all fields of the object are accessible at the
+code point where NimYAML's facilities are invoked.
 
 Scalar Types
 ------------
@@ -113,7 +115,7 @@ For an object or tuple type to be directly usable with NimYAML, the following
 conditions must be met:
 
 - Every type contained in the object/tuple must be supported
-- All fields of an object type must be accessible from the code position where 
+- All fields of an object type must be accessible from the code position where
   you call NimYAML. If an object has non-public member fields, it can only be
   processed in the module where it is defined.
 - The object may not have a generic parameter
@@ -141,7 +143,7 @@ For example, this type:
   type
     AnimalKind = enum
       akCat, akDog
-  
+
     Animal = object
       name: string
       case kind: AnimalKind
@@ -175,7 +177,7 @@ list in order to load it:
 
 .. code-block:: nim
   import yaml
-  
+
   type
     ContainerKind = enum
       ckInt, ckString, ckNone
@@ -187,9 +189,9 @@ list in order to load it:
         strVal: string
       of ckNone:
         discard
-  
+
   markAsImplicit(Container)
-  
+
   var
     list: seq[Container]
     s = newFileStream("in.yaml")
@@ -232,7 +234,7 @@ otherwise, it would be loaded as ``nil``.
 As you might have noticed in the example above, the YAML tag of a ``seq``
 depends on its generic type parameter. The same applies to ``Table``. So, a
 table that maps ``int8`` to string sequences would be presented with the tag
-``!nim:tables:Table(nim:system:int8,nim:system:seq(tag:yaml.org,2002:string))``. 
+``!nim:tables:Table(nim:system:int8,nim:system:seq(tag:yaml.org,2002:string))``.
 These tags are generated on the fly based on the types you instantiate
 ``Table`` or ``seq`` with.
 
