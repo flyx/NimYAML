@@ -56,6 +56,7 @@ type
     nextAnchorId: AnchorId
     newlines: int
     explicitFlowKey: bool
+    plainScalarStart: tuple[line, column: int]
 
   LevelEndResult = enum
     lerNothing, lerOne, lerAdditionalMapEnd
@@ -126,7 +127,6 @@ proc illegalToken(c: ParserContext, expected: string = ""):
   if expected.len > 0: msg.add(" (expected " & expected & ")")
   msg.add(": " & $c.lex.cur)
   result = c.generateError(msg)
-  echo result.line, ", ", result.column
 
 proc callCallback(c: ParserContext, msg: string) {.raises: [YamlParserError].} =
   try:
@@ -332,6 +332,14 @@ proc handleFlowPlainScalar(c: ParserContext) =
     c.advance()
   c.lex.newlines = 0
 
+proc lastTokenContext(s: YamlStream, line, column: var int,
+    lineContent: var string): bool =
+  let c = ParserContext(s)
+  line = c.lex.curStartPos.line
+  column = c.lex.curStartPos.column
+  lineContent = c.lex.getTokenLine(true)
+  result = true
+
 # --- macros for defining parser states ---
 
 template capitalize(s: string): string =
@@ -409,7 +417,7 @@ macro parserState(name: untyped, impl: untyped): typed =
 
 parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
              scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
-             afterDocument, closeMoreIndentedLevels,
+             afterDocument, closeMoreIndentedLevels, afterPlainScalarYield,
              emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
              leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
 
@@ -592,7 +600,7 @@ parserState blockObjectStart:
     state = scalarEnd
   of ltScalarPart:
     result = c.handleBlockItemStart(e)
-    let cachedPos = c.lex.curStartPos
+    c.plainScalarStart = c.lex.curStartPos
     while true:
       c.advance()
       case c.lex.cur
@@ -602,7 +610,6 @@ parserState blockObjectStart:
       of ltScalarPart: discard
       of ltEmptyLine: c.lex.newlines.inc()
       else: break
-    c.lex.curStartPos = cachedPos
     c.lex.newlines = 0
     state = plainScalarEnd
     stored = blockAfterObject
@@ -640,8 +647,18 @@ parserState scalarEnd:
 parserState plainScalarEnd:
   c.currentScalar(e)
   result = true
-  state = objectEnd
+  c.lastTokenContextImpl = proc(s: YamlStream, line, column: var int,
+      lineContent: var string): bool {.raises: [].} =
+    let c = ParserContext(s)
+    (line, column) = c.plainScalarStart
+    lineContent = c.lex.getTokenLine(c.plainScalarStart, true)
+    result = true
+  state = afterPlainScalarYield
   stored = blockAfterObject
+
+parserState afterPlainScalarYield:
+  c.lastTokenContextImpl = lastTokenContext
+  state = objectEnd
 
 parserState blockAfterObject:
   case c.lex.cur
@@ -1001,14 +1018,6 @@ parserState flowAfterObject:
     raise c.generateError("Unclosed flow content")
   else:
     raise c.generateError("Unexpected content (expected flow indicator)")
-
-proc lastTokenContext(s: YamlStream, line, column: var int,
-    lineContent: var string): bool =
-  let c = ParserContext(s)
-  line = c.lex.curStartPos.line
-  column = c.lex.curStartPos.column
-  lineContent = c.lex.getTokenLine(true)
-  result = true
 
 # --- parser initialization ---
 

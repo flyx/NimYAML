@@ -44,7 +44,8 @@ type
     folded: bool
     chomp: ChompType
     c: char
-    tokenLineGetter: proc(lex: YamlLexer, marker: bool): string {.raises: [].}
+    tokenLineGetter: proc(lex: YamlLexer, pos: tuple[line, column: int],
+                          marker: bool): string {.raises: [].}
     searchColonImpl: proc(lex: YamlLexer): bool
 
   YamlLexer* = ref YamlLexerObj
@@ -190,26 +191,26 @@ proc afterMark(lex: YamlLexer, t: typedesc[StringSource], m: int):
     int {.inline.} =
   lex.sSource.pos - m
 
-proc lineWithMarker(lex: YamlLexer, t: typedesc[BaseLexer], marker: bool):
-    string =
-  if lex.curStartPos.line == lex.blSource.lineNumber:
+proc lineWithMarker(lex: YamlLexer, pos: tuple[line, column: int],
+    t: typedesc[BaseLexer], marker: bool): string =
+  if pos.line == lex.blSource.lineNumber:
     result = lex.blSource.getCurrentLine(false)
-    if marker: result.add(spaces(lex.curStartPos.column - 1) & "^\n")
+    if marker: result.add(spaces(pos.column - 1) & "^\n")
   else: result = ""
 
-proc lineWithMarker(lex: YamlLexer, t: typedesc[StringSource], marker: bool):
-    string =
+proc lineWithMarker(lex: YamlLexer, pos: tuple[line, column: int],
+    t: typedesc[StringSource], marker: bool): string =
   var
     lineStartIndex = lex.sSource.pos
     lineEndIndex: int
     curLine = lex.sSource.line
-  if lex.curStartPos.line == curLine:
+  if pos.line == curLine:
     lineEndIndex = lex.sSource.pos
     while lex.sSource.src[lineEndIndex] notin lineEnd: inc(lineEndIndex)
   while true:
     while lineStartIndex >= 0 and lex.sSource.src[lineStartIndex] notin lineEnd:
       dec(lineStartIndex)
-    if curLine == lex.curStartPos.line:
+    if curLine == pos.line:
       inc(lineStartIndex)
       break
     let wasLF = lex.sSource.src[lineStartIndex] == '\l'
@@ -220,7 +221,7 @@ proc lineWithMarker(lex: YamlLexer, t: typedesc[StringSource], marker: bool):
       dec(lineEndIndex)
     dec(curLine)
   result = lex.sSource.src.substr(lineStartIndex, lineEndIndex - 1) & "\n"
-  if marker: result.add(spaces(lex.curStartPos.column - 1) & "^\n")
+  if marker: result.add(spaces(pos.column - 1) & "^\n")
 
 # lexer states
 
@@ -246,7 +247,7 @@ proc docEndAfterBlockScalar[T](lex: YamlLexer): bool
 proc tagHandle[T](lex: YamlLexer): bool
 proc anchor[T](lex: YamlLexer): bool
 proc alias[T](lex: YamlLexer): bool
-proc streamEnd(lex: YamlLexer): bool
+proc streamEnd[T](lex: YamlLexer): bool
 {.pop.}
 
 # implementation
@@ -371,8 +372,7 @@ proc expectLineEnd[T](lex: YamlLexer): bool =
       lex.advance(T)
       while lex.c notin lineEnd: lex.advance(T)
     of EndOfFile:
-      startToken[T](lex)
-      lex.nextState = streamEnd
+      lex.nextState = streamEnd[T]
       break
     of '\l':
       lex.lexLF(T)
@@ -857,7 +857,7 @@ proc blockScalarLineStart[T](lex: YamlLexer, recentWasMoreIndented: var bool):
         lex.lexCR(T)
         lex.indentation = 0
       of EndOfFile:
-        lex.nextState = streamEnd
+        lex.nextState = streamEnd[T]
         return false
       of ' ', '\t':
         recentWasMoreIndented = true
@@ -886,7 +886,7 @@ proc blockScalar[T](lex: YamlLexer): bool =
           lex.lexCR(T)
           lex.newlines.inc()
         of EndOfFile:
-          lex.nextState = streamEnd
+          lex.nextState = streamEnd[T]
           break outer
         else:
           if lex.blockScalarIndent <= lex.indentation:
@@ -1032,13 +1032,15 @@ proc alias[T](lex: YamlLexer): bool =
   lex.cur = ltAlias
   result = true
 
-proc streamEnd(lex: YamlLexer): bool =
+proc streamEnd[T](lex: YamlLexer): bool =
   debug("lex: streamEnd")
+  startToken[T](lex)
   lex.cur = ltStreamEnd
   result = true
 
-proc tokenLine[T](lex: YamlLexer, marker: bool): string =
-  result = lex.lineWithMarker(T, marker)
+proc tokenLine[T](lex: YamlLexer, pos: tuple[line, column: int], marker: bool):
+    string =
+  result = lex.lineWithMarker(pos, T, marker)
 
 proc searchColon[T](lex: YamlLexer): bool =
   var flowDepth = if lex.cur in [ltBraceOpen, ltBracketOpen]: 1 else: 0
@@ -1180,7 +1182,11 @@ proc endBlockScalar*(lex: YamlLexer) =
   lex.folded = true
 
 proc getTokenLine*(lex: YamlLexer, marker: bool = true): string =
-  result = lex.tokenLineGetter(lex, marker)
+  result = lex.tokenLineGetter(lex, lex.curStartPos, marker)
+
+proc getTokenLine*(lex: YamlLexer, pos: tuple[line, column: int],
+    marker: bool = true): string =
+  result = lex.tokenLineGetter(lex, pos, marker)
 
 proc isImplicitKeyStart*(lex: YamlLexer): bool =
   result = lex.searchColonImpl(lex)

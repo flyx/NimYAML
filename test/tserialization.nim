@@ -69,6 +69,16 @@ template assertStringEqual(expected, actual: string) =
       echo "expected:\n", expected, "\nactual:\n", actual
       assert(false)
 
+template expectConstructionError(l, c: int, body: typed) =
+  try:
+    body
+    echo "Expected YamlConstructionError, but none was raised!"
+    fail()
+  except YamlConstructionError:
+    let e = (ref YamlConstructionError)(getCurrentException())
+    doAssert l == e.line, "Expected error line " & $l & ", was " & $e.line
+    doAssert c == e.column, "Expected error column " & $c & ", was " & $e.column
+
 proc newNode(v: string): ref Node =
   new(result)
   result.value = v
@@ -305,19 +315,19 @@ suite "Serialization":
   test "Load Tuple - unknown field":
     let input = "str: value\nfoo: bar\ni: 42\nb: true"
     var result: MyTuple
-    expect(YamlConstructionError):
+    expectConstructionError(2, 1):
       load(input, result)
 
   test "Load Tuple - missing field":
     let input = "str: value\nb: true"
     var result: MyTuple
-    expect(YamlConstructionError):
+    expectConstructionError(2, 8):
       load(input, result)
 
   test "Load Tuple - duplicate field":
     let input = "str: value\ni: 42\nb: true\nb: true"
     var result: MyTuple
-    expect(YamlConstructionError):
+    expectConstructionError(4, 1):
       load(input, result)
 
   test "Load Multiple Documents":
@@ -350,21 +360,21 @@ suite "Serialization":
         "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
 
   test "Load custom object - unknown field":
-    let input = "firstnamechar: P\nsurname: Pan\nage: 12\noccupation: free"
+    let input = "  firstnamechar: P\n  surname: Pan\n  age: 12\n  occupation: free"
     var result: Person
-    expect(YamlConstructionError):
+    expectConstructionError(4, 3):
       load(input, result)
 
   test "Load custom object - missing field":
-    let input = "surname: Pan\nage: 12"
+    let input = "surname: Pan\nage: 12\n  "
     var result: Person
-    expect(YamlConstructionError):
+    expectConstructionError(3, 3):
       load(input, result)
 
   test "Load custom object - duplicate field":
     let input = "firstnamechar: P\nsurname: Pan\nage: 12\nsurname: Pan"
     var result: Person
-    expect(YamlConstructionError):
+    expectConstructionError(4, 1):
       load(input, result)
 
   test "Load sequence with explicit tags":
@@ -433,9 +443,9 @@ suite "Serialization":
     barkometer: 13""", output
 
   test "Load custom variant object - missing field":
-    let input = "{name: Bastet, kind: akCat}"
+    let input = "[{name: Bastet}, {kind: akCat}]"
     var result: Animal
-    expect(YamlConstructionError):
+    expectConstructionError(1, 32):
       load(input, result)
 
   test "Dump cyclic data structure":
