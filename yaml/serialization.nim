@@ -510,19 +510,19 @@ macro matchMatrix(t: typedesc): untyped =
   for i in 0..<numFields:
     result.add(newLit(false))
 
-proc checkDuplicate(s: NimNode, t: typedesc, name: string, i: int,
+proc checkDuplicate(s: NimNode, tName: string, name: string, i: int,
                     matched: NimNode): NimNode {.compileTime.} =
   result = newIfStmt((newNimNode(nnkBracketExpr).add(matched, newLit(i)),
       newNimNode(nnkRaiseStmt).add(newCall(bindSym("constructionError"), s,
-        newLit("While constructing " & typetraits.name(t) &
-               ": Duplicate field: " & escape(name))))))
+      newLit("While constructing " & tName & ": Duplicate field: " &
+      escape(name))))))
 
-proc checkMissing(s: NimNode, t: typedesc, name: string, i: int,
+proc checkMissing(s: NimNode, tName: string, name: string, i: int,
                   matched: NimNode): NimNode {.compileTime.} =
   result = newIfStmt((newCall("not", newNimNode(nnkBracketExpr).add(matched,
       newLit(i))), newNimNode(nnkRaiseStmt).add(newCall(
       bindSym("constructionError"), s, newLit("While constructing " &
-      typetraits.name(t) & ": Missing field: " & escape(name))))))
+      tName & ": Missing field: " & escape(name))))))
 
 proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
   newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
@@ -532,25 +532,30 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
                              matched: typed): typed =
   result = newStmtList()
   let
-    tDesc = getType(getType(t)[1])
+    tDecl = getType(t)
+    tName = $tDecl[1]
+    tDesc = getType(tDecl[1])
   var field = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
-      result.add(checkMissing(s, t, $child[0], field, matched))
+      result.add(checkMissing(s, tName, $child[0], field, matched))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         for item in child[bIndex][1].children:
           inc(field)
-          discChecks.add(checkMissing(s, t, $item, field, matched))
+          discChecks.add(checkMissing(s, tName, $item, field, matched))
         result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
             "==", child[bIndex][0]), discChecks)))
     else:
-      result.add(checkMissing(s, t, $child, field, matched))
+      result.add(checkMissing(s, tName, $child, field, matched))
     inc(field)
 
 macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
                            name: untyped, o: untyped, matched: untyped): typed =
-  let tDesc = getType(getType(t)[1])
+  let
+    tDecl = getType(t)
+    tName = $tDecl[1]
+    tDesc = getType(tDecl[1])
   result = newNimNode(nnkCaseStmt).add(name)
   var fieldIndex = 0
   for child in tDesc[2].children:
@@ -560,7 +565,7 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
         discType = newCall("type", discriminant)
       var disOb = newNimNode(nnkOfBranch).add(newStrLitNode($child[0]))
       disOb.add(newStmtList(
-          checkDuplicate(stream, t, $child[0], fieldIndex, matched),
+          checkDuplicate(stream, tName, $child[0], fieldIndex, matched),
           newNimNode(nnkVarSection).add(
               newNimNode(nnkIdentDefs).add(
                   newIdentNode("value"), discType, newEmptyNode())),
@@ -581,7 +586,7 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
               newCall(bindSym("constructionError"), stream,
               infix(newStrLitNode("Field " & $item & " not allowed for " &
               $child[0] & " == "), "&", prefix(discriminant, "$"))))))
-          ob.add(newStmtList(checkDuplicate(stream, t, $item, fieldIndex,
+          ob.add(newStmtList(checkDuplicate(stream, tName, $item, fieldIndex,
               matched), ifStmt, markAsFound(fieldIndex, matched)))
           result.add(ob)
     else:
@@ -589,15 +594,15 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
       let field = newDotExpr(o, newIdentNode($child))
       ob.add(newStmtList(
-          checkDuplicate(stream, t, $child, fieldIndex, matched),
+          checkDuplicate(stream, tName, $child, fieldIndex, matched),
           newCall("constructChild", stream, context, field),
           markAsFound(fieldIndex, matched)))
       result.add(ob)
     inc(fieldIndex)
   result.add(newNimNode(nnkElse).add(newNimNode(nnkRaiseStmt).add(
       newCall(bindSym("constructionError"), stream,
-      infix(newLit("While constructing " & typetraits.name(t) &
-             ": Unknown field: "), "&", name)))))
+      infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
+      newCall(bindSym("escape"), name))))))
 
 proc isVariantObject(t: typedesc): bool {.compileTime.} =
   let tDesc = getType(t)
@@ -659,7 +664,7 @@ proc constructObject*[O: object|tuple](
     for fname, value in fieldPairs(result):
       if not matched[i]:
         raise s.constructionError("While constructing " &
-            typetraits.name(O) & ": Field missing: " & escape(fname))
+            typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
   else: ensureAllFieldsPresent(s, O, result, matched)
 

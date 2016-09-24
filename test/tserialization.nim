@@ -69,15 +69,17 @@ template assertStringEqual(expected, actual: string) =
       echo "expected:\n", expected, "\nactual:\n", actual
       assert(false)
 
-template expectConstructionError(l, c: int, body: typed) =
+template expectConstructionError(li, co: int, message: string, body: typed) =
   try:
     body
     echo "Expected YamlConstructionError, but none was raised!"
     fail()
   except YamlConstructionError:
     let e = (ref YamlConstructionError)(getCurrentException())
-    doAssert l == e.line, "Expected error line " & $l & ", was " & $e.line
-    doAssert c == e.column, "Expected error column " & $c & ", was " & $e.column
+    doAssert li == e.line, "Expected error line " & $li & ", was " & $e.line
+    doAssert co == e.column, "Expected error column " & $co & ", was " & $e.column
+    doAssert message == e.msg, "Expected error message " & escape(message) &
+        ", got " & escape(e.msg)
 
 proc newNode(v: string): ref Node =
   new(result)
@@ -315,19 +317,19 @@ suite "Serialization":
   test "Load Tuple - unknown field":
     let input = "str: value\nfoo: bar\ni: 42\nb: true"
     var result: MyTuple
-    expectConstructionError(2, 1):
+    expectConstructionError(2, 1, "While constructing MyTuple: Unknown field: \"foo\""):
       load(input, result)
 
   test "Load Tuple - missing field":
     let input = "str: value\nb: true"
     var result: MyTuple
-    expectConstructionError(2, 8):
+    expectConstructionError(2, 8, "While constructing MyTuple: Missing field: \"i\""):
       load(input, result)
 
   test "Load Tuple - duplicate field":
     let input = "str: value\ni: 42\nb: true\nb: true"
     var result: MyTuple
-    expectConstructionError(4, 1):
+    expectConstructionError(4, 1, "While constructing MyTuple: Duplicate field: \"b\""):
       load(input, result)
 
   test "Load Multiple Documents":
@@ -362,19 +364,19 @@ suite "Serialization":
   test "Load custom object - unknown field":
     let input = "  firstnamechar: P\n  surname: Pan\n  age: 12\n  occupation: free"
     var result: Person
-    expectConstructionError(4, 3):
+    expectConstructionError(4, 3, "While constructing Person: Unknown field: \"occupation\""):
       load(input, result)
 
   test "Load custom object - missing field":
     let input = "surname: Pan\nage: 12\n  "
     var result: Person
-    expectConstructionError(3, 3):
+    expectConstructionError(3, 3, "While constructing Person: Missing field: \"firstnamechar\""):
       load(input, result)
 
   test "Load custom object - duplicate field":
     let input = "firstnamechar: P\nsurname: Pan\nage: 12\nsurname: Pan"
     var result: Person
-    expectConstructionError(4, 1):
+    expectConstructionError(4, 1, "While constructing Person: Duplicate field: \"surname\""):
       load(input, result)
 
   test "Load sequence with explicit tags":
@@ -445,7 +447,7 @@ suite "Serialization":
   test "Load custom variant object - missing field":
     let input = "[{name: Bastet}, {kind: akCat}]"
     var result: Animal
-    expectConstructionError(1, 32):
+    expectConstructionError(1, 32, "While constructing Animal: Missing field: \"purringIntensity\""):
       load(input, result)
 
   test "Dump cyclic data structure":
