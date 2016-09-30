@@ -1127,35 +1127,34 @@ proc init*[T](lex: YamlLexer) =
   lex.tokenLineGetter = tokenLine[T]
   lex.searchColonImpl = searchColon[T]
 
-proc newYamlLexer*(source: Stream): YamlLexer {.raises: [].} =
-  try:
-    let blSource = new(BaseLexer)
-    blSource[].open(source)
-    GC_ref(blSource)
-    new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-       GC_unref(cast[ref BaseLexer](x.source))
-    )
-    result[] = YamlLexerObj(source: cast[pointer](blSource), inFlow: false,
-        buf: "", c: blSource[].buf[blSource[].bufpos], newlines: 0,
-        folded: true)
+proc newYamlLexer*(source: Stream): YamlLexer {.raises: [YamlLexerError].} =
+  let blSource = new(BaseLexer)
+  try: blSource[].open(source)
   except:
-    discard # TODO
+    var e = newException(YamlLexerError,
+        "Could not open stream for reading:\n" & getCurrentExceptionMsg())
+    e.parent = getCurrentException()
+    raise e
+  GC_ref(blSource)
+  new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+      GC_unref(cast[ref BaseLexer](x.source))
+  )
+  result[] = YamlLexerObj(source: cast[pointer](blSource), inFlow: false,
+      buf: "", c: blSource[].buf[blSource[].bufpos], newlines: 0,
+      folded: true)
   init[BaseLexer](result)
 
 proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
-    {.raises: [].}=
-  try:
-    let sSource = new(StringSource)
-    sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1,
-        src: source)
-    GC_ref(sSource)
-    new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-        GC_unref(cast[ref StringSource](x.source))
-    )
-    result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource), inFlow: false,
-        c: sSource.src[startAt], newlines: 0, folded: true)
-  except:
-    discard # TODO
+    {.raises: [].} =
+  let sSource = new(StringSource)
+  sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1,
+      src: source)
+  GC_ref(sSource)
+  new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+      GC_unref(cast[ref StringSource](x.source))
+  )
+  result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource),
+      inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
   init[StringSource](result)
 
 proc next*(lex: YamlLexer) =
