@@ -1127,20 +1127,17 @@ proc init*[T](lex: YamlLexer) =
   lex.tokenLineGetter = tokenLine[T]
   lex.searchColonImpl = searchColon[T]
 
-proc safeAlloc[T](): ptr T =
-  try: result = cast[ptr T](alloc0(sizeof(T)))
-  except:
-    discard # TODO
-
 proc newYamlLexer*(source: Stream): YamlLexer {.raises: [].} =
   try:
-    let blSource = safeAlloc[BaseLexer]()
+    let blSource = new(BaseLexer)
     blSource[].open(source)
+    GC_ref(blSource)
     new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-        dealloc(x.source)
+       GC_unref(cast[ref BaseLexer](x.source))
     )
-    result[] = YamlLexerObj(source: blSource, inFlow: false, buf: "",
-        c: blSource[].buf[blSource[].bufpos], newlines: 0, folded: true)
+    result[] = YamlLexerObj(source: cast[pointer](blSource), inFlow: false,
+        buf: "", c: blSource[].buf[blSource[].bufpos], newlines: 0,
+        folded: true)
   except:
     discard # TODO
   init[BaseLexer](result)
@@ -1148,15 +1145,14 @@ proc newYamlLexer*(source: Stream): YamlLexer {.raises: [].} =
 proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
     {.raises: [].}=
   try:
-    let sSource = safeAlloc[StringSource]()
-    sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1)
-    sSource[].src = source
-    GC_ref(sSource[].src)
+    let sSource = new(StringSource)
+    sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1,
+        src: source)
+    GC_ref(sSource)
     new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-        GC_unref(cast[ptr StringSource](x.source)[].src)
-        dealloc(x.source)
+        GC_unref(cast[ref StringSource](x.source))
     )
-    result[] = YamlLexerObj(buf: "", source: sSource, inFlow: false,
+    result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource), inFlow: false,
         c: sSource.src[startAt], newlines: 0, folded: true)
   except:
     discard # TODO
