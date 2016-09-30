@@ -1151,7 +1151,9 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
     let sSource = safeAlloc[StringSource]()
     sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1)
     sSource[].src = source
+    GC_ref(sSource[].src)
     new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+        GC_unref(cast[ptr StringSource](x.source)[].src)
         dealloc(x.source)
     )
     result[] = YamlLexerObj(buf: "", source: sSource, inFlow: false,

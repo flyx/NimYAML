@@ -176,7 +176,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
 
-proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].} =
+proc loadToJson*(s: Stream): seq[JsonNode]
+    {.raises: [YamlParserError, YamlConstructionError, IOError].} =
   ## Uses `YamlParser <#YamlParser>`_ and
   ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
   ## from a YAML character stream.
@@ -185,10 +186,6 @@ proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].} =
     events = parser.parse(s)
   try:
     return constructJson(events)
-  except YamlConstructionError:
-    var e = (ref YamlConstructionError)(getCurrentException())
-    discard events.getLastTokenContext(e.line, e.column, e.lineContent)
-    raise e
   except YamlStreamError:
     let e = getCurrentException()
     if e.parent of IOError:
@@ -196,6 +193,18 @@ proc loadToJson*(s: Stream): seq[JsonNode] {.raises: [YamlParserError].} =
     elif e.parent of YamlParserError:
       raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & e.parent.repr)
-  except Exception:
-    # compiler bug: https://github.com/nim-lang/Nim/issues/3772
-    internalError("Reached code that should be unreachable")
+
+proc loadToJson*(str: string): seq[JsonNode]
+    {.raises: [YamlParserError, YamlConstructionError].} =
+  ## Uses `YamlParser <#YamlParser>`_ and
+  ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
+  ## from a YAML character stream.
+  var
+    parser = newYamlParser(initCoreTagLibrary())
+    events = parser.parse(str)
+  try: return constructJson(events)
+  except YamlStreamError:
+    let e = getCurrentException()
+    if e.parent of YamlParserError:
+      raise (ref YamlParserError)(e.parent)
+    else: internalError("Unexpected exception: " & e.parent.repr)
