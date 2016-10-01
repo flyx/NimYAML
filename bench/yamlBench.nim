@@ -1,5 +1,5 @@
-import "../yaml", common
-import math, strutils, stopwatch, terminal, algorithm
+import "../yaml", commonBench
+import math, strutils, stopwatch, terminal, algorithm, random, streams
 
 from nimlets_yaml import objKind
 
@@ -32,17 +32,16 @@ proc genKey(): string =
             let c = random(26 + 26 + 10)
             if c < 26: result.add(char(c + 65))
             elif c < 52: result.add(char(c + 97 - 26))
-            else: result.add(char(c + 48 - 52)) 
+            else: result.add(char(c + 48 - 52))
     else: result = genString(31) & char(random(26) + 65)
 
 proc genYamlString(size: int, maxStringLen: int,
                    style: PresentationStyle): string =
     ## Generates a random YAML string.
     ## size is in KiB, mayStringLen in characters.
-    
+
     randomize(size * maxStringLen * ord(style))
-    result = "{"
-    
+
     let targetSize = size * 1024
     var
         target = newStringStream()
@@ -53,13 +52,13 @@ proc genYamlString(size: int, maxStringLen: int,
             levels.add((kind: yMapping, len: 0))
             yield startDocEvent()
             yield startMapEvent()
-            
+
             while levels.len > 0:
                 let
                     objectCloseProbability =
                         float(levels[levels.high].len + levels.high) * 0.025
                     closeObject = random(1.0) <= objectCloseProbability
-        
+
                 if (closeObject and levels.len > 1) or curSize > targetSize:
                     case levels[levels.high].kind
                     of yMapping: yield endMapEvent()
@@ -68,19 +67,19 @@ proc genYamlString(size: int, maxStringLen: int,
                     curSize += 1
                     discard levels.pop()
                     continue
-        
+
                 levels[levels.high].len += 1
                 if levels[levels.high].kind == yMapping:
                     let key = genKey()
                     yield scalarEvent(key)
-    
+
                 let
                     objectValueProbability =
                         0.8 / float(levels.len * levels.len)
                     generateObjectValue = random(1.0) <= objectValueProbability
                     hasTag = random(2) == 0
                 var tag = yTagQuestionMark
-    
+
                 if generateObjectValue:
                     let objectKind = if random(3) == 0: ySequence else: yMapping
                     case objectKind
@@ -120,7 +119,7 @@ proc genYamlString(size: int, maxStringLen: int,
                             if hasTag: tag = yTagNull
                         else: discard
                     else: discard
-        
+
                     yield scalarEvent(s, tag)
                     curSize += s.len
             yield endDocEvent()
@@ -128,32 +127,35 @@ proc genYamlString(size: int, maxStringLen: int,
     present(yStream, target, initExtendedTagLibrary(),
             defineOptions(style=style, outputVersion=ov1_1))
     result = target.data
-    
+
 var
-    cYaml1k, cYaml10k, cYaml100k, cLibYaml1k, cLibYaml10k, cLibYaml100k: int64
+    cYaml1k, cYaml10k, cYaml100k, cLibYaml1k, cLibYaml10k, cLibYaml100k,
+        cYaml1m, cLibYaml1m: int64
     yaml1k   = genYamlString(1, 32, psDefault)
     yaml10k  = genYamlString(10, 32, psDefault)
     yaml100k = genYamlString(100, 32, psDefault)
+    yaml1m  = genYamlString(1000, 32, psDefault)
     tagLib   = initExtendedTagLibrary()
     parser = newYamlParser(tagLib)
 
 block:
     multibench(cYaml1k, 100):
-        var s = newStringStream(yaml1k)
-        let res = loadDOM(s)
+        let res = loadDOM(yaml1k)
         assert res.root.kind == yMapping
 
 block:
     multibench(cYaml10k, 100):
-        var
-            s = newStringStream(yaml10k)
-        let res = loadDOM(s)
+        let res = loadDOM(yaml10k)
         assert res.root.kind == yMapping
 
 block:
     multibench(cYaml100k, 100):
-        var s = newStringStream(yaml100k)
-        let res = loadDOM(s)
+        let res = loadDOM(yaml100k)
+        assert res.root.kind == yMapping
+
+block:
+    multibench(cYaml1m, 2):
+        let res = loadDOM(yaml1m)
         assert res.root.kind == yMapping
 
 block:
@@ -169,6 +171,11 @@ block:
 block:
     multibench(cLibYaml100k, 100):
         let res = nimlets_yaml.load(yaml100k)
+        assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
+
+block:
+    multibench(cLibYaml1m, 2):
+        let res = nimlets_yaml.load(yaml1m)
         assert res[0].objKind == nimlets_yaml.YamlObjKind.Map
 
 proc writeResult(caption: string, num: int64) =
@@ -189,3 +196,7 @@ setForegroundColor(fgWhite)
 writeStyled "100k input\n----------\n"
 writeResult "NimYAML: ", cYaml100k div 1000
 writeResult "LibYAML: ", cLibYaml100k div 1000
+setForegroundColor(fgWhite)
+writeStyled "1m input\n---------\n"
+writeResult "NimYAML: ", cYaml1m div 1000
+writeResult "LibYAML: ", cLibYaml1m div 1000

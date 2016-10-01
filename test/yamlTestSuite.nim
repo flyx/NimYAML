@@ -4,8 +4,8 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import os, terminal, strutils
-import testEventParser, common
+import os, terminal, strutils, streams
+import testEventParser, commonTestUtils
 import "../yaml"
 
 const gitCmd =

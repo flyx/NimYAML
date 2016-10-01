@@ -1,15 +1,15 @@
-import "../yaml", common
+import "../yaml", commonBench
 
 from nimlets_yaml import objKind
 
-import math, strutils, stopwatch, terminal, algorithm
+import math, strutils, stopwatch, terminal, algorithm, random, json
 
-proc cmp(left, right: clock): int = cmp(left.nanoseconds(), right.nanoseconds()) 
+proc cmp(left, right: clock): int = cmp(left.nanoseconds(), right.nanoseconds())
 
 type
     ObjectKind = enum
         otMap, otSequence
-    
+
     Level = tuple
         kind: ObjectKind
         len: int
@@ -33,10 +33,10 @@ proc genString(maxLen: int): string =
 proc genJsonString(size: int, maxStringLen: int): string =
     ## Generates a random JSON string.
     ## size is in KiB, mayStringLen in characters.
-    
+
     randomize(size * maxStringLen)
     result = "{"
-    
+
     let targetSize = size * 1024
     var
         indentation = 2
@@ -44,13 +44,13 @@ proc genJsonString(size: int, maxStringLen: int): string =
         curSize = 1
         justOpened = true
     levels.add((kind: otMap, len: 0))
-    
+
     while levels.len > 0:
         let
             objectCloseProbability =
                 float(levels[levels.high].len + levels.high) * 0.025
             closeObject = random(1.0) <= objectCloseProbability
-        
+
         if (closeObject and levels.len > 1) or curSize > targetSize:
             indentation -= 2
             if justOpened:
@@ -67,9 +67,9 @@ proc genJsonString(size: int, maxStringLen: int): string =
             curSize += 1
             discard levels.pop()
             continue
-        
+
         levels[levels.high].len += 1
-        
+
         if justOpened:
             justOpened = false
             result.add("\x0A")
@@ -79,7 +79,7 @@ proc genJsonString(size: int, maxStringLen: int): string =
             result.add(",\x0A")
             result.add(repeat(' ', indentation))
             curSize += indentation + 2
-        
+
         case levels[levels.high].kind
         of otMap:
             let key = genString(maxStringLen)
@@ -88,12 +88,12 @@ proc genJsonString(size: int, maxStringLen: int): string =
             curSize += key.len + 2
         of otSequence:
             discard
-        
+
         let
             objectValueProbability =
                 0.8 / float(levels.len * levels.len)
             generateObjectValue = random(1.0) <= objectValueProbability
-        
+
         if generateObjectValue:
             let objectKind = if random(2) == 0: otMap else: otSequence
             case objectKind
@@ -126,7 +126,7 @@ proc genJsonString(size: int, maxStringLen: int): string =
                     discard
             else:
                 discard
-            
+
             result.add(s)
             curSize += s.len
 
@@ -138,7 +138,7 @@ var
     json100k = genJsonString(100, 32)
     tagLib   = initCoreTagLibrary()
     parser = newYamlParser(initCoreTagLibrary())
-    
+
 block:
     multibench(cJson1k, 100):
         let res = parseJson(json1k)
@@ -152,30 +152,21 @@ block:
 block:
     multibench(cJson100k, 100):
         let res = parseJson(json100k)
-        assert res.kind == JObject    
+        assert res.kind == JObject
 
 block:
     multibench(cYaml1k, 100):
-        var
-            s = newStringStream(json1k)
-            events = parser.parse(s)
-        let res = constructJson(events)
+        let res = loadToJson(json1k)
         assert res[0].kind == JObject
 
 block:
     multibench(cYaml10k, 100):
-        var
-            s = newStringStream(json10k)
-            events = parser.parse(s)
-        let res = constructJson(events)
+        let res = loadToJson(json10k)
         assert res[0].kind == JObject
 
 block:
     multibench(cYaml100k, 100):
-        var
-            s = newStringStream(json100k)
-            events = parser.parse(s)
-        let res = constructJson(events)
+        let res = loadToJson(json100k)
         assert res[0].kind == JObject
 
 block:

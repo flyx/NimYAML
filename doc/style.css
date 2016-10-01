@@ -18,6 +18,11 @@ header a {
     padding-right: 5px;
 }
 
+header a.active {
+    background: #877 !important;
+    color: black !important;
+}
+
 header span {
     display: inline-block;
     line-height: 50px;
@@ -25,6 +30,34 @@ header span {
     color: white;
     padding-left: 15px;
     padding-right: 5px;
+}
+
+header span a {
+    display: block;
+}
+
+header span ul {
+    display: none;
+    position: absolute;
+    top: 100%;
+    list-style: none;
+    background: #111;
+    margin: 0;
+}
+
+header span ul:after {
+    content: ""; clear: both; display: block;
+}
+
+header span:hover > ul {
+    display: block;
+}
+
+header span ul a {
+    font-size: smaller;
+    font-family: "Source Code Pro", Menlo, "Courier New", Courier, monospace;
+    padding: 0 10px;
+    line-height: 40px;
 }
 
 header a:link,

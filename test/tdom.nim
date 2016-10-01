@@ -5,21 +5,21 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, common
+import unittest, commonTestUtils, streams
 
 suite "DOM":
-  test "DOM: Composing simple Scalar":
+  test "Composing simple Scalar":
     let
       input  = newStringStream("scalar")
       result = loadDOM(input)
     assert result.root.kind == yScalar
     assert result.root.content == "scalar"
     assert result.root.tag == "?"
-  test "DOM: Serializing simple Scalar":
+  test "Serializing simple Scalar":
     let input = initYamlDoc(newYamlNode("scalar"))
     var result = serialize(input, initExtendedTagLibrary())
     ensure(result, startDocEvent(), scalarEvent("scalar"), endDocEvent())
-  test "DOM: Composing sequence":
+  test "Composing sequence":
     let
       input = newStringStream("- !!str a\n- !!bool no")
       result = loadDOM(input)
@@ -32,7 +32,7 @@ suite "DOM":
     assert result.root.children[1].kind == yScalar
     assert result.root.children[1].tag == "tag:yaml.org,2002:bool"
     assert result.root.children[1].content == "no"
-  test "DOM: Serializing sequence":
+  test "Serializing sequence":
     let input = initYamlDoc(newYamlNode([
         newYamlNode("a", "tag:yaml.org,2002:str"),
         newYamlNode("no", "tag:yaml.org,2002:bool")]))
@@ -40,7 +40,7 @@ suite "DOM":
     ensure(result, startDocEvent(), startSeqEvent(),
            scalarEvent("a", yTagString), scalarEvent("no", yTagBoolean),
            endSeqEvent(), endDocEvent())
-  test "DOM: Composing mapping":
+  test "Composing mapping":
     let
       input = newStringStream("--- !!map\n!foo bar: [a, b]")
       result = loadDOM(input)
@@ -52,7 +52,7 @@ suite "DOM":
     assert result.root.pairs[0].key.content == "bar"
     assert result.root.pairs[0].value.kind == ySequence
     assert result.root.pairs[0].value.children.len == 2
-  test "DOM: Serializing mapping":
+  test "Serializing mapping":
     let input = initYamlDoc(newYamlNode([
         (key: newYamlNode("bar"), value: newYamlNode([newYamlNode("a"),
                                                       newYamlNode("b")]))]))
@@ -60,7 +60,7 @@ suite "DOM":
     ensure(result, startDocEvent(), startMapEvent(), scalarEvent("bar"),
            startSeqEvent(), scalarEvent("a"), scalarEvent("b"),
            endSeqEvent(), endMapEvent(), endDocEvent())
-  test "DOM: Composing with anchors":
+  test "Composing with anchors":
     let
       input = newStringStream("- &a foo\n- &b bar\n- *a\n- *b")
       result = loadDOM(input)
@@ -72,7 +72,7 @@ suite "DOM":
     assert result.root.children[1].content == "bar"
     assert result.root.children[0] == result.root.children[2]
     assert result.root.children[1] == result.root.children[3]
-  test "DOM: Serializing with anchors":
+  test "Serializing with anchors":
     let
       a = newYamlNode("a")
       b = newYamlNode("b")
@@ -83,7 +83,7 @@ suite "DOM":
            scalarEvent("b", anchor=1.AnchorId), scalarEvent("c"),
            aliasEvent(0.AnchorId), aliasEvent(1.AnchorId), endSeqEvent(),
            endDocEvent())
-  test "DOM: Serializing with all anchors":
+  test "Serializing with all anchors":
     let
       a = newYamlNode("a")
       input = initYamlDoc(newYamlNode([a, newYamlNode("b"), a]))

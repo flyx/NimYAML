@@ -6,7 +6,7 @@
 
 import jester, asyncdispatch, json, streams, strutils
 import packages.docutils.rstgen, packages.docutils.highlite
-import yaml
+import ../yaml
 
 routes:
   get "/":
@@ -16,7 +16,9 @@ routes:
     var
       style: PresentationStyle
       resultNode = newJObject()
-      tokens = false
+      msg: string
+      retStatus = Http200
+      contentType = "application/json"
     headers["Access-Control-Allow-Origin"] = "*"
     headers["Pragma"] = "no-cache"
     headers["Cache-Control"] = "no-cache"
@@ -36,14 +38,17 @@ routes:
         for event in events: output.add($event & "\n")
         resultNode["code"] = %0
         resultNode["output"] = %output
-        resp resultNode.pretty, "application/json"
-        tokens = true
-      if not tokens:
+        msg = resultNode.pretty
+      else:
+        retStatus = Http400
+        msg = "Invalid style: " & escape(@"style")
+        contentType = "text/plain;charset=utf8"
+      if isNil(msg):
         var
           output = newStringStream()
           highlighted = ""
         transform(newStringStream(@"input"), output, defineOptions(style))
-        
+
         # syntax highlighting (stolen and modified from stlib's rstgen)
         var g: GeneralTokenizer
         g.initGeneralTokenizer(output.data)
@@ -60,7 +65,7 @@ routes:
 
         resultNode["code"] = %0
         resultNode["output"] = %highlighted
-        resp resultNode.pretty, "application/json"
+        msg = resultNode.pretty
     except YamlParserError:
       let e = (ref YamlParserError)(getCurrentException())
       resultNode["code"] = %1
@@ -68,17 +73,17 @@ routes:
       resultNode["column"] = %e.column
       resultNode["message"] = %e.msg
       resultNode["detail"] = %e.lineContent
-      resp resultNode.pretty, "application/json"
+      msg = resultNode.pretty
     except YamlPresenterJsonError:
       let e = getCurrentException()
       resultNode["code"] = %2
       resultNode["message"] = %e.msg
-      headers["Content-Type"] = "application/json"
-      resp resultNode.pretty, "application/json"
+      msg = resultNode.pretty
     except:
       let e = getCurrentException()
-      let msg = "Name: " & $e.name & "\nMessage: " & e.msg &
-                "\nTrace:\n" & e.getStackTrace
-      resp Http500, msg, "text/plain;charset=utf-8"
-
+      msg = "Name: " & $e.name & "\nMessage: " & e.msg &
+          "\nTrace:\n" & e.getStackTrace
+      retStatus = Http500
+      contentType = "text/plain;charset=utf-8"
+    resp retStatus, msg, contentType
 runForever()
