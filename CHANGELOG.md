@@ -1,3 +1,25 @@
+### 0.7.0
+
+Features:
+
+ * Better handling of internal error messages
+ * Refactoring of low-level API:
+   * No more usage of first-class iterators (not supported for JS target)
+   * Added ability to directly use strings as input without stdlib's streams
+     (which are not available for JS)
+ * Added ability to parse octal and hexadecimal numbers
+ * Restructuring of API: now available as submodules of yaml. For backwards
+   compatibility, it is still possible to `import yaml`, which will import all
+   submodules
+ * Check for missing, duplicate and unknown fields when deserializing tuples and
+   objects
+
+Bugfixes:
+
+ * Fixed double quotes inside plain scalar (#25)
+ * Return correct line content for errors if possible (#23)
+ * Some smaller lexer/parser fixes
+
 ### 0.6.3
 
 Bugfixes:
