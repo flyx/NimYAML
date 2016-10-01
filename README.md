@@ -36,7 +36,7 @@ nim build # build a library
 nim yamlTestSuite # execute YAML test suite (git-clones yaml-dev-kit)
 ```
 
-NimYAML needs at least Nim 0.14.0 in order to compile.
+NimYAML needs at least Nim 0.15.0 in order to compile.
 
 ## License
 

@@ -2,7 +2,7 @@
 language: c
 env:
   # Build and test against the master and devel branches of Nim
-  #- BRANCH=master TODO! does not work currently, waiting for 0.15.0
+  - BRANCH=master
   - BRANCH=devel
 compiler:
   # Build and test using both gcc and clang
@@ -11,7 +11,7 @@ compiler:
 matrix:
   allow_failures:
     # Ignore failures when building against the devel Nim branch
-    # - env: BRANCH=devel TODO! ignore those once stable Nim can build NimYAML
+    - env: BRANCH=devel
   fast_finish: true
 install:
   - |
