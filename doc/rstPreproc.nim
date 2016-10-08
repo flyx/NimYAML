@@ -85,21 +85,21 @@ proc outputExamples(curPath: string, level: int = 0) =
   case codeFiles.len
   of 0: discard
   of 1:
-    let (nullPath, name, extension) = codeFiles[0].splitFile()
+    let (_, _, extension) = codeFiles[0].splitFile()
     append(".. code:: " & extension[1..^1])
     append("   :file: " & (curPath / codeFiles[0]) & '\l')
   of 2:
     append(".. raw:: html")
     append("  <table class=\"quickstart-example\"><thead><tr>")
     for codeFile in codeFiles:
-      append("    <th>" & codeFile & "</th>")
+      append("    <th>" & codeFile[3..^1] & "</th>")
     append("  </th></tr></thead><tbody><tr><td>\n")
 
     var first = true
     for codeFile in codeFiles:
       if first: first = false
       else: append(".. raw:: html\n  </td>\n  <td>\n")
-      let (nullPath, name, extension) = codeFile.splitFile()
+      let (_, _, extension) = codeFile.splitFile()
       append(".. code:: " & extension[1..^1])
       append("   :file: " & (curPath / codeFile) & '\l')
 
