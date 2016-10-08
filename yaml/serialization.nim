@@ -738,15 +738,20 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
   ))
   ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
       newStmtList(raiseStmt), newNimNode(nnkExceptBranch).add(
-        newIdentNode("KeyError"), newStmtList(newCall("internalError",
-        newStrLitNode("Unexcpected KeyError")))
+        newNimNode(nnkDiscardStmt).add(newEmptyNode())
   ))))
   result = newStmtList(newCall("reset", r), ifStmt)
+
+let implicitVariantObjectMarker {.compileTime.} =
+    newIdentNode(":implicitVariantObject")
+
+macro isImplicitVariantObject(o: typed): untyped =
+  result = newCall("compiles", newCall(implicitVariantObjectMarker, o))
 
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var T) =
   let item = s.peek()
-  when compiles(implicitVariantObject(result)):
+  when isImplicitVariantObject(result):
     var possibleTagIds = newSeq[TagId]()
     case item.kind
     of yamlScalar:
@@ -915,7 +920,7 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
 
 proc representChild*[O](value: O, ts: TagStyle,
                         c: SerializationContext) =
-  when compiles(implicitVariantObject(value)):
+  when isImplicitVariantObject(value):
     # todo: this would probably be nicer if constructed with a macro
     var count = 0
     for name, field in fieldPairs(value):
@@ -1032,3 +1037,34 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
   try: result = present(events, serializationTagLibrary, options)
   except YamlStreamError:
     internalError("Unexpected exception: " & getCurrentException().repr)
+
+proc canBeImplicit(t: typedesc): bool {.compileTime.} =
+  let tDesc = getType(t)
+  if tDesc.kind != nnkObjectTy: return false
+  if tDesc[2].len != 1: return false
+  if tDesc[2][0].kind != nnkRecCase: return false
+  var foundEmptyBranch = false
+  for i in 1.. tDesc[2][0].len - 1:
+    case tDesc[2][0][i][1].len # branch contents
+    of 0:
+      if foundEmptyBranch: return false
+      else: foundEmptyBranch = true
+    of 1: discard
+    else: return false
+  return true
+
+macro setImplicitVariantObjectMarker(t: typedesc): untyped =
+  result = quote do:
+    proc `implicitVariantObjectMarker`*(unused: `t`) = discard
+
+template markAsImplicit*(t: typedesc): typed =
+  ## Mark a variant object type as implicit. This requires the type to consist
+  ## of nothing but a case expression and each branch of the case expression
+  ## containing exactly one field - with the exception that one branch may
+  ## contain zero fields.
+  when canBeImplicit(t):
+    # this will be checked by means of compiles(implicitVariantObject(...))
+    setImplicitVariantObjectMarker(t)
+  else:
+    {. fatal: "This type cannot be marked as implicit" .}
+

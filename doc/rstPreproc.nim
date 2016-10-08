@@ -1,9 +1,10 @@
 ## This is a tool for preprocessing rst files. Lines starting with ``%`` will
-## get substituted by nicely layouted included nim and yaml code.
+## get substituted by nicely layouted nim and yaml code included from file in
+## the snippets tree.
 ##
-## The syntax of substituted lines is ``'%' jsonfile '%' jsonpath``. *jsonfile*
-## shall be the path to a JSON file. *jsonpath* shall be a path to some node in
-## that JSON file.
+## The syntax of substituted lines is ``'%' path '%' level``. *path* shall be
+## a path relative to the *snippets* directory. *level* shall be the level depth
+## of the first title that should be produced.
 ##
 ## Usage:
 ##
@@ -11,8 +12,12 @@
 ##
 ## *path* is the output path. If omitted, it will be equal to infile with its
 ## suffix substituted by ``.rst``. *infile* is the source rst file.
+##
+## The reason for this complex approach is to have all snippets used in the docs
+## available as source files for automatic testing. This way, we can make sure
+## that the code in the docs actually works.
 
-import parseopt2, json, streams, tables, strutils, os
+import parseopt2, streams, tables, strutils, os
 
 var
   infile = ""
@@ -57,71 +62,73 @@ var tmpOut = newFileStream(path, fmWrite)
 proc append(s: string) =
   tmpOut.writeLine(s)
 
-proc gotoPath(root: JsonNode, path: string): JsonNode =
-  doAssert path[0] == '/'
-  if path.len == 1: return root
-  doAssert root.kind == JObject
-  for i in 1..<path.len:
-    if path[i] == '/':
-      return gotoPath(root.getFields()[path[1..<i]], path[i+1 .. ^1])
-  return root.getFields()[path[1..^1]]
+const headingChars = ['=', '-', '`', ':', '\'']
 
-const headingChars = ['-', '`', ':', '\'']
-
-proc outputExamples(node: JsonNode, prefix: string, level: int = 0) =
-  case node.kind
-  of JObject:
-    for key, value in node.getFields():
-      append(key)
+proc outputExamples(curPath: string, level: int = 0) =
+  let titlePath = curPath / "title"
+  if fileExists(titlePath):
+    let titleFile = open(titlePath, fmRead)
+    defer: titleFile.close()
+    var title = ""
+    if titleFile.readLine(title):
       let headingChar = if level >= headingChars.len: headingChars[^1] else:
           headingChars[level]
-      append(repeat(headingChar, key.len) & '\l')
-      outputExamples(value, prefix, level + 1)
-  of JArray:
-    let elems = node.getElems()
-    case elems.len
-    of 2:
-      append(".. raw:: html")
-      append("  <table class=\"quickstart-example\"><thead><tr><th>code.nim</th>")
-      append("  <th>" & elems[1].getStr() &
-             ".yaml</th></tr></thead><tbody><tr><td>\n")
-      append(".. code:: nim")
-      append("   :file: " & prefix & elems[0].getStr() & ".nim\n")
-      append(".. raw:: html")
-      append("  </td>\n  <td>\n")
-      append(".. code:: yaml")
-      append("   :file: " & prefix & elems[0].getStr() & '.' &
-             elems[1].getStr() & ".yaml\n")
-      append(".. raw:: html")
-      append("  </td></tr></tbody></table>\n")
-    else:
-      echo "Unexpected number of elements in array: ", elems.len
-      quit 1
+      append(title)
+      append(repeat(headingChar, title.len) & '\l')
+
+  # process content files under this directory
+
+  var codeFiles = newSeq[string]()
+  for kind, filePath in walkDir(curPath, true):
+    if kind == pcFile:
+      if filePath != "title": codeFiles.add(filePath)
+  case codeFiles.len
+  of 0: discard
+  of 1:
+    let (nullPath, name, extension) = codeFiles[0].splitFile()
+    append(".. code:: " & extension[1..^1])
+    append("   :file: " & (curPath / codeFiles[0]) & '\l')
+  of 2:
+    append(".. raw:: html")
+    append("  <table class=\"quickstart-example\"><thead><tr>")
+    for codeFile in codeFiles:
+      append("    <th>" & codeFile & "</th>")
+    append("  </th></tr></thead><tbody><tr><td>\n")
+
+    var first = true
+    for codeFile in codeFiles:
+      if first: first = false
+      else: append(".. raw:: html\n  </td>\n  <td>\n")
+      let (nullPath, name, extension) = codeFile.splitFile()
+      append(".. code:: " & extension[1..^1])
+      append("   :file: " & (curPath / codeFile) & '\l')
+
+    append(".. raw:: html")
+    append("  </td></tr></tbody></table>\n")
   else:
-    echo "Unexpected node kind: ", node.kind
-    quit 1
+    echo "Unexpected number of files in ", curPath, ": ", codeFiles.len
+
+  # process child directories
+
+  for kind, dirPath in walkDir(curPath):
+    if kind == pcDir:
+      outputExamples(dirPath, level + 1)
 
 var lineNum = 0
 for line in infile.lines():
   if line.len > 0 and line[0] == '%':
     var
-      jsonFile: string = nil
-      jsonPath: string = nil
+      srcPath: string = nil
+      level = 0
     for i in 1..<line.len:
       if line[i] == '%':
-        jsonFile = line[1 .. i - 1]
-        jsonPath = line[i + 1 .. ^1]
+        srcPath = line[1 .. i - 1]
+        level = parseInt(line[i + 1 .. ^1])
         break
-    if isNil(jsonFile):
+    if isNil(srcPath):
       echo "Second % missing in line " & $lineNum & "! content:\n"
       echo line
       quit 1
-    let root = parseFile(jsonFile)
-    var prefix = ""
-    for i in countdown(jsonFile.len - 1, 0):
-      if jsonFile[i] == '/':
-        prefix = jsonFile[0..i]
-        break
-    outputExamples(root.gotoPath(jsonPath), prefix)
+    outputExamples("snippets" / srcPath, level)
   else:
     append(line)

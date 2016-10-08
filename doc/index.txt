@@ -16,7 +16,4 @@ install it with `Nimble <https://github.com/nim-lang/nimble>`_:
 .. code-block:: bash
   nimble install yaml
 
-Quickstart
-==========
-
-%examples/quickstart.json%/
+%quickstart%0
