@@ -1,0 +1,16 @@
+%YAML 1.1
+--- !nim:system:seq(nim:custom:Person)
+[
+    !nim:custom:Person {
+      ? !!str "name"
+      : !!str "Karl Koch",
+      ? !!str "age"
+      : !nim:system:int32 "23"
+    },
+    !nim:custom:Person {
+      ? !!str "name"
+      : !!str "Peter Pan",
+      ? !!str "age"
+      : !nim:system:int32 "12"
+    }
+]

@@ -1,0 +1,8 @@
+%YAML 1.2
+---
+- this is a string
+- 42
+- false
+- !!str 23
+- !nim:demo:Person {name: Trillian}
+- !!null

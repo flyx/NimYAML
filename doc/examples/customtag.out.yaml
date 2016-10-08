@@ -1,0 +1,5 @@
+%YAML 1.2
+--- !Mob
+!nim:field level: !nim:system:int32 42
+!nim:field experience: !nim:system:int32 1800
+!nim:field drops: !Drops [!!str Sword of Mob Slaying]

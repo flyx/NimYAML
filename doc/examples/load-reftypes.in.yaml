@@ -1,0 +1,11 @@
+%YAML 1.2
+--- !nim:custom:NodeObj &a
+name: Node 1
+left:
+  name: Node 2
+  left: ~
+  right: &b
+    name: Node 3
+    left: *a
+    right: ~
+right: *b

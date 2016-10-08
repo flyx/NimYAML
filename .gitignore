@@ -17,4 +17,6 @@ libyaml.dylib
 libyaml.so
 bench/json
 docout
+doc/rstPreproc
+doc/tmp.rst
 yaml-dev-kit
