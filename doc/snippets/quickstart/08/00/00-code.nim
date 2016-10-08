@@ -1,4 +1,4 @@
-import yaml
+import yaml, streams
 type
   Person = object
     name: string

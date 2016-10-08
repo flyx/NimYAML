@@ -1,4 +1,4 @@
-import yaml
+import yaml.serialization, yaml.presenter, streams
 type Person = object
   name : string
   age  : int32

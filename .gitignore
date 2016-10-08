@@ -5,6 +5,7 @@ test/tdom
 test/tserialization
 test/tjson
 test/yamlTestSuite
+test/tquickstart
 test/*.exe
 test/*.pdb
 test/*.ilk
@@ -19,4 +20,5 @@ bench/json
 docout
 doc/rstPreproc
 doc/tmp.rst
+doc/**/code
 yaml-dev-kit

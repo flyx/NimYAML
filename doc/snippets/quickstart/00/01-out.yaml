@@ -1,8 +1,8 @@
 %YAML 1.2
---- !nim:system:seq(nim:custom:Person)
--
+--- !nim:system:seq(nim:custom:Person) 
+- 
   name: Karl Koch
   age: 23
--
+- 
   name: Peter Pan
   age: 12
