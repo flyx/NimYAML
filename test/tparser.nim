@@ -95,20 +95,19 @@ proc parserTest(path: string): bool =
 macro genTests(): untyped =
   let
     pwd = staticExec("pwd")
-    absolutePath = pwd / devKitFolder
-  echo "[tparser] Generating tests from " & escape(absolutePath)
+    absolutePath = '"' & (pwd / devKitFolder) & '"'
+  echo "[tparser] Generating tests from " & absolutePath
   ensureDevKitCloneCorrect(pwd)
   result = newStmtList()
-  for kind, dirName in walkDir(absolutePath, true):
-    echo "[tparser] directory item: kind=", kind, ", name=", dirName
-    if kind == pcDir:
-      if dirName in [".git", "name", "tags", "meta"]: continue
-      echo "[tparser] Test: " & dirName
-      let title = slurp(absolutePath / dirName / "===")
-      result.add(newCall("test",
-          newLit(strip(title) & " [" &
-          dirName & ']'), newCall("doAssert", newCall("parserTest",
-          newLit(absolutePath / dirName)))))
+  # walkDir for some crude reason does not work with travis build
+  let dirItems = staticExec("ls -1d " & absolutePath / "*")
+  for dirPath in dirItems.splitLines():
+    if dirPath[^4..^1] in [".git", "name", "tags", "meta"]: continue
+    let title = slurp(dirPath / "===")
+    result.add(newCall("test",
+        newLit(strip(title) & " [" &
+        dirPath[^4..^1] & ']'), newCall("doAssert", newCall("parserTest",
+        newLit(dirPath)))))
   result = newCall("suite", newLit("Parser Tests (from yaml-dev-kit)"), result)
 
 genTests()
