@@ -13,19 +13,20 @@ const devKitFolder = "yaml-dev-kit"
 proc echoError(msg: string) =
   styledWriteLine(stdout, fgRed, "[error] ", fgWhite, msg, resetStyle)
 
-proc ensureDevKitCloneCorrect() {.compileTime.} =
-  if dirExists(devKitFolder):
+proc ensureDevKitCloneCorrect(pwd: string) {.compileTime.} =
+  let absolutePath = pwd / devKitFolder
+  if dirExists(absolutePath):
     var isCorrectClone = true
-    if dirExists(devKitFolder / ".git"):
+    if dirExists(absolutePath / ".git"):
       let remoteUrl =
-          staticExec("cd " & devKitFolder & " && git remote get-url origin")
+          staticExec("cd \"" & absolutePath & "\" && git remote get-url origin")
       if remoteUrl != "https://github.com/ingydotnet/yaml-dev-kit.git":
         isCorrectClone = false
-      let branches = staticExec("cd " & devKitFolder & " && git branch")
+      let branches = staticExec("cd \"" & absolutePath & "\" && git branch")
       if "* data" notin branches.splitLines():
         isCorrectClone = false
     if isCorrectClone:
-      let updateOutput = staticExec("git pull")
+      let updateOutput = staticExec("cd \"" & absolutePath & "\" && git pull")
       #if uError != 0:
       #  echo "could not update yaml-dev-kit! please fix this problem and compile again."
       #  echo "output:\n"
@@ -38,9 +39,10 @@ proc ensureDevKitCloneCorrect() {.compileTime.} =
       echo "is active. Alternatively, delete the folder " & devKitFolder & '.'
       quit 1
   else:
-    let cloneOutput = staticExec("git clone https://github.com/ingydotnet/yaml-dev-kit.git -b data")
+    let cloneOutput = staticExec("cd \"" & pwd &
+      "\" && git clone https://github.com/ingydotnet/yaml-dev-kit.git -b data")
     #if cError != 0:
-    if not dirExists(devKitFolder):
+    if not dirExists(absolutePath):
       echo "could not clone https://github.com/ingydotnet/yaml-dev-kit.git. Make sure"
       echo "you are connected to the internet and your proxy settings are correct. output:\n"
       echo "$ git clone https://github.com/ingydotnet/yaml-dev-kit.git"
@@ -90,18 +92,21 @@ proc parserTest(path: string): bool =
   result = true
 
 macro genTests(): untyped =
-  ensureDevKitCloneCorrect()
+  let
+    pwd = staticExec("pwd")
+    absolutePath = pwd / devKitFolder
+  echo "[tparser] Generating tests from " & escape(absolutePath)
+  ensureDevKitCloneCorrect(pwd)
   result = newStmtList()
-  let pwd = staticExec("pwd")
-  for kind, dirName in walkDir(devKitFolder, true):
+  for kind, dirName in walkDir(absolutePath, true):
     if kind == pcDir:
       if dirName in [".git", "name", "tags", "meta"]: continue
-      # see https://github.com/nim-lang/Nim/issues/4871
-      let title = slurp(pwd / devKitFolder / dirName / "===")
+      echo "[tparser] Test: " & dirName
+      let title = slurp(absolutePath / dirName / "===")
       result.add(newCall("test",
           newLit(strip(title) & " [" &
           dirName & ']'), newCall("doAssert", newCall("parserTest",
-          newLit(devKitFolder / dirName)))))
+          newLit(absolutePath / dirName)))))
   result = newCall("suite", newLit("Parser Tests (from yaml-dev-kit)"), result)
 
 genTests()
