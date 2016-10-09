@@ -104,7 +104,8 @@ proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
   result = newStmtList()
   let
     baseDir = staticExec("pwd")
-    nimPath = staticExec("which nim")
+    nimPathRaw = staticExec("which nim")
+    nimPath = if nimPathRaw[0] == '/': nimPathRaw else: baseDir / nimPathRaw
     title = titlePrefix & slurp(baseDir / path / "title").splitLines()[0]
   if fileExists(path / "00-code.nim"):
     var test = newCall("test", newLit(title))

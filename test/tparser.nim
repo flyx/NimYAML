@@ -42,7 +42,8 @@ proc ensureDevKitCloneCorrect(pwd: string) {.compileTime.} =
     let cloneOutput = staticExec("cd \"" & pwd &
       "\" && git clone https://github.com/ingydotnet/yaml-dev-kit.git -b data")
     #if cError != 0:
-    if not dirExists(absolutePath):
+    if not(dirExists(absolutePath)) or not(dirExists(absolutePath / ".git")) or
+        not(dirExists(absolutePath / "229Q")):
       echo "could not clone https://github.com/ingydotnet/yaml-dev-kit.git. Make sure"
       echo "you are connected to the internet and your proxy settings are correct. output:\n"
       echo "$ git clone https://github.com/ingydotnet/yaml-dev-kit.git"
