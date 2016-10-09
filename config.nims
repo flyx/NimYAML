@@ -18,6 +18,16 @@ task parserTests, "Run parser tests":
   --verbosity:0
   setCommand "c", "test/tparser"
 
+task jsonTests, "Run JSON tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tjson"
+
+task domTests, "Run DOM tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tdom"
+
 task serializationTests, "Run serialization tests":
   --r
   --verbosity:0

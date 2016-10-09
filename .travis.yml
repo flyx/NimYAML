@@ -37,7 +37,12 @@ install:
 before_script:
     - export PATH="nim-$BRANCH/bin${PATH:+:$PATH}"
 script:
-    - nim tests
+    - nim lexerTests
+    - nim parserTests
+    - nim jsonTests
+    - nim domTests
+    - nim serializationTests
+    - nim quickstartTests
 cache:
   directories:
     - nim-master
