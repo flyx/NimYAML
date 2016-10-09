@@ -100,6 +100,7 @@ macro genTests(): untyped =
   ensureDevKitCloneCorrect(pwd)
   result = newStmtList()
   for kind, dirName in walkDir(absolutePath, true):
+    echo "[tparser] directory item: kind=", kind, ", name=", dirName
     if kind == pcDir:
       if dirName in [".git", "name", "tags", "meta"]: continue
       echo "[tparser] Test: " & dirName
