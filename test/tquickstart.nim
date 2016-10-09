@@ -1,23 +1,21 @@
 import unittest, os, osproc, macros, strutils, streams
 
-proc inputTest(path: string): bool =
+proc inputTest(basePath, path: string): bool =
   let
-    inFileOrig = path / "01-in.yaml"
-    inFileDest = path / "in.yaml"
-    codeFileOrig = path / "00-code.nim"
-    codeFileDest = path / "code.nim"
-    exeFileDest = when defined(windows): path / "code.exe" else: path / "code"
-    currentDir = getCurrentDir()
-    basePath = currentDir / ".."
-    absolutePath = currentDir / path
+    absolutePath = basePath / path
+    inFileOrig = absolutePath / "01-in.yaml"
+    inFileDest = absolutePath / "in.yaml"
+    codeFileOrig = absolutePath / "00-code.nim"
+    codeFileDest = absolutePath / "code.nim"
+    exeFileDest = when defined(windows): absolutePath / "code.exe" else:
+        absolutePath / "code"
   copyFile(inFileOrig, inFileDest)
   copyFile(codeFileOrig, codeFileDest)
   defer:
     removeFile(inFileDest)
     removeFile(codeFileDest)
   var process = startProcess("nim c --hints:off -p:" & escape(basePath) &
-      " code.nim", path, [], nil, {poStdErrToStdOut, poEvalCommand})
-  setCurrentDir(currentDir) # workaround for https://github.com/nim-lang/Nim/issues/4867
+      " code.nim", absolutePath, [], nil, {poStdErrToStdOut, poEvalCommand})
   defer:
     process.close()
   if process.waitForExit() != 0:
@@ -30,7 +28,6 @@ proc inputTest(path: string): bool =
     process.close()
     process = startProcess(absolutePath / "code", absolutePath, [], nil,
         {poStdErrToStdOut, poEvalCommand})
-    setCurrentDir(currentDir) # workaround for https://github.com/nim-lang/Nim/issues/4867
     if process.waitForExit() != 0:
       echo "executable output:"
       echo "==================\n"
@@ -38,22 +35,20 @@ proc inputTest(path: string): bool =
       result = false
     else: result = true
 
-proc outputTest(path: string): bool =
+proc outputTest(basePath, path: string): bool =
   let
-    codeFileOrig = path / "00-code.nim"
-    codeFileDest = path / "code.nim"
-    exeFileDest = when defined(windows): path / "code.exe" else: path / "code"
-    currentDir = getCurrentDir()
-    basePath = currentDir / ".."
-    absolutePath = currentDir / path
-    outFileExpected = path / "01-out.yaml"
-    outFileActual = path / "out.yaml"
+    absolutePath = basePath / path
+    codeFileOrig = absolutePath / "00-code.nim"
+    codeFileDest = absolutePath / "code.nim"
+    exeFileDest = when defined(windows): absolutePath / "code.exe" else:
+        absolutePath / "code"
+    outFileExpected = absolutePath / "01-out.yaml"
+    outFileActual = absolutePath / "out.yaml"
   copyFile(codeFileOrig, codeFileDest)
   defer: removeFile(codeFileDest)
   var process = startProcess("nim c --hints:off -p:" & escape(basePath) &
-      " code.nim", path, [], nil, {poStdErrToStdOut, poEvalCommand})
+      " code.nim", absolutePath, [], nil, {poStdErrToStdOut, poEvalCommand})
   defer: process.close()
-  setCurrentDir(currentDir) # workaround for https://github.com/nim-lang/Nim/issues/4867
   if process.waitForExit() != 0:
     echo "compiler output:"
     echo "================\n"
@@ -64,7 +59,6 @@ proc outputTest(path: string): bool =
     process.close()
     process = startProcess(absolutePath / "code", absolutePath, [], nil,
         {poStdErrToStdOut, poEvalCommand})
-    setCurrentDir(currentDir) # workaround for https://github.com/nim-lang/Nim/issues/4867
     if process.waitForExit() != 0:
       echo "executable output:"
       echo "==================\n"
@@ -108,13 +102,17 @@ proc outputTest(path: string): bool =
 proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
     NimNode {.compileTime.} =
   result = newStmtList()
-  let title = titlePrefix & slurp(path / "title").splitLines()[0]
+  let
+    baseDir = staticExec("pwd")
+    title = titlePrefix & slurp(baseDir / path / "title").splitLines()[0]
   if fileExists(path / "00-code.nim"):
     var test = newCall("test", newLit(title))
     if fileExists(path / "01-in.yaml"):
-      test.add(newCall("doAssert", newCall("inputTest", newLit(path))))
+      test.add(newCall("doAssert", newCall("inputTest", newLit(baseDir),
+          newLit(path))))
     elif fileExists(path / "01-out.yaml"):
-      test.add(newCall("doAssert", newCall("outputTest", newLit(path))))
+      test.add(newCall("doAssert", newCall("outputTest", newLit(baseDir),
+          newLit(path))))
     else:
       echo "Error: neither 01-in.yaml nor 01-out.yaml exists in " & path & '!'
       quit 1
@@ -126,6 +124,6 @@ proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
   if root:
     result = newCall("suite", newLit(title), result)
 
-macro genTests(): untyped = testsFor("../doc/snippets/quickstart")
+macro genTests(): untyped = testsFor("doc/snippets/quickstart")
 
 genTests()

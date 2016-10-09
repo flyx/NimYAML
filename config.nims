@@ -8,15 +8,25 @@ task tests, "Run all tests":
   --verbosity:0
   setCommand "c", "test/tests"
 
-task yamlTestSuite, "Run YAML 1.2 test suite":
+task lexerTests, "Run lexer tests":
   --r
   --verbosity:0
-  setCommand "c", "test/yamlTestSuite"
+  setCommand "c", "test/tlex"
+
+task parserTests, "Run parser tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tparser"
 
 task serializationTests, "Run serialization tests":
   --r
   --verbosity:0
-  setCommand "c", "test/serializing"
+  setCommand "c", "test/tserialization"
+
+task quickstartTests, "Run quickstart tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tquickstart"
 
 task documentation, "Generate documentation":
   exec "mkdir -p docout"
