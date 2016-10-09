@@ -40,11 +40,12 @@ proc ensureDevKitCloneCorrect() {.compileTime.} =
   else:
     let cloneOutput = staticExec("git clone https://github.com/ingydotnet/yaml-dev-kit.git -b data")
     #if cError != 0:
-    #  echo "could not clone https://github.com/ingydotnet/yaml-dev-kit.git. Make sure"
-    #  echo "you are connected to the internet and your proxy settings are correct. output:\n"
-    #  echo "$ git clone https://github.com/ingydotnet/yaml-dev-kit.git"
-    #  echo cloneOutput
-    #  quit 1
+    if not dirExists(devKitFolder):
+      echo "could not clone https://github.com/ingydotnet/yaml-dev-kit.git. Make sure"
+      echo "you are connected to the internet and your proxy settings are correct. output:\n"
+      echo "$ git clone https://github.com/ingydotnet/yaml-dev-kit.git"
+      echo cloneOutput
+      quit 1
 
 proc parserTest(path: string): bool =
   var

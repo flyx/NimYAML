@@ -1,6 +1,6 @@
 import unittest, os, osproc, macros, strutils, streams
 
-proc inputTest(basePath, path: string): bool =
+proc inputTest(basePath, path, nimPath: string): bool =
   let
     absolutePath = basePath / path
     inFileOrig = absolutePath / "01-in.yaml"
@@ -14,7 +14,7 @@ proc inputTest(basePath, path: string): bool =
   defer:
     removeFile(inFileDest)
     removeFile(codeFileDest)
-  var process = startProcess("nim c --hints:off -p:" & escape(basePath) &
+  var process = startProcess(nimPath & " c --hints:off -p:" & escape(basePath) &
       " code.nim", absolutePath, [], nil, {poStdErrToStdOut, poEvalCommand})
   defer:
     process.close()
@@ -35,7 +35,7 @@ proc inputTest(basePath, path: string): bool =
       result = false
     else: result = true
 
-proc outputTest(basePath, path: string): bool =
+proc outputTest(basePath, path, nimPath: string): bool =
   let
     absolutePath = basePath / path
     codeFileOrig = absolutePath / "00-code.nim"
@@ -46,7 +46,7 @@ proc outputTest(basePath, path: string): bool =
     outFileActual = absolutePath / "out.yaml"
   copyFile(codeFileOrig, codeFileDest)
   defer: removeFile(codeFileDest)
-  var process = startProcess("nim c --hints:off -p:" & escape(basePath) &
+  var process = startProcess(nimPath & " c --hints:off -p:" & escape(basePath) &
       " code.nim", absolutePath, [], nil, {poStdErrToStdOut, poEvalCommand})
   defer: process.close()
   if process.waitForExit() != 0:
@@ -104,15 +104,16 @@ proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
   result = newStmtList()
   let
     baseDir = staticExec("pwd")
+    nimPath = staticExec("which nim")
     title = titlePrefix & slurp(baseDir / path / "title").splitLines()[0]
   if fileExists(path / "00-code.nim"):
     var test = newCall("test", newLit(title))
     if fileExists(path / "01-in.yaml"):
       test.add(newCall("doAssert", newCall("inputTest", newLit(baseDir),
-          newLit(path))))
+          newLit(path), newLit(nimPath))))
     elif fileExists(path / "01-out.yaml"):
       test.add(newCall("doAssert", newCall("outputTest", newLit(baseDir),
-          newLit(path))))
+          newLit(path), newLit(nimPath))))
     else:
       echo "Error: neither 01-in.yaml nor 01-out.yaml exists in " & path & '!'
       quit 1
