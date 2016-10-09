@@ -46,6 +46,8 @@ proc outputTest(path: string): bool =
     currentDir = getCurrentDir()
     basePath = currentDir / ".."
     absolutePath = currentDir / path
+    outFileExpected = path / "01-out.yaml"
+    outFileActual = path / "out.yaml"
   copyFile(codeFileOrig, codeFileDest)
   defer: removeFile(codeFileDest)
   var process = startProcess("nim c --hints:off -p:" & escape(basePath) &
@@ -69,9 +71,10 @@ proc outputTest(path: string): bool =
       echo process.outputStream().readAll()
       result = false
     else:
+      defer: removeFile(outFileActual)
       var
-        expected = open(path / "01-out.yaml", fmRead)
-        actual = open(path / "out.yaml", fmRead)
+        expected = open(outFileExpected, fmRead)
+        actual = open(outFileActual, fmRead)
         lineNumber = 1
       defer:
         expected.close()

@@ -2,15 +2,15 @@
 --- 
 !nim:system:seq(nim:custom:Person) [
    !nim:custom:Person {
-      ? !!str "name"
+      ? !nim:field "name"
       : !!str "Karl Koch",
-      ? !!str "age"
+      ? !nim:field "age"
       : !nim:system:int32 "23"
    },
    !nim:custom:Person {
-      ? !!str "name"
+      ? !nim:field "name"
       : !!str "Peter Pan",
-      ? !!str "age"
+      ? !nim:field "age"
       : !nim:system:int32 "12"
    }
 ]
