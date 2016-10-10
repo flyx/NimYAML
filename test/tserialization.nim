@@ -45,6 +45,8 @@ setTagUri(TrafficLight, "!tl")
 setTagUri(Node, "!example.net:Node")
 setTagUri(BetterInt, "!test:BetterInt")
 
+const yamlDirs = "%YAML 1.2\n%TAG !n! tag:nimyaml.org,2016:\n--- "
+
 proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
     c: SerializationContext, tag: TagId) {.raises: [].} =
   var
@@ -104,7 +106,7 @@ suite "Serialization":
   test "Dump integer without fixed length":
     var input = -4247
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n\"-4247\"", output
+    assertStringEqual yamlDirs & "\n\"-4247\"", output
 
     when sizeof(int) == sizeof(int64):
       input = int(int32.high) + 1
@@ -162,7 +164,7 @@ suite "Serialization":
     assert(result == 14)
 
   test "Load nil string":
-    let input = newStringStream("!nim:nil:string \"\"")
+    let input = newStringStream("!<tag:nimyaml.org,2016:nil:string> \"\"")
     var result: string
     load(input, result)
     assert isNil(result)
@@ -170,7 +172,7 @@ suite "Serialization":
   test "Dump nil string":
     let input: string = nil
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n!nim:nil:string \"\"", output
+    assertStringEqual yamlDirs & "\n!n!nil:string \"\"", output
 
   test "Load string sequence":
     let input = newStringStream(" - a\n - b")
@@ -183,10 +185,10 @@ suite "Serialization":
   test "Dump string sequence":
     var input = @["a", "b"]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output
+    assertStringEqual yamlDirs & "\n- a\n- b", output
 
   test "Load nil seq":
-    let input = newStringStream("!nim:nil:seq \"\"")
+    let input = newStringStream("!<tag:nimyaml.org,2016:nil:seq> \"\"")
     var result: seq[int]
     load(input, result)
     assert isNil(result)
@@ -194,7 +196,7 @@ suite "Serialization":
   test "Dump nil seq":
     let input: seq[int] = nil
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n!nim:nil:seq \"\"", output
+    assertStringEqual yamlDirs & "\n!n!nil:seq \"\"", output
 
   test "Load char set":
     let input = newStringStream("- a\n- b")
@@ -207,7 +209,7 @@ suite "Serialization":
   test "Dump char set":
     var input = {'a', 'b'}
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n- a\n- b", output
+    assertStringEqual yamlDirs & "\n- a\n- b", output
 
   test "Load array":
     let input = newStringStream("- 23\n- 42\n- 47")
@@ -220,7 +222,7 @@ suite "Serialization":
   test "Dump array":
     let input = [23'i32, 42'i32, 47'i32]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n- 23\n- 42\n- 47", output
+    assertStringEqual yamlDirs & "\n- 23\n- 42\n- 47", output
 
   test "Load Table[int, string]":
     let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
@@ -235,7 +237,7 @@ suite "Serialization":
     input[23] = "dreiundzwanzig"
     input[42] = "zweiundvierzig"
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual("%YAML 1.2\n--- \n23: dreiundzwanzig\n42: zweiundvierzig",
+    assertStringEqual(yamlDirs & "\n23: dreiundzwanzig\n42: zweiundvierzig",
         output)
 
   test "Load OrderedTable[tuple[int32, int32], string]":
@@ -259,8 +261,8 @@ suite "Serialization":
     input.add((a: 23'i32, b: 42'i32), "dreiundzwanzigzweiundvierzig")
     input.add((a: 13'i32, b: 47'i32), "dreizehnsiebenundvierzig")
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
-    assertStringEqual("""%YAML 1.2
---- !nim:tables:OrderedTable(nim:tuple(nim:system:int32,nim:system:int32),tag:yaml.org,2002:str) 
+    assertStringEqual(yamlDirs &
+        """!n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str) 
 - 
   ? 
     a: 23
@@ -284,11 +286,11 @@ suite "Serialization":
   test "Dump Sequences in Sequence":
     let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32], @[6.int32]]
     var output = dump(input, tsNone)
-    assertStringEqual "%YAML 1.2\n--- \n- [1, 2, 3]\n- [4, 5]\n- [6]", output
+    assertStringEqual yamlDirs & "\n- [1, 2, 3]\n- [4, 5]\n- [6]", output
 
   test "Load Enum":
     let input =
-      newStringStream("!nim:system:seq(tl)\n- !tl tlRed\n- tlGreen\n- tlYellow")
+      newStringStream("!<tag:nimyaml.org,2016:system:seq(tl)>\n- !tl tlRed\n- tlGreen\n- tlYellow")
     var result: seq[TrafficLight]
     load(input, result)
     assert result.len == 3
@@ -299,7 +301,7 @@ suite "Serialization":
   test "Dump Enum":
     let input = @[tlRed, tlGreen, tlYellow]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual "%YAML 1.2\n--- \n- tlRed\n- tlGreen\n- tlYellow", output
+    assertStringEqual yamlDirs & "\n- tlRed\n- tlGreen\n- tlYellow", output
 
   test "Load Tuple":
     let input = newStringStream("str: value\ni: 42\nb: true")
@@ -312,7 +314,7 @@ suite "Serialization":
   test "Dump Tuple":
     let input = (str: "value", i: 42.int32, b: true)
     var output = dump(input, tsNone)
-    assertStringEqual "%YAML 1.2\n--- \nstr: value\ni: 42\nb: y", output
+    assertStringEqual yamlDirs & "\nstr: value\ni: 42\nb: y", output
 
   test "Load Tuple - unknown field":
     let input = "str: value\nfoo: bar\ni: 42\nb: true"
@@ -358,8 +360,8 @@ suite "Serialization":
   test "Dump custom object":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual(
-        "%YAML 1.2\n--- \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
+    assertStringEqual(yamlDirs &
+        "\nfirstnamechar: P\nsurname: Pan\nage: 12", output)
 
   test "Load custom object - unknown field":
     let input = "  firstnamechar: P\n  surname: Pan\n  age: 12\n  occupation: free"
@@ -380,8 +382,8 @@ suite "Serialization":
       load(input, result)
 
   test "Load sequence with explicit tags":
-    let input = newStringStream("--- !nim:system:seq(" &
-        "tag:yaml.org,2002:str)\n- !!str one\n- !!str two")
+    let input = newStringStream(yamlDirs & "!n!system:seq(" &
+        "tag:yaml.org;2002:str)\n- !!str one\n- !!str two")
     var result: seq[string]
     load(input, result)
     assert result[0] == "one"
@@ -390,12 +392,12 @@ suite "Serialization":
   test "Dump sequence with explicit tags":
     let input = @["one", "two"]
     var output = dump(input, tsAll, asTidy, blockOnly)
-    assertStringEqual("%YAML 1.2\n--- !nim:system:seq(" &
-        "tag:yaml.org,2002:str) \n- !!str one\n- !!str two", output)
+    assertStringEqual(yamlDirs & "!n!system:seq(" &
+        "tag:yaml.org;2002:str) \n- !!str one\n- !!str two", output)
 
   test "Load custom object with explicit root tag":
     let input = newStringStream(
-        "--- !nim:custom:Person\nfirstnamechar: P\nsurname: Pan\nage: 12")
+        "--- !<tag:nimyaml.org,2016:custom:Person>\nfirstnamechar: P\nsurname: Pan\nage: 12")
     var result: Person
     load(input, result)
     assert result.firstnamechar == 'P'
@@ -405,9 +407,8 @@ suite "Serialization":
   test "Dump custom object with explicit root tag":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
-    assertStringEqual("%YAML 1.2\n" &
-        "--- !nim:custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12",
-        output)
+    assertStringEqual(yamlDirs &
+        "!n!custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
 
   test "Load custom variant object":
     let input = newStringStream(
@@ -427,8 +428,8 @@ suite "Serialization":
     let input = @[Animal(name: "Bastet", kind: akCat, purringIntensity: 7),
                   Animal(name: "Anubis", kind: akDog, barkometer: 13)]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual """%YAML 1.2
---- 
+    assertStringEqual yamlDirs & """
+
 - 
   - 
     name: Bastet
@@ -459,8 +460,7 @@ suite "Serialization":
     b.next = c
     c.next = a
     var output = dump(a, tsRootOnly, asTidy, blockOnly)
-    assertStringEqual """%YAML 1.2
---- !example.net:Node &a 
+    assertStringEqual yamlDirs & """!example.net:Node &a 
 value: a
 next: 
   value: b
@@ -469,13 +469,12 @@ next:
     next: *a""", output
 
   test "Load cyclic data structure":
-    let input = newStringStream("""%YAML 1.2
---- !nim:system:seq(example.net:Node) 
-- &a 
+    let input = newStringStream(yamlDirs & """!n!system:seq(example.net:Node)
+- &a
   value: a
-  next: &b 
+  next: &b
     value: b
-    next: &c 
+    next: &c
       value: c
       next: *a
 - *b
@@ -517,8 +516,8 @@ next:
     input.add(new string)
     input[1][] = "~"
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
-    assertStringEqual(
-        "%YAML 1.2\n--- !nim:system:seq(tag:yaml.org,2002:str) \n- !!null ~\n- !!str ~",
+    assertStringEqual(yamlDirs &
+        "!n!system:seq(tag:yaml.org;2002:str) \n- !!null ~\n- !!str ~",
         output)
 
   test "Custom constructObject":
@@ -532,8 +531,7 @@ next:
   test "Custom representObject":
     let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
     var output = dump(input, tsAll, asTidy, blockOnly)
-    assertStringEqual """%YAML 1.2
---- !nim:system:seq(test:BetterInt) 
+    assertStringEqual yamlDirs & """!n!system:seq(test:BetterInt) 
 - !test:BetterInt 1
 - !test:BetterInt 9_998_887
 - !test:BetterInt 98_312""", output

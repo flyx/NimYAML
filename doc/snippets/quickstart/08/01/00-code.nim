@@ -2,7 +2,7 @@ import yaml, streams
 type Person = object
   name: string
 
-setTagUri(Person, "!nim:demo:Person", yTagPerson)
+setTagUri(Person, nimTag("demo:Person"), yTagPerson)
 
 var
   s = newFileStream("in.yaml", fmRead)

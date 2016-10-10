@@ -104,9 +104,17 @@ proc lazyLoadTag(uri: string): TagId {.inline, raises: [].} =
 
 proc safeTagUri(id: TagId): string {.raises: [].} =
   try:
-    let uri = serializationTagLibrary.uri(id)
-    if uri.len > 0 and uri[0] == '!': return uri[1..uri.len - 1]
-    else: return uri
+    var
+      uri = serializationTagLibrary.uri(id)
+      i = 0
+    # '!' is not allowed inside a tag handle
+    if uri.len > 0 and uri[0] == '!': uri = uri[1..^1]
+    # ',' is not allowed after a tag handle in the suffix because it's a flow
+    # indicator
+    for c in uri.mitems():
+      if c == ',': c = ';'
+      inc(i)
+    return uri
   except KeyError: internalError("Unexpected KeyError for TagId " & $id)
 
 proc constructionError(s: YamlStream, msg: string): ref YamlConstructionError =
@@ -314,11 +322,11 @@ proc representObject*(value: char, ts: TagStyle, c: SerializationContext,
   c.put(scalarEvent("" & value, tag, yAnchorNone))
 
 proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
-  let uri = "!nim:system:seq(" & safeTagUri(yamlTag(I)) & ')'
+  let uri = nimTag("system:seq(" & safeTagUri(yamlTag(I)) & ')')
   result = lazyLoadTag(uri)
 
 proc yamlTag*[I](T: typedesc[set[I]]): TagId {.inline, raises: [].} =
-  let uri = "!nim:system:set(" & safeTagUri(yamlTag(I)) & ')'
+  let uri = nimTag("system:set(" & safeTagUri(yamlTag(I)) & ')')
   result = lazyLoadTag(uri)
 
 proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
@@ -360,8 +368,8 @@ proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
 
 proc yamlTag*[I, V](T: typedesc[array[I, V]]): TagId {.inline, raises: [].} =
   const rangeName = name(I)
-  let uri = "!nim:system:array(" & rangeName[6..rangeName.high()] & "," &
-      safeTagUri(yamlTag(V)) & ')'
+  let uri = nimTag("system:array(" & rangeName[6..rangeName.high()] & ';' &
+      safeTagUri(yamlTag(V)) & ')')
   result = lazyLoadTag(uri)
 
 proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
@@ -391,8 +399,8 @@ proc representObject*[I, T](value: array[I, T], ts: TagStyle,
 
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): TagId {.inline, raises: [].} =
   try:
-    let uri = "!nim:tables:Table(" & safeTagUri(yamlTag(K)) & "," &
-        safeTagUri(yamlTag(V)) & ")"
+    let uri = nimTag("tables:Table(" & safeTagUri(yamlTag(K)) & ';' &
+        safeTagUri(yamlTag(V)) & ")")
     result = lazyLoadTag(uri)
   except KeyError:
     # cannot happen (theoretically, you know)
@@ -430,8 +438,8 @@ proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
 proc yamlTag*[K, V](T: typedesc[OrderedTable[K, V]]): TagId
     {.inline, raises: [].} =
   try:
-    let uri = "!nim:tables:OrderedTable(" & safeTagUri(yamlTag(K)) & "," &
-        safeTagUri(yamlTag(V)) & ")"
+    let uri = nimTag("tables:OrderedTable(" & safeTagUri(yamlTag(K)) & ';' &
+        safeTagUri(yamlTag(V)) & ")")
     result = lazyLoadTag(uri)
   except KeyError:
     # cannot happen (theoretically, you know)
@@ -475,7 +483,7 @@ proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
 
 proc yamlTag*(T: typedesc[object|enum]):
     TagId {.inline, raises: [].} =
-  var uri = "!nim:custom:" & (typetraits.name(type(T)))
+  var uri = nimTag("custom:" & (typetraits.name(type(T))))
   try: serializationTagLibrary.tags[uri]
   except KeyError: serializationTagLibrary.registerUri(uri)
 
@@ -483,7 +491,7 @@ proc yamlTag*(T: typedesc[tuple]):
     TagId {.inline, raises: [].} =
   var
     i: T
-    uri = "!nim:tuple("
+    uri = nimTag("tuple(")
     first = true
   for name, value in fieldPairs(i):
     if first: first = false
@@ -741,6 +749,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
   ))
   ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
       newStmtList(raiseStmt), newNimNode(nnkExceptBranch).add(
+        newIdentNode("KeyError"),
         newNimNode(nnkDiscardStmt).add(newEmptyNode())
   ))))
   result = newStmtList(newCall("reset", r), ifStmt)

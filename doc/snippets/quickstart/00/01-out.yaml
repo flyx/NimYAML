@@ -1,5 +1,6 @@
 %YAML 1.2
---- !nim:system:seq(nim:custom:Person) 
+%TAG !n! tag:nimyaml.org,2016:
+--- !n!system:seq(tag:nimyaml.org;2016:custom:Person) 
 - 
   name: Karl Koch
   age: 23

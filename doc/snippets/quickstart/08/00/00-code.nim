@@ -19,7 +19,7 @@ type
     of ckNone:
       discard
 
-setTagUri(Person, "!nim:demo:Person")
+setTagUri(Person, nimTag("demo:Person"))
 
 # tell NimYAML to use Container as implicit type.
 # only possible with variant object types where
