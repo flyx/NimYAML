@@ -622,6 +622,12 @@ proc isVariantObject(t: typedesc): bool {.compileTime.} =
     if child.kind == nnkRecCase: return true
   return false
 
+let
+  implicitVariantObjectMarker {.compileTime.} =
+      newIdentNode(":implicitVariantObject")
+  transientBitvectorProc {.compileTime.} =
+      newIdentNode(":transientObject")
+
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
@@ -679,20 +685,39 @@ proc constructObject*[O: object|tuple](
       inc(i)
   else: ensureAllFieldsPresent(s, O, result, matched)
 
+macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
+  echo "here"
+  result = quote do:
+    when compiles(`transientBitvectorProc`(`t`)):
+      const bitvector = `transientBitvectorProc`(`t`)
+      var fieldIndex = 0'i16
+    for name, value in fieldPairs(value):
+      when compiles(`transientBitvectorProc`(`t`)):
+        if fieldIndex notin bitvector:
+          when isVariantObject(O): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
+          c.put(scalarEvent(name, if childTagStyle == tsNone: yTagQuestionMark else:
+                                  yTagNimField, yAnchorNone))
+          representChild(value, childTagStyle, c)
+          when isVariantObject(O): c.put(endMapEvent())
+        fieldIndex.inc()
+      else:
+        when isVariantObject(O): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
+        c.put(scalarEvent(name, if childTagStyle == tsNone: yTagQuestionMark else:
+                                yTagNimField, yAnchorNone))
+        representChild(value, childTagStyle, c)
+        when isVariantObject(O): c.put(endMapEvent())
+  echo "did it"
+
 proc representObject*[O: object|tuple](value: O, ts: TagStyle,
     c: SerializationContext, tag: TagId) =
   ## represents a Nim object or tuple as YAML mapping
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   when isVariantObject(O): c.put(startSeqEvent(tag, yAnchorNone))
   else: c.put(startMapEvent(tag, yAnchorNone))
-  for name, value in fieldPairs(value):
-    when isVariantObject(O): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
-    c.put(scalarEvent(name, if childTagStyle == tsNone: yTagQuestionMark else:
-                            yTagNimField, yAnchorNone))
-    representChild(value, childTagStyle, c)
-    when isVariantObject(O): c.put(endMapEvent())
+  genRepresentObject(O, value, childTagStyle)
   when isVariantObject(O): c.put(endSeqEvent())
   else: c.put(endMapEvent())
+  static: echo "represented " & typetraits.name(O)
 
 proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
                                result: var O)
@@ -753,9 +778,6 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
         newNimNode(nnkDiscardStmt).add(newEmptyNode())
   ))))
   result = newStmtList(newCall("reset", r), ifStmt)
-
-let implicitVariantObjectMarker {.compileTime.} =
-    newIdentNode(":implicitVariantObject")
 
 macro isImplicitVariantObject(o: typed): untyped =
   result = newCall("compiles", newCall(implicitVariantObjectMarker, o))
@@ -941,8 +963,10 @@ proc representChild*[O](value: O, ts: TagStyle,
       inc(count)
     if count == 1: c.put(scalarEvent("~", yTagNull))
   else:
+    static: echo "repchild " & typetraits.name(O)
     representObject(value, ts, c,
         if ts == tsNone: yTagQuestionMark else: yamlTag(O))
+    static: echo "/repchild " & typetraits.name(O)
 
 proc construct*[T](s: var YamlStream, target: var T)
     {.raises: [YamlStreamError].} =
@@ -1067,6 +1091,8 @@ proc canBeImplicit(t: typedesc): bool {.compileTime.} =
 
 macro setImplicitVariantObjectMarker(t: typedesc): untyped =
   result = quote do:
+    when compiles(`transientBitvectorProc`(`t`)):
+      {.fatal: "Cannot mark object with transient fields as implicit".}
     proc `implicitVariantObjectMarker`*(unused: `t`) = discard
 
 template markAsImplicit*(t: typedesc): typed =
@@ -1080,3 +1106,46 @@ template markAsImplicit*(t: typedesc): typed =
   else:
     {. fatal: "This type cannot be marked as implicit" .}
 
+macro getFieldIndex(t: typedesc, field: untyped): untyped =
+  let
+    tDecl = getType(t)
+    tName = $tDecl[1]
+    tDesc = getType(tDecl[1])
+    fieldName = $field
+  var
+    fieldIndex = 0
+    found = false
+  block outer:
+    for child in tDesc[2].children:
+      if child.kind == nnkRecCase:
+        for bIndex in 1 .. len(child) - 1:
+          for item in child[bIndex][1].children:
+            inc(fieldIndex)
+            yAssert item.kind == nnkSym
+            if $item == fieldName:
+              found = true
+              break outer
+      else:
+        yAssert child.kind == nnkSym
+        if $child == fieldName:
+          found = true
+          break
+      inc(fieldIndex)
+  if not found:
+    let msg = "Type " & tName & " has no field " & fieldName & '!'
+    result = quote do: {.fatal: `msg`.}
+  else:
+    result = newNimNode(nnkInt16Lit)
+    result.intVal = fieldIndex
+
+macro markAsTransient*(t: typedesc, field: untyped): typed =
+  let mySet = genSym(nskVar, ident = ":mySym")
+  quote do:
+    when compiles(`implicitVariantObjectMarker`(`t`)):
+      {.fatal: "Cannot mark fields of implicit variant objects as transient." .}
+    when not compiles(`transientBitvectorProc`(`t`)):
+      var `mySet` {.compileTime.}: set[int16] = {}
+      proc `transientBitvectorProc`*(myType: typedesc[`t`]): var set[int16]
+          {.compileTime.} =
+        return `mySet`
+    static: `transientBitvectorProc`(`t`).incl(getFieldIndex(`t`, `field`))
