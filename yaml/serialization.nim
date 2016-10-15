@@ -689,15 +689,6 @@ proc constructObject*[O: object|tuple](
       inc(i)
   else: ensureAllFieldsPresent(s, O, result, matched)
 
-macro getTransientBitvector(t: typedesc): untyped =
-  echo "getTransientBitvector"
-  result = quote do:
-    when compiles(`transientBitvectorProc`(`t`)):
-      transientVectors[`transientBitvectorProc`(`t`)]
-    else:
-      set[int16]({})
-  echo result.repr
-
 macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
   result = newStmtList()
   let tSym = genSym(nskConst, ":tSym")
@@ -787,11 +778,9 @@ proc representObject*[O: object](value: O, ts: TagStyle,
 proc representObject*[O: tuple](value: O, ts: TagStyle,
     c: SerializationContext, tag: TagId) =
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  const bitvector = getTransientBitvector(O)
   var fieldIndex = 0'i16
   c.put(startMapEvent(tag, yAnchorNone))
   for name, fvalue in fieldPairs(value):
-    #if fieldIndex notin bitvector: TODO: fix!
     c.put(scalarEvent(name, if childTagStyle == tsNone:
           yTagQuestionMark else: yTagNimField, yAnchorNone))
     representChild(fvalue, childTagStyle, c)
@@ -1223,7 +1212,6 @@ macro getFieldIndex(t: typedesc, field: untyped): untyped =
   else:
     result = newNimNode(nnkInt16Lit)
     result.intVal = fieldIndex
-  echo "found fieldIndex of \"", fieldName, "\": ", result.intVal
 
 macro markAsTransient*(t: typedesc, field: untyped): typed =
   let nextBitvectorIndex = transientVectors.len
@@ -1236,6 +1224,4 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
         `nextBitvectorIndex`
       static: transientVectors.add({})
     static:
-      echo "setting transientBitvector at ", `transientBitvectorProc`(`t`)
       transientVectors[`transientBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
-      echo "transient bitvector is now ", transientVectors[`transientBitvectorProc`(`t`)]
