@@ -616,8 +616,10 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
       newCall(bindSym("escape"), name))))))
 
 proc isVariantObject(t: typedesc): bool {.compileTime.} =
-  let tDesc = getType(t)
-  if tDesc.kind != nnkObjectTy: return false
+  var tDesc = getType(t)
+  if tDesc.kind == nnkBracketExpr: tDesc = getType(tDesc[1])
+  if tDesc.kind != nnkObjectTy:
+    return false
   for child in tDesc[2].children:
     if child.kind == nnkRecCase: return true
   return false
@@ -627,6 +629,8 @@ let
       newIdentNode(":implicitVariantObject")
   transientBitvectorProc {.compileTime.} =
       newIdentNode(":transientObject")
+
+var transientVectors {.compileTime.} = newSeq[set[int16]]()
 
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
@@ -685,30 +689,92 @@ proc constructObject*[O: object|tuple](
       inc(i)
   else: ensureAllFieldsPresent(s, O, result, matched)
 
-macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
-  echo "here"
+macro getTransientBitvector(t: typedesc): untyped =
+  echo "getTransientBitvector"
   result = quote do:
     when compiles(`transientBitvectorProc`(`t`)):
-      const bitvector = `transientBitvectorProc`(`t`)
-      var fieldIndex = 0'i16
-    for name, value in fieldPairs(value):
-      when compiles(`transientBitvectorProc`(`t`)):
-        if fieldIndex notin bitvector:
-          when isVariantObject(O): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
-          c.put(scalarEvent(name, if childTagStyle == tsNone: yTagQuestionMark else:
-                                  yTagNimField, yAnchorNone))
-          representChild(value, childTagStyle, c)
-          when isVariantObject(O): c.put(endMapEvent())
-        fieldIndex.inc()
-      else:
-        when isVariantObject(O): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
-        c.put(scalarEvent(name, if childTagStyle == tsNone: yTagQuestionMark else:
-                                yTagNimField, yAnchorNone))
-        representChild(value, childTagStyle, c)
-        when isVariantObject(O): c.put(endMapEvent())
-  echo "did it"
+      transientVectors[`transientBitvectorProc`(`t`)]
+    else:
+      set[int16]({})
+  echo result.repr
 
-proc representObject*[O: object|tuple](value: O, ts: TagStyle,
+macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
+  result = newStmtList()
+  let tSym = genSym(nskConst, ":tSym")
+  result.add(quote do:
+    when compiles(`transientBitvectorProc`(`t`)):
+      const `tSym` = `transientBitvectorProc`(`t`)
+    else:
+      const `tSym` = -1
+  )
+  let
+    tDecl = getType(t)
+    tDesc = getType(tDecl[1])
+    isVO  = isVariantObject(t)
+  var fieldIndex = 0'i16
+  for child in tDesc[2].children:
+    if child.kind == nnkRecCase:
+      let
+        fieldName = $child[0]
+        fieldAccessor = newDotExpr(value, newIdentNode(fieldName))
+      result.add(quote do:
+        c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
+        c.put(scalarEvent(`fieldName`, if `childTagStyle` == tsNone:
+            yTagQuestionMark else: yTagNimField, yAnchorNone))
+        representChild(`fieldAccessor`, `childTagStyle`, c)
+        c.put(endMapEvent())
+      )
+      let enumName = $getTypeInst(child[0])
+      var caseStmt = newNimNode(nnkCaseStmt).add(fieldAccessor)
+      for bIndex in 1 .. len(child) - 1:
+        var curBranch: NimNode
+        var recListIndex = 0
+        case child[bIndex].kind
+        of nnkOfBranch:
+          curBranch = newNimNode(nnkOfBranch)
+          while child[bIndex][recListIndex].kind == nnkIntLit:
+            curBranch.add(newCall(enumName, newLit(child[bIndex][recListIndex].intVal)))
+            inc(recListIndex)
+        of nnkElse:
+          curBranch = newNimNode(nnkElse)
+        else:
+          internalError("Unexpected child kind: " & $child[bIndex].kind)
+        doAssert child[bIndex][recListIndex].kind == nnkRecList
+        var curStmtList = newStmtList()
+        if child[bIndex][recListIndex].len > 0:
+          for item in child[bIndex][recListIndex].children:
+            inc(fieldIndex)
+            let
+              name = $item
+              itemAccessor = newDotExpr(value, newIdentNode(name))
+            curStmtList.add(quote do:
+              when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
+                c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
+                c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
+                    yTagQuestionMark else: yTagNimField, yAnchorNone))
+                representChild(`itemAccessor`, `childTagStyle`, c)
+                c.put(endMapEvent())
+            )
+        else:
+          curStmtList.add(newNimNode(nnkDiscardStmt).add(newEmptyNode()))
+        curBranch.add(curStmtList)
+        caseStmt.add(curBranch)
+      result.add(caseStmt)
+    else:
+      let
+        name = $child
+        childAccessor = newDotExpr(value, newIdentNode(name))
+      result.add(quote do:
+        when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
+          when `isVO`: c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
+          c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
+              yTagQuestionMark else: yTagNimField, yAnchorNone))
+          representChild(`childAccessor`, `childTagStyle`, c)
+          when `isVO`: c.put(endMapEvent())
+      )
+    inc(fieldIndex)
+
+proc representObject*[O: object](value: O, ts: TagStyle,
     c: SerializationContext, tag: TagId) =
   ## represents a Nim object or tuple as YAML mapping
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
@@ -717,7 +783,20 @@ proc representObject*[O: object|tuple](value: O, ts: TagStyle,
   genRepresentObject(O, value, childTagStyle)
   when isVariantObject(O): c.put(endSeqEvent())
   else: c.put(endMapEvent())
-  static: echo "represented " & typetraits.name(O)
+
+proc representObject*[O: tuple](value: O, ts: TagStyle,
+    c: SerializationContext, tag: TagId) =
+  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+  const bitvector = getTransientBitvector(O)
+  var fieldIndex = 0'i16
+  c.put(startMapEvent(tag, yAnchorNone))
+  for name, fvalue in fieldPairs(value):
+    #if fieldIndex notin bitvector: TODO: fix!
+    c.put(scalarEvent(name, if childTagStyle == tsNone:
+          yTagQuestionMark else: yTagNimField, yAnchorNone))
+    representChild(fvalue, childTagStyle, c)
+    inc(fieldIndex)
+  c.put(endMapEvent())
 
 proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
                                result: var O)
@@ -963,10 +1042,8 @@ proc representChild*[O](value: O, ts: TagStyle,
       inc(count)
     if count == 1: c.put(scalarEvent("~", yTagNull))
   else:
-    static: echo "repchild " & typetraits.name(O)
     representObject(value, ts, c,
         if ts == tsNone: yTagQuestionMark else: yamlTag(O))
-    static: echo "/repchild " & typetraits.name(O)
 
 proc construct*[T](s: var YamlStream, target: var T)
     {.raises: [YamlStreamError].} =
@@ -1119,7 +1196,16 @@ macro getFieldIndex(t: typedesc, field: untyped): untyped =
     for child in tDesc[2].children:
       if child.kind == nnkRecCase:
         for bIndex in 1 .. len(child) - 1:
-          for item in child[bIndex][1].children:
+          var bChildIndex = 0
+          case child[bIndex].kind
+          of nnkOfBranch:
+            while child[bIndex][bChildIndex].kind == nnkIntLit: inc(bChildIndex)
+          of nnkElse: discard
+          else:
+            internalError("Unexpected child kind: " &
+                $child[bIndex][bChildIndex].kind)
+          yAssert child[bIndex][bChildIndex].kind == nnkRecList
+          for item in child[bIndex][bChildIndex].children:
             inc(fieldIndex)
             yAssert item.kind == nnkSym
             if $item == fieldName:
@@ -1137,15 +1223,19 @@ macro getFieldIndex(t: typedesc, field: untyped): untyped =
   else:
     result = newNimNode(nnkInt16Lit)
     result.intVal = fieldIndex
+  echo "found fieldIndex of \"", fieldName, "\": ", result.intVal
 
 macro markAsTransient*(t: typedesc, field: untyped): typed =
-  let mySet = genSym(nskVar, ident = ":mySym")
-  quote do:
+  let nextBitvectorIndex = transientVectors.len
+  result = quote do:
     when compiles(`implicitVariantObjectMarker`(`t`)):
       {.fatal: "Cannot mark fields of implicit variant objects as transient." .}
     when not compiles(`transientBitvectorProc`(`t`)):
-      var `mySet` {.compileTime.}: set[int16] = {}
-      proc `transientBitvectorProc`*(myType: typedesc[`t`]): var set[int16]
+      proc `transientBitvectorProc`*(myType: typedesc[`t`]): int
           {.compileTime.} =
-        return `mySet`
-    static: `transientBitvectorProc`(`t`).incl(getFieldIndex(`t`, `field`))
+        `nextBitvectorIndex`
+      static: transientVectors.add({})
+    static:
+      echo "setting transientBitvector at ", `transientBitvectorProc`(`t`)
+      transientVectors[`transientBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
+      echo "transient bitvector is now ", transientVectors[`transientBitvectorProc`(`t`)]

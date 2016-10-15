@@ -38,6 +38,31 @@ type
     of akDog:
       barkometer: int
 
+  DumbEnum = enum
+    deA, deB, deC, deD
+
+  NonVariantWithTransient = object
+    a, b, c, d: string
+
+  VariantWithTransient = object
+    gStorable, gTemporary: string
+    case kind: DumbEnum
+    of deA, deB:
+      cStorable, cTemporary: string
+    of deC:
+      alwaysThere: int
+    of deD:
+      neverThere: int
+
+markAsTransient(NonVariantWithTransient, a)
+markAsTransient(NonVariantWithTransient, c)
+
+markAsTransient(VariantWithTransient, gTemporary)
+markAsTransient(VariantWithTransient, cTemporary)
+markAsTransient(VariantWithTransient, neverThere)
+
+
+
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
 
@@ -450,6 +475,32 @@ suite "Serialization":
     var result: Animal
     expectConstructionError(1, 32, "While constructing Animal: Missing field: \"purringIntensity\""):
       load(input, result)
+
+  test "Dump non-variant object with transient fields":
+    let input = NonVariantWithTransient(a: "a", b: "b", c: "c", d: "d")
+    let output = dump(input, tsNone, asTidy, blockOnly)
+    assertStringEqual yamlDirs & "\nb: b\nd: d", output
+
+  test "Dump variant object with transient fields":
+    let input = @[VariantWithTransient(kind: deB, gStorable: "gs",
+        gTemporary: "gt", cStorable: "cs", cTemporary: "ct"),
+        VariantWithTransient(kind: deD, gStorable: "a", gTemporary: "b",
+        neverThere: 42)]
+    let output = dump(input, tsNone, asTidy, blockOnly)
+    assertStringEqual yamlDirs & """
+
+- 
+  - 
+    gStorable: gs
+  - 
+    kind: deB
+  - 
+    cStorable: cs
+- 
+  - 
+    gStorable: a
+  - 
+    kind: deD""", output
 
   test "Dump cyclic data structure":
     var
