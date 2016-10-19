@@ -105,8 +105,8 @@ template expectConstructionError(li, co: int, message: string, body: typed) =
     let e = (ref YamlConstructionError)(getCurrentException())
     doAssert li == e.line, "Expected error line " & $li & ", was " & $e.line
     doAssert co == e.column, "Expected error column " & $co & ", was " & $e.column
-    doAssert message == e.msg, "Expected error message " & escape(message) &
-        ", got " & escape(e.msg)
+    doAssert message == e.msg, "Expected error message \n" & escape(message) &
+        ", got \n" & escape(e.msg)
 
 proc newNode(v: string): ref Node =
   new(result)
@@ -476,10 +476,42 @@ suite "Serialization":
     expectConstructionError(1, 32, "While constructing Animal: Missing field: \"purringIntensity\""):
       load(input, result)
 
+  test "Load non-variant object with transient fields":
+    let input = "{b: b, d: d}"
+    var result: NonVariantWithTransient
+    load(input, result)
+    assert isNil(result.a)
+    assert result.b == "b"
+    assert isNil(result.c)
+    assert result.d == "d"
+
+  test "Load non-variant object with transient fields - unknown field":
+    let input = "{b: b, c: c, d: d}"
+    var result: NonVariantWithTransient
+    expectConstructionError(1, 9, "While constructing NonVariantWithTransient: Field \"c\" is transient and may not occur in input"):
+      load(input, result)
+
   test "Dump non-variant object with transient fields":
     let input = NonVariantWithTransient(a: "a", b: "b", c: "c", d: "d")
     let output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & "\nb: b\nd: d", output
+
+  test "Load variant object with transient fields":
+    let input = "[[gStorable: gs, kind: deB, cStorable: cs], [gStorable: a, kind: deD]]"
+    var result: seq[VariantWithTransient]
+    load(input, result)
+    assert result.len == 2
+    assert result[0].kind == deB
+    assert result[0].gStorable == "gs"
+    assert result[0].cStorable == "cs"
+    assert result[1].kind == deD
+    assert result[1].gStorable == "a"
+
+  test "Load variant object with transient fields":
+    let input = "[gStorable: gc, kind: deD, neverThere: foo]"
+    var result: VariantWithTransient
+    expectConstructionError(1, 38, "While constructing VariantWithTransient: Field \"neverThere\" is transient and may not occur in input"):
+      load(input, result)
 
   test "Dump variant object with transient fields":
     let input = @[VariantWithTransient(kind: deB, gStorable: "gs",

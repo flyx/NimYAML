@@ -513,7 +513,15 @@ proc fieldCount(t: typedesc): int {.compileTime.} =
       inc(result)
       if child.kind == nnkRecCase:
         for bIndex in 1..<len(child):
-          inc(result, child[bIndex][1].len)
+          var recListIndex = 0
+          case child[bIndex].kind
+          of nnkOfBranch:
+            while child[bIndex][recListIndex].kind == nnkIntLit:
+              inc(recListIndex)
+          of nnkElse: discard
+          else: internalError("Unexpected child kind: " & $child[bIndex].kind)
+          if child[bIndex].len > recListIndex:
+            inc(result, child[bIndex][recListIndex].len)
 
 macro matchMatrix(t: typedesc): untyped =
   result = newNimNode(nnkBracket)
@@ -539,7 +547,28 @@ proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
   newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
       newLit(true))
 
-macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
+let
+  implicitVariantObjectMarker {.compileTime.} =
+      newIdentNode(":implicitVariantObject")
+  transientBitvectorProc {.compileTime.} =
+      newIdentNode(":transientObject")
+
+var transientVectors {.compileTime.} = newSeq[set[int16]]()
+
+proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
+    elseError: bool = false, s: NimNode = nil, tName, fName: string = nil):
+    NimNode {.compileTime.} =
+  var stmts = newStmtList(content)
+  result = quote do:
+    when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
+      `stmts`
+  if elseError:
+    result[0].add(newNimNode(nnkElse).add(quote do:
+      raise constructionError(`s`, "While constructing " & `tName` &
+          ": Field \"" & `fName` & "\" is transient and may not occur in input")
+    ))
+
+macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
                              matched: typed): typed =
   result = newStmtList()
   let
@@ -552,22 +581,44 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
       result.add(checkMissing(s, tName, $child[0], field, matched))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
-        for item in child[bIndex][1].children:
+        var
+          curValues = newNimNode(nnkCurly)
+          recListIndex = 0
+        case child[bIndex].kind
+        of nnkOfBranch:
+          while recListIndex < child[bIndex].len and
+              child[bIndex][recListIndex].kind == nnkIntLit:
+            curValues.add(child[bIndex][recListIndex])
+            inc(recListIndex)
+        of nnkElse: discard
+        else: internalError("Unexpected child kind: " & $child[bIndex].kind)
+        for item in child[bIndex][recListIndex].children:
           inc(field)
           discChecks.add(checkMissing(s, tName, $item, field, matched))
-        result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
-            "==", child[bIndex][0]), discChecks)))
+        result.add(ifNotTransient(tIndex, field,
+            [newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
+            "in", curValues), discChecks))]))
     else:
-      result.add(checkMissing(s, tName, $child, field, matched))
+      result.add(ifNotTransient(tIndex, field,
+          [checkMissing(s, tName, $child, field, matched)]))
     inc(field)
 
-macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
-                           name: untyped, o: untyped, matched: untyped): typed =
+macro fetchTransientIndex(t: typedesc, tIndex: untyped): typed =
+  quote do:
+    when compiles(`transientBitvectorProc`(`t`)):
+      const `tIndex` = `transientBitvectorProc`(`t`)
+    else:
+      const `tIndex` = -1
+
+macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
+                          context: untyped, name: untyped, o: untyped,
+                          matched: untyped): typed =
   let
     tDecl = getType(t)
     tName = $tDecl[1]
     tDesc = getType(tDecl[1])
-  result = newNimNode(nnkCaseStmt).add(name)
+  result = newStmtList()
+  var caseStmt = newNimNode(nnkCaseStmt).add(name)
   var fieldIndex = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
@@ -583,10 +634,26 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
           newCall("constructChild", stream, context, newIdentNode("value")),
           newAssignment(discriminant, newIdentNode("value")),
           markAsFound(fieldIndex, matched)))
-      result.add(disOb)
+      caseStmt.add(disOb)
+      var alreadyUsedSet = newNimNode(nnkCurly)
       for bIndex in 1 .. len(child) - 1:
-        let discTest = infix(discriminant, "==", child[bIndex][0])
-        for item in child[bIndex][1].children:
+        var recListIndex = 0
+        var discTest: NimNode
+        case child[bIndex].kind
+        of nnkOfBranch:
+          discTest = newNimNode(nnkCurly)
+          while child[bIndex][recListIndex].kind == nnkIntLit:
+            discTest.add(child[bIndex][recListIndex])
+            alreadyUsedSet.add(child[bIndex][recListIndex])
+            inc(recListIndex)
+          discTest = infix(discriminant, "in", discTest)
+        of nnkElse:
+          discTest = infix(discriminant, "notin", alreadyUsedSet)
+        else:
+          internalError("Unexpected child kind: " & $child[bIndex].kind)
+        doAssert child[bIndex][recListIndex].kind == nnkRecList
+
+        for item in child[bIndex][recListIndex].children:
           inc(fieldIndex)
           yAssert item.kind == nnkSym
           var ob = newNimNode(nnkOfBranch).add(newStrLitNode($item))
@@ -597,23 +664,26 @@ macro constructFieldValue(t: typedesc, stream: untyped, context: untyped,
               newCall(bindSym("constructionError"), stream,
               infix(newStrLitNode("Field " & $item & " not allowed for " &
               $child[0] & " == "), "&", prefix(discriminant, "$"))))))
-          ob.add(newStmtList(checkDuplicate(stream, tName, $item, fieldIndex,
-              matched), ifStmt, markAsFound(fieldIndex, matched)))
-          result.add(ob)
+          ob.add(ifNotTransient(tIndex, fieldIndex,
+              [checkDuplicate(stream, tName, $item, fieldIndex, matched),
+              ifStmt, markAsFound(fieldIndex, matched)], true, stream, tName,
+              $item))
+          caseStmt.add(ob)
     else:
       yAssert child.kind == nnkSym
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
       let field = newDotExpr(o, newIdentNode($child))
-      ob.add(newStmtList(
-          checkDuplicate(stream, tName, $child, fieldIndex, matched),
+      ob.add(ifNotTransient(tIndex, fieldIndex,
+          [checkDuplicate(stream, tName, $child, fieldIndex, matched),
           newCall("constructChild", stream, context, field),
-          markAsFound(fieldIndex, matched)))
-      result.add(ob)
+          markAsFound(fieldIndex, matched)], true, stream, tName, $child))
+      caseStmt.add(ob)
     inc(fieldIndex)
-  result.add(newNimNode(nnkElse).add(newNimNode(nnkRaiseStmt).add(
+  caseStmt.add(newNimNode(nnkElse).add(newNimNode(nnkRaiseStmt).add(
       newCall(bindSym("constructionError"), stream,
       infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
       newCall(bindSym("escape"), name))))))
+  result.add(caseStmt)
 
 proc isVariantObject(t: typedesc): bool {.compileTime.} =
   var tDesc = getType(t)
@@ -624,14 +694,6 @@ proc isVariantObject(t: typedesc): bool {.compileTime.} =
     if child.kind == nnkRecCase: return true
   return false
 
-let
-  implicitVariantObjectMarker {.compileTime.} =
-      newIdentNode(":implicitVariantObject")
-  transientBitvectorProc {.compileTime.} =
-      newIdentNode(":transientObject")
-
-var transientVectors {.compileTime.} = newSeq[set[int16]]()
-
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
@@ -641,6 +703,7 @@ proc constructObject*[O: object|tuple](
   const
     startKind = when isVariantObject(O): yamlStartSeq else: yamlStartMap
     endKind = when isVariantObject(O): yamlEndSeq else: yamlEndMap
+  fetchTransientIndex(O, tIndex)
   if e.kind != startKind:
     raise s.constructionError("While constructing " &
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
@@ -673,7 +736,7 @@ proc constructObject*[O: object|tuple](
         raise s.constructionError("While constructing " &
             typetraits.name(O) & ": Unknown field: " & escape(name))
     else:
-      constructFieldValue(O, s, c, name, result, matched)
+      constructFieldValue(O, tIndex, s, c, name, result, matched)
     when isVariantObject(O):
       e = s.next()
       if e.kind != yamlEndMap:
@@ -687,7 +750,7 @@ proc constructObject*[O: object|tuple](
         raise s.constructionError("While constructing " &
             typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
-  else: ensureAllFieldsPresent(s, O, result, matched)
+  else: ensureAllFieldsPresent(s, O, tIndex, result, matched)
 
 macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
   result = newStmtList()
