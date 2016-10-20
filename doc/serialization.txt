@@ -247,6 +247,33 @@ for example use it on a certain ``seq`` type:
 
     setTagUri(seq[string], "!nim:my:seq")
 
+Customizing Field Handling
+==========================
+
+NimYAML allows the user to specify special handling of certain object fields.
+This configuration will be applied at compile time when NimYAML generates the
+(de)serialization code for an object type. It is important that the
+configuration happens before any YAML operations (e.g. ``load`` or ``dump``) are
+executed on a variable of the object type.
+
+Transient Fields
+----------------
+
+It may happen that certain fields of an object type are transient, i.e. they are
+used in a way that makes (de)serializing them unnecessary. Such fields can be
+marked as transient. This will cause them not to be serialized to YAML. They
+will also not be accepted when loading the object.
+
+Example:
+
+.. code-block:: nim
+
+  type MyObject: object
+    storable: string
+    temporary: string
+
+  markAsTransient(MyObject, temporary)
+
 Customize Serialization
 =======================
 
