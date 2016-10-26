@@ -536,24 +536,45 @@ proc checkDuplicate(s: NimNode, tName: string, name: string, i: int,
       newLit("While constructing " & tName & ": Duplicate field: " &
       escape(name))))))
 
-proc checkMissing(s: NimNode, tName: string, name: string, i: int,
-                  matched: NimNode): NimNode {.compileTime.} =
-  result = newIfStmt((newCall("not", newNimNode(nnkBracketExpr).add(matched,
-      newLit(i))), newNimNode(nnkRaiseStmt).add(newCall(
-      bindSym("constructionError"), s, newLit("While constructing " &
-      tName & ": Missing field: " & escape(name))))))
-
-proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
-  newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
-      newLit(true))
-
 let
   implicitVariantObjectMarker {.compileTime.} =
       newIdentNode(":implicitVariantObject")
   transientBitvectorProc {.compileTime.} =
       newIdentNode(":transientObject")
+  defaultBitvectorProc {.compileTime.} =
+      newIdentNode(":defaultBitvector")
+  defaultValueGetter {.compileTime.} =
+      newIdentNode(":defaultValueGetter")
 
-var transientVectors {.compileTime.} = newSeq[set[int16]]()
+var
+  transientVectors {.compileTime.} = newSeq[set[int16]]()
+  defaultVectors {.compileTime.} = newSeq[set[int16]]()
+
+proc addDefaultOr(tName: string, i: int, o: NimNode,
+    field, elseBranch, defaultValues: NimNode): NimNode {.compileTime.} =
+  let
+    dbp = defaultBitvectorProc
+    t = newIdentNode(tName)
+  result = quote do:
+    when compiles(`dbp`(`t`)):
+      when `i` in defaultVectors[`dbp`(`t`)]:
+        `o`.`field` = `defaultValues`.`field`
+      else: `elseBranch`
+    else: `elseBranch`
+
+proc checkMissing(s: NimNode, t: typedesc, tName: string, field: NimNode,
+                  i: int, matched, o, defaultValues: NimNode):
+    NimNode {.compileTime.} =
+  result = newIfStmt((newCall("not", newNimNode(nnkBracketExpr).add(matched,
+      newLit(i))), addDefaultOr(tName, i, o, field,
+      newNimNode(nnkRaiseStmt).add(newCall(
+      bindSym("constructionError"), s, newLit("While constructing " &
+      tName & ": Missing field: " & escape($field)))), defaultValues)))
+  echo result.repr
+
+proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
+  newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
+      newLit(true))
 
 proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
     elseError: bool = false, s: NimNode = nil, tName, fName: string = nil):
@@ -570,7 +591,12 @@ proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
 
 macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
                              matched: typed): typed =
-  result = newStmtList()
+  let
+    dbp = defaultBitvectorProc
+    defaultValues = genSym(nskConst, "defaultValues")
+  result = quote do:
+    when compiles(`dbp`(`t`)):
+      const `defaultValues` = `defaultValueGetter`(`t`)
   let
     tDecl = getType(t)
     tName = $tDecl[1]
@@ -578,7 +604,8 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
   var field = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
-      result.add(checkMissing(s, tName, $child[0], field, matched))
+      result.add(checkMissing(s, t, tName, child[0], field, matched, o,
+                              defaultValues))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         var
@@ -594,13 +621,14 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
         else: internalError("Unexpected child kind: " & $child[bIndex].kind)
         for item in child[bIndex][recListIndex].children:
           inc(field)
-          discChecks.add(checkMissing(s, tName, $item, field, matched))
+          discChecks.add(checkMissing(s, t, tName, item, field, matched, o,
+                                      defaultValues))
         result.add(ifNotTransient(tIndex, field,
             [newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
             "in", curValues), discChecks))]))
     else:
       result.add(ifNotTransient(tIndex, field,
-          [checkMissing(s, tName, $child, field, matched)]))
+          [checkMissing(s, t, tName, child, field, matched, o, defaultValues)]))
     inc(field)
 
 macro fetchTransientIndex(t: typedesc, tIndex: untyped): typed =
@@ -1288,3 +1316,24 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
       static: transientVectors.add({})
     static:
       transientVectors[`transientBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
+
+macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
+  let
+    dSym = genSym(nskVar, ":default")
+    nextBitvectorIndex = defaultVectors.len
+  result = quote do:
+    when compiles(`transientBitvectorProc`(`t`)):
+      {.fatal: "Cannot set default value of transient field".}
+    elif compiles(`implicitVariantObjectMarker`(`t`)):
+      {.fatal: "Cannot set default value of implicit variant objects.".}
+    when not compiles(`defaultValueGetter`(`t`)):
+      var `dSym` {.compileTime.}: `t`
+      template `defaultValueGetter`(t: typedesc[`t`]): auto =
+        `dSym`
+      proc `defaultBitvectorProc`*(myType: typedesc[`t`]): int
+          {.compileTime.} = `nextBitvectorIndex`
+      static: defaultVectors.add({})
+    static:
+      `defaultValueGetter`(`t`).`field` = `value`
+      defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
+  echo result.repr

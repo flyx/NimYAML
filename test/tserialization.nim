@@ -54,6 +54,9 @@ type
     of deD:
       neverThere: int
 
+  WithDefault = object
+    a, b, c, d: string
+
 markAsTransient(NonVariantWithTransient, a)
 markAsTransient(NonVariantWithTransient, c)
 
@@ -61,7 +64,8 @@ markAsTransient(VariantWithTransient, gTemporary)
 markAsTransient(VariantWithTransient, cTemporary)
 markAsTransient(VariantWithTransient, neverThere)
 
-
+setDefaultValue(WithDefault, b, "b")
+setDefaultValue(WithDefault, d, "d")
 
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
@@ -578,6 +582,24 @@ next:
     assert(result[0].next == result[1])
     assert(result[1].next == result[2])
     assert(result[2].next == result[0])
+
+  test "Load object with default values":
+    let input = "a: abc\nc: dce"
+    var result: WithDefault
+    load(input, result)
+    assert result.a == "abc"
+    assert result.b == "b"
+    assert result.c == "dce"
+    assert result.d == "d"
+
+  test "Load object with partly default values":
+    let input = "a: abc\nb: bcd\nc: cde"
+    var result: WithDefault
+    load(input, result)
+    assert result.a == "abc"
+    assert result.b == "bcd"
+    assert result.c == "cde"
+    assert result.d == "d"
 
   test "Load nil values":
     let input = newStringStream("- ~\n- !!str ~")
