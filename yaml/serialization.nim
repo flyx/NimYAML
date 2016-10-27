@@ -545,10 +545,13 @@ let
       newIdentNode(":defaultBitvector")
   defaultValueGetter {.compileTime.} =
       newIdentNode(":defaultValueGetter")
+  ignoredKeyListProc {.compileTime.} =
+      newIdentNode(":ignoredKeyList")
 
 var
   transientVectors {.compileTime.} = newSeq[set[int16]]()
   defaultVectors {.compileTime.} = newSeq[set[int16]]()
+  ignoredKeyLists {.compileTime.} = newSeq[seq[string]]()
 
 proc addDefaultOr(tName: string, i: int, o: NimNode,
     field, elseBranch, defaultValues: NimNode): NimNode {.compileTime.} =
@@ -570,7 +573,6 @@ proc checkMissing(s: NimNode, t: typedesc, tName: string, field: NimNode,
       newNimNode(nnkRaiseStmt).add(newCall(
       bindSym("constructionError"), s, newLit("While constructing " &
       tName & ": Missing field: " & escape($field)))), defaultValues)))
-  echo result.repr
 
 proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
   newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
@@ -722,6 +724,13 @@ proc isVariantObject(t: typedesc): bool {.compileTime.} =
     if child.kind == nnkRecCase: return true
   return false
 
+macro injectIgnoredKeyList(t: typedesc, ident: untyped): typed =
+  result = quote do:
+    when compiles(`ignoredKeyListProc`(`t`)):
+      const `ident` = ignoredKeyLists[`ignoredKeyListproc`(`t`)]
+    else:
+      const `ident` = newSeq[string]()
+
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
@@ -736,9 +745,8 @@ proc constructObject*[O: object|tuple](
     raise s.constructionError("While constructing " &
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
   when isVariantObject(O): reset(result) # make discriminants writeable
+  injectIgnoredKeyList(O, ignoredKeyList)
   while s.peek.kind != endKind:
-    # todo: check for duplicates in input and raise appropriate exception
-    # also todo: check for missing items and raise appropriate exception
     e = s.next()
     when isVariantObject(O):
       if e.kind != yamlStartMap:
@@ -764,7 +772,17 @@ proc constructObject*[O: object|tuple](
         raise s.constructionError("While constructing " &
             typetraits.name(O) & ": Unknown field: " & escape(name))
     else:
-      constructFieldValue(O, tIndex, s, c, name, result, matched)
+      if name notin ignoredKeyList:
+        constructFieldValue(O, tIndex, s, c, name, result, matched)
+      else:
+        e = s.next()
+        var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
+        while depth > 0:
+          case s.next().kind
+          of yamlStartMap, yamlStartSeq: inc(depth)
+          of yamlEndMap, yamlEndSeq: dec(depth)
+          of yamlScalar: discard
+          else: internalError("Unexpected event kind.")
     when isVariantObject(O):
       e = s.next()
       if e.kind != yamlEndMap:
@@ -1336,4 +1354,15 @@ macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
     static:
       `defaultValueGetter`(`t`).`field` = `value`
       defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
-  echo result.repr
+
+macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
+  let nextIgnoredKeyList = ignoredKeyLists.len
+  result = quote do:
+    when not compiles(`ignoredKeyListProc`(`t`)):
+      proc `ignoredKeyListProc`*(t: typedesc[`t`]): int {.compileTime.} =
+        `nextIgnoredKeyList`
+      static: ignoredKeyLists.add(@[])
+    when `name` in ignoredKeyLists[`ignoredKeyListProc`(`t`)]:
+      {.fatal: "Input key " & `name` & " is already ignored!".}
+    static:
+      ignoredKeyLists[`ignoredKeyListProc`(`t`)].add(`name`)

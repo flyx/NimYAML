@@ -57,6 +57,9 @@ type
   WithDefault = object
     a, b, c, d: string
 
+  WithIgnoredField = object
+    x, y: int
+
 markAsTransient(NonVariantWithTransient, a)
 markAsTransient(NonVariantWithTransient, c)
 
@@ -66,6 +69,8 @@ markAsTransient(VariantWithTransient, neverThere)
 
 setDefaultValue(WithDefault, b, "b")
 setDefaultValue(WithDefault, d, "d")
+
+ignoreInputKey(WithIgnoredField, "z")
 
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
@@ -537,6 +542,24 @@ suite "Serialization":
     gStorable: a
   - 
     kind: deD""", output
+
+  test "Load object with ignored key":
+    let input = "[{x: 1, y: 2}, {x: 3, z: 4, y: 5}, {z: [1, 2, 3], x: 4, y: 5}]"
+    var result: seq[WithIgnoredField]
+    load(input, result)
+    assert result.len == 3
+    assert result[0].x == 1
+    assert result[0].y == 2
+    assert result[1].x == 3
+    assert result[1].y == 5
+    assert result[2].x == 4
+    assert result[2].y == 5
+
+  test "Load object with ignored key - unknown field":
+    let input = "{x: 1, y: 2, zz: 3}"
+    var result: WithIgnoredField
+    expectConstructionError(1, 16, "While constructing WithIgnoredField: Unknown field: \"zz\""):
+      load(input, result)
 
   test "Dump cyclic data structure":
     var
