@@ -1,32 +1,11 @@
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-  <title>NimYAML - Testing Ground</title>
+==============
+Testing Ground
+==============
 
-  <link href="docutils.css" rel="stylesheet" type="text/css"/>
-  <link href="style.css" rel="stylesheet" type="text/css"/>
-  
-  <link href='http://fonts.googleapis.com/css?family=Raleway:400,600,900' rel='stylesheet' type='text/css'/>
-  <link href='http://fonts.googleapis.com/css?family=Source+Code+Pro:400,500,600' rel='stylesheet' type='text/css'/>
-</head>
-<body>
-  <header>
-    <a class="pagetitle" href="index.html">NimYAML</a>
-    <a href="index.html">Home</a>
-    <a href="testing.html">Testing Ground</a>
-    <span>Docs:</span>
-    <a href="api.html">Overview</a>
-    <a href="serialization.html">Serialization</a>
-    <a href="yaml.html">Module yaml</a>
-  </header>
-  <article id="documentId">
-    <div class="container">
-      <h1 class="title">Testing Ground</h1>
-      <p>Input is being processed on the fly by a friendly web service and
-         Output is updated as you type.</p>
-    </div>
-  </article>
+Input is being processed on the fly by a friendly web service and output is
+updated as you type.
+
+.. raw:: html
   <section id="testingground">
     <table style="width: 100%; table-layout: fixed">
       <thead>
@@ -39,16 +18,16 @@
         <tr>
           <td style="width: 50%; height: 550px; vertical-align: top;">
             <textarea id="yaml-input" style="width: 100%; height: 100%">
-- test some
-- {YAML: here}
-- foo: bar
-  ? [1, 2, 3]
-  : !!str "string"
-- 
-  ? &amp;a anchor
-  : !!bool yes
-  ? reference to anchor
-  : *a</textarea>
+  - test some
+  - {YAML: here}
+  - foo: bar
+    ? [1, 2, 3]
+    : !!str "string"
+  -
+    ? &amp;a anchor
+    : !!bool yes
+    ? reference to anchor
+    : *a</textarea>
           </td>
           <td style="width: 50%; vertical-align: top; height: 550px; padding-left: 10px">
             <div style="width:100%; height:100%; overflow: scroll">
@@ -139,5 +118,3 @@
     }
     parse();
   </script>
-</body>
-</html>

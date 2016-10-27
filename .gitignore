@@ -4,6 +4,7 @@ test/tlex
 test/tdom
 test/tserialization
 test/tjson
+test/tparser
 test/yamlTestSuite
 test/tquickstart
 test/*.exe
@@ -22,3 +23,4 @@ doc/rstPreproc
 doc/tmp.rst
 doc/**/code
 yaml-dev-kit
+nimsuggest.log

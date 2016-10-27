@@ -108,6 +108,11 @@ dt a:before {
     visibility: hidden;
 }
 
+#testingground {
+    margin-left: -50px;
+    margin-right: -50px;
+}
+
 #testingground textarea {
   width: 100%;
   height: 100%;
