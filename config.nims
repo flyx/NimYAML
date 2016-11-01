@@ -48,7 +48,8 @@ task documentation, "Generate documentation":
     exec r"nim rst2html -o:../docout/api.html tmp.rst"
     exec r"./rstPreproc -o:tmp.rst serialization.txt"
     exec r"nim rst2html -o:../docout/serialization.html tmp.rst"
-    exec r"nim rst2html -o:../docout/testing.html testing.txt"
+    exec r"nim rst2html -o:../docout/testing.html testing.rst"
+    exec r"nim rst2html -o:../docout/schema.html schema.rst"
     exec "cp docutils.css style.css processing.svg ../docout"
   exec r"nim doc2 -o:docout/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/`git log -n 1 --format=%H` yaml"
   for file in listFiles("yaml"):
