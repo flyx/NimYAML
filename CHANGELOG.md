@@ -1,3 +1,25 @@
+### 0.8.0
+
+Features:
+
+ * NimYAML now has a global tag URI prefix for Nim types,
+   `tag:nimyaml.org,2016:`. This prefix is denoted by the custom tag handle
+   `!n!`.
+ * Support arbitrary tag handles.
+ * Added ability to mark object and tuple fields as transient.
+ * Added ability to set a default value for object fields.
+ * Added ability to ignore key-value pairs in the input when loading object
+   values.
+ * Support `!!timestamp` by parsing it to `Time` from module `times`.
+
+Bugfixes:
+
+ * Fixed a bug concerning duplicate TagIds for different tags in the
+   `serializationTagLibrary`
+ * Convert commas in tag URIs to semicolons when using a tag URI as generic
+   parameter to another one, because commas after the tag handle are interpreted
+   as flow separators.
+
 ### 0.7.0
 
 Features:
