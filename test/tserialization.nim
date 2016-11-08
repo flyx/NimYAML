@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, strutils, streams, tables
+import unittest, strutils, streams, tables, times
 
 type
   MyTuple = tuple
@@ -207,6 +207,14 @@ suite "Serialization":
     let input: string = nil
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & "\n!n!nil:string \"\"", output
+
+  test "Load timestamps":
+    let input = "[2001-12-15T02:59:43.1Z, 2001-12-14t21:59:43.10-05:00, 2001-12-14 21:59:43.10-5]"
+    var result: seq[Time]
+    load(input, result)
+    assert result.len() == 3
+    # currently, there is no good way of checking the result content, because
+    # the parsed Time may have any timezone offset.
 
   test "Load string sequence":
     let input = newStringStream(" - a\n - b")

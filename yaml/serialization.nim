@@ -16,7 +16,7 @@
 ## type. Please consult the serialization guide on the NimYAML website for more
 ## information.
 
-import tables, typetraits, strutils, macros, streams
+import tables, typetraits, strutils, macros, streams, times
 import parser, taglib, presenter, stream, ../private/internal, hints
 export stream
   # *something* in here needs externally visible `==`(x,y: AnchorId),
@@ -320,6 +320,72 @@ proc representObject*(value: char, ts: TagStyle, c: SerializationContext,
     tag: TagId) {.raises: [].} =
   ## represents a char value as YAML scalar
   c.put(scalarEvent("" & value, tag, yAnchorNone))
+
+proc yamlTag*(T: typedesc[Time]): TagId {.inline, raises: [].} = yTagTimestamp
+
+proc constructObject*(s: var YamlStream, c: ConstructionContext,
+                      result: var Time)
+    {.raises: [YamlConstructionError, YamlStreamError].} =
+  constructScalarItem(s, item, Time):
+    if guessType(item.scalarContent) == yTypeTimestamp:
+      var
+        tmp = newStringOfCap(60)
+        pos = 8
+        c: char
+      while pos < item.scalarContent.len():
+        c = item.scalarContent[pos]
+        if c in {' ', '\t', 'T', 't'}: break
+        inc(pos)
+      if pos == item.scalarContent.len():
+        tmp.add(item.scalarContent)
+        tmp.add("T00:00:00+00:00")
+      else:
+        tmp.add(item.scalarContent[0 .. pos - 1])
+        if c in {' ', '\t'}:
+          while true:
+            inc(pos)
+            c = item.scalarContent[pos]
+            if c notin {' ', '\t'}: break
+        else: inc(pos)
+        tmp.add("T")
+        let timeStart = pos
+        inc(pos, 7)
+        var fractionStart = -1
+        while pos < item.scalarContent.len():
+          c = item.scalarContent[pos]
+          if c in {'+', '-', 'Z', ' ', '\t'}: break
+          elif c == '.': fractionStart = pos
+          inc(pos)
+        if fractionStart == -1:
+          tmp.add(item.scalarContent[timeStart .. pos - 1])
+        else:
+          tmp.add(item.scalarContent[timeStart .. fractionStart - 1])
+        if c in {'Z', ' ', '\t'}: tmp.add("+00:00")
+        else:
+          tmp.add(c)
+          inc(pos)
+          let tzStart = pos
+          inc(pos)
+          if pos < item.scalarContent.len() and item.scalarContent[pos] != ':':
+            inc(pos)
+          if pos - tzStart == 1: tmp.add('0')
+          tmp.add(item.scalarContent[tzStart .. pos - 1])
+          if pos == item.scalarContent.len(): tmp.add(":00")
+          elif pos + 2 == item.scalarContent.len():
+            tmp.add(":0")
+            tmp.add(item.scalarContent[pos + 1])
+          else:
+            tmp.add(item.scalarContent[pos .. pos + 2])
+      let info = tmp.parse("yyyy-M-d'T'H-mm-sszzz")
+      result = info.toTime()
+    else:
+      raise s.constructionError("Not a parsable timestamp: " &
+          escape(item.scalarContent))
+
+proc representObject*(value: Time, ts: TagStyle, c: SerializationContext,
+                      tag: TagId) {.raises: [ValueError].} =
+  let tmp = value.getGMTime()
+  c.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
 
 proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
   let uri = nimTag("system:seq(" & safeTagUri(yamlTag(I)) & ')')
@@ -984,6 +1050,8 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
           raise s.constructionError("not implemented!")
         of yTypeUnknown:
           possibleTagIds.add(yamlTag(string))
+        of yTypeTimestamp:
+          possibleTagIds.add(yamlTag(Time))
       of yTagExclamationMark:
         possibleTagIds.add(yamlTag(string))
       else:
