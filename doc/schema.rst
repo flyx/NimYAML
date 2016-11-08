@@ -63,6 +63,7 @@ float     ``!n!system:float64``
 float32   ``!n!system:float32``
 float64   ``!n!system:float64``
 bool      ``!!bool``
+Time      ``!!timestamp``
 ========= ===========================================================
 
 Apart from these standard library types, NimYAML also supports all enum types
@@ -121,7 +122,7 @@ YAML type       Status
 ``!!merge``     Not supported and unlikely to be implemented
 ``!!null``      Used for reference types that are ``nil``
 ``!!str``       Maps to Nim's ``string`` type
-``!!timestamp`` Currently not supported
+``!!timestamp`` Maps to Nim's ``Time`` type
 ``!!value``     Not supported and unlikely to be implemented
 ``!!yaml``      Not supported and unlikely to be implemented
 =============== ============================================
