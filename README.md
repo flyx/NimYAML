@@ -25,15 +25,16 @@ available as tags in this repository and can be fetched via nimble:
 ## Developers
 
 ```bash
-nim tests # runs unit tests (serialization, dom, json)
-          # for parser tests, see yamlTestSuite
+nim tests # runs all tests
+nim lexerTests # run lexer tests
+nim parserTests # run parser tests (git-clones yaml-dev-kit)
 nim serializationTests # runs serialization tests
+nim quickstartTests # run tests for quickstart snippets from documentation
 nim documentation # builds documentation to folder docout
 nim server # builds the REST server used for the testing ground
 nim bench # runs benchmarks, requires libyaml
 nim clean # guess
 nim build # build a library
-nim yamlTestSuite # execute YAML test suite (git-clones yaml-dev-kit)
 ```
 
 NimYAML needs at least Nim 0.15.0 in order to compile.

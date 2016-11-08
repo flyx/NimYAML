@@ -8,29 +8,55 @@ task tests, "Run all tests":
   --verbosity:0
   setCommand "c", "test/tests"
 
-task yamlTestSuite, "Run YAML 1.2 test suite":
+task lexerTests, "Run lexer tests":
   --r
   --verbosity:0
-  setCommand "c", "test/yamlTestSuite"
+  setCommand "c", "test/tlex"
+
+task parserTests, "Run parser tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tparser"
+
+task jsonTests, "Run JSON tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tjson"
+
+task domTests, "Run DOM tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tdom"
 
 task serializationTests, "Run serialization tests":
   --r
   --verbosity:0
-  setCommand "c", "test/serializing"
+  setCommand "c", "test/tserialization"
+
+task quickstartTests, "Run quickstart tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tquickstart"
 
 task documentation, "Generate documentation":
   exec "mkdir -p docout"
+  withDir "doc":
+    exec r"nim c rstPreproc"
+    exec r"./rstPreproc -o:tmp.rst index.txt"
+    exec r"nim rst2html -o:../docout/index.html tmp.rst"
+    exec r"./rstPreproc -o:tmp.rst api.txt"
+    exec r"nim rst2html -o:../docout/api.html tmp.rst"
+    exec r"./rstPreproc -o:tmp.rst serialization.txt"
+    exec r"nim rst2html -o:../docout/serialization.html tmp.rst"
+    exec r"nim rst2html -o:../docout/testing.html testing.rst"
+    exec r"nim rst2html -o:../docout/schema.html schema.rst"
+    exec "cp docutils.css style.css processing.svg ../docout"
   exec r"nim doc2 -o:docout/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/`git log -n 1 --format=%H` yaml"
-  # bash! ah-ah \\ savior of the universe
   for file in listFiles("yaml"):
     let packageName = file[5..^5]
     exec r"nim doc2 -o:docout/yaml." & packageName &
         ".html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/yaml/`git log -n 1 --format=%H` " &
         file
-  exec r"nim rst2html -o:docout/index.html doc/index.txt"
-  exec r"nim rst2html -o:docout/api.html doc/api.txt"
-  exec r"nim rst2html -o:docout/serialization.html doc/serialization.txt"
-  exec "cp doc/docutils.css doc/style.css doc/testing.html doc/processing.svg docout"
   setCommand "nop"
 
 task bench, "Benchmarking":

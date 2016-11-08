@@ -4,7 +4,9 @@ test/tlex
 test/tdom
 test/tserialization
 test/tjson
+test/tparser
 test/yamlTestSuite
+test/tquickstart
 test/*.exe
 test/*.pdb
 test/*.ilk
@@ -17,4 +19,8 @@ libyaml.dylib
 libyaml.so
 bench/json
 docout
+doc/rstPreproc
+doc/tmp.rst
+doc/**/code
 yaml-dev-kit
+nimsuggest.log

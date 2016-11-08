@@ -33,10 +33,11 @@ type
     ## ``yTypeBoolTrue``  ``y|Y|yes|Yes|YES|true|True|TRUE|on|On|ON``
     ## ``yTypeBoolFalse`` ``n|N|no|No|NO|false|False|FALSE|off|Off|OFF``
     ## ``yTypeNull``      ``~ | null | Null | NULL``
+    ## ``yTypeTimestamp`` see `here <http://yaml.org/type/timestamp.html>`_.
     ## ``yTypeUnknown``   ``*``
     ## ================== =========================
     yTypeInteger, yTypeFloat, yTypeFloatInf, yTypeFloatNaN, yTypeBoolTrue,
-    yTypeBoolFalse, yTypeNull, yTypeUnknown
+    yTypeBoolFalse, yTypeNull, yTypeUnknown, yTypeTimestamp
 
   YamlTypeHintState = enum
     ythInitial,
@@ -59,7 +60,16 @@ type
 
     ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
 
-    ythMinus, yth0, ythInt, ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent
+    ythMinus, yth0, ythInt1, ythInt1Zero, ythInt2, ythInt2Zero, ythInt3,
+    ythInt3Zero, ythInt4, ythInt4Zero, ythInt,
+    ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent,
+
+    ythYearMinus, ythMonth1, ythMonth2, ythMonthMinus, ythMonthMinusNoYmd,
+    ythDay1, ythDay1NoYmd, ythDay2, ythDay2NoYmd,
+    ythAfterDayT, ythAfterDaySpace, ythHour1, ythHour2, ythHourColon,
+    ythMinute1, ythMinute2, ythMinuteColon, ythSecond1, ythSecond2, ythFraction,
+    ythAfterTimeSpace, ythAfterTimeZ, ythAfterTimePlusMinus, ythTzHour1,
+    ythTzHour2, ythTzHourColon, ythTzMinute1, ythTzMinute2
 
 macro typeHintStateMachine(c: untyped, content: untyped): typed =
   yAssert content.kind == nnkStmtList
@@ -101,20 +111,78 @@ template advanceTypeHint(ch: char) {.dirty.} =
   typeHintStateMachine ch:
   of '~': ythInitial => ythNULL
   of '.':
-    [yth0, ythInt]         => ythDecimal
+    [yth0, ythInt1, ythInt2, ythInt3, ythInt4, ythInt] => ythDecimal
     [ythInitial, ythMinus] => ythPoint
-  of '+': ythNumE => ythNumEPlusMinus
+    ythSecond2             => ythFraction
+  of '+':
+    ythNumE => ythNumEPlusMinus
+    [ythFraction, ythSecond2] => ythAfterTimePlusMinus
   of '-':
-    ythInitial => ythMinus
-    ythNumE    => ythNumEPlusMinus
+    ythInitial                => ythMinus
+    ythNumE                   => ythNumEPlusMinus
+    [ythInt4, ythInt4Zero]    => ythYearMinus
+    ythMonth1                 => ythMonthMinusNoYmd
+    ythMonth2                 => ythMonthMinus
+    [ythFraction, ythSecond2] => ythAfterTimePlusMinus
+  of ':':
+    [ythHour1, ythHour2]      => ythHourColon
+    ythMinute2                => ythMinuteColon
+    [ythTzHour1, ythTzHour2]  => ythTzHourColon
   of '0':
-    [ythInitial, ythMinus]      => yth0
+    ythInitial                  => ythInt1Zero
+    ythMinus                    => yth0
     [ythNumE, ythNumEPlusMinus] => ythExponent
-    [ythInt, ythDecimal, ythExponent] => nil
+    ythInt1                     => ythInt2
+    ythInt1Zero                 => ythInt2Zero
+    ythInt2                     => ythInt3
+    ythInt2Zero                 => ythInt3Zero
+    ythInt3                     => ythInt4
+    ythInt3Zero                 => ythInt4Zero
+    ythInt4                     => ythInt
+    ythYearMinus                => ythMonth1
+    ythMonth1                   => ythMonth2
+    ythMonthMinus               => ythDay1
+    ythMonthMinusNoYmd          => ythDay1NoYmd
+    ythDay1                     => ythDay2
+    ythDay1NoYmd                => ythDay2NoYmd
+    [ythAfterDaySpace, ythAfterDayT] => ythHour1
+    ythHour1                    => ythHour2
+    ythHourColon                => ythMinute1
+    ythMinute1                  => ythMinute2
+    ythMinuteColon              => ythSecond1
+    ythSecond1                  => ythSecond2
+    ythAfterTimePlusMinus       => ythTzHour1
+    ythTzHour1                  => ythTzHour2
+    ythTzHourColon              => ythTzMinute1
+    ythTzMinute1                => ythTzMinute2
+    [ythInt, ythDecimal, ythExponent, ythFraction] => nil
   of '1'..'9':
-    [ythInitial, ythMinus]            => ythInt
+    ythInitial                        => ythInt1
+    ythInt1                           => ythInt2
+    ythInt1Zero                       => ythInt2Zero
+    ythInt2                           => ythInt3
+    ythInt2Zero                       => ythInt3Zero
+    ythInt3                           => ythInt4
+    ythInt3Zero                       => ythInt4Zero
+    [ythInt4, ythMinus]               => ythInt
     [ythNumE, ythNumEPlusMinus]       => ythExponent
-    [ythInt, ythDecimal, ythExponent] => nil
+    ythYearMinus                      => ythMonth1
+    ythMonth1                         => ythMonth2
+    ythMonthMinus                     => ythDay1
+    ythMonthMinusNoYmd                => ythDay1NoYmd
+    ythDay1                           => ythDay2
+    ythDay1NoYmd                      => ythDay2NoYmd
+    [ythAfterDaySpace, ythAfterDayT]  => ythHour1
+    ythHour1                          => ythHour2
+    ythHourColon                      => ythMinute1
+    ythMinute1                        => ythMinute2
+    ythMinuteColon                    => ythSecond1
+    ythSecond1                        => ythSecond2
+    ythAfterTimePlusMinus             => ythTzHour1
+    ythTzHour1                        => ythTzHour2
+    ythTzHourColon                    => ythTzMinute1
+    ythTzMinute1                      => ythTzMinute2
+    [ythInt, ythDecimal, ythExponent, ythFraction] => nil
   of 'a':
     ythF           => ythLowerFA
     ythPointN      => ythPointNA
@@ -174,7 +242,9 @@ template advanceTypeHint(ch: char) {.dirty.} =
   of 'S':
     ythFAL => ythFALS
     ythYE  => ythYES
-  of 't', 'T': ythInitial => ythT
+  of 't', 'T':
+    ythInitial         => ythT
+    [ythDay1, ythDay2, ythDay1NoYmd, ythDay2NoYmd] => ythAfterDayT
   of 'u':
     ythN       => ythLowerNU
     ythLowerTR => ythLowerTRU
@@ -182,6 +252,11 @@ template advanceTypeHint(ch: char) {.dirty.} =
     ythN  => ythNU
     ythTR => ythTRU
   of 'y', 'Y': ythInitial => ythY
+  of 'Z': [ythSecond2, ythFraction, ythAfterTimeSpace] => ythAfterTimeZ
+  of ' ', '\t':
+    [ythSecond2, ythFraction] => ythAfterTimeSpace
+    [ythDay1, ythDay2, ythDay1NoYmd, ythDay2NoYmd] => ythAfterDaySpace
+    [ythAfterTimeSpace, ythAfterDaySpace] => nil
 
 proc guessType*(scalar: string): TypeHint {.raises: [].} =
   ## Parse scalar string according to the RegEx table documented at
@@ -192,8 +267,10 @@ proc guessType*(scalar: string): TypeHint {.raises: [].} =
   of ythNULL: result = yTypeNull
   of ythTRUE, ythON, ythYES, ythY: result = yTypeBoolTrue
   of ythFALSE, ythOFF, ythNO, ythN: result = yTypeBoolFalse
-  of ythInt, yth0: result = yTypeInteger
+  of ythInt1, ythInt2, ythInt3, ythInt4, ythInt, yth0: result = yTypeInteger
   of ythDecimal, ythExponent: result = yTypeFloat
   of ythPointINF: result = yTypeFloatInf
   of ythPointNAN: result = yTypeFloatNaN
+  of ythDay2, ythSecond2, ythFraction, ythAfterTimeZ, ythTzHour1, ythTzHour2,
+     ythTzMinute1, ythTzMinute2: result = yTypeTimestamp
   else: result = yTypeUnknown

@@ -36,7 +36,8 @@ Supported Types
 
 NimYAML supports a growing number of types of Nim's ``system`` module and
 standard library, and it also supports user-defined object, tuple and enum types
-out of the box.
+out of the box. A complete list of explicitly supported types is available in
+`Schema <schema.html>`_.
 
 **Important**: NimYAML currently does not support polymorphism. This may be
 added in the future.
@@ -105,7 +106,7 @@ possible to dump and load cyclic data structures without further configuration.
 It is possible for reference types to hold a ``nil`` value, which will be mapped
 to the ``!!null`` YAML scalar type.
 
-Pointer types are not supported because it seems dangerous to automatically
+``ptr`` types are not supported because it seems dangerous to automatically
 allocate memory which the user must then manually deallocate.
 
 User Defined Types
@@ -234,7 +235,7 @@ otherwise, it would be loaded as ``nil``.
 As you might have noticed in the example above, the YAML tag of a ``seq``
 depends on its generic type parameter. The same applies to ``Table``. So, a
 table that maps ``int8`` to string sequences would be presented with the tag
-``!nim:tables:Table(nim:system:int8,nim:system:seq(tag:yaml.org,2002:string))``.
+``!n!tables:Table(tag:nimyaml.org,2016:int8,tag:nimyaml.org,2016:system:seq(tag:yaml.org,2002:string))``.
 These tags are generated on the fly based on the types you instantiate
 ``Table`` or ``seq`` with.
 
@@ -246,6 +247,51 @@ for example use it on a certain ``seq`` type:
 .. code-block:: nim
 
     setTagUri(seq[string], "!nim:my:seq")
+
+Customizing Field Handling
+==========================
+
+NimYAML allows the user to specify special handling of certain object fields.
+This configuration will be applied at compile time when NimYAML generates the
+(de)serialization code for an object type. It is important that the
+configuration happens before any YAML operations (e.g. ``load`` or ``dump``) are
+executed on a variable of the object type.
+
+Transient Fields
+----------------
+
+It may happen that certain fields of an object type are transient, i.e. they are
+used in a way that makes (de)serializing them unnecessary. Such fields can be
+marked as transient. This will cause them not to be serialized to YAML. They
+will also not be accepted when loading the object.
+
+Example:
+
+.. code-block:: nim
+
+  type MyObject: object
+    storable: string
+    temporary: string
+
+  markAsTransient(MyObject, temporary)
+
+Default Values
+--------------
+
+When you load YAML that has been written by a human, you might want to allow the
+user to omit certain fields, which should then be filled with a default value.
+You can do that like this:
+
+.. code-block:: nim
+
+  type MyObject: object
+    required: string
+    optional: string
+
+  setDefaultValue(MyObject, optional, "default value")
+
+Whenever ``MyObject`` now is loaded and the input stream does not contain the
+field ``optional``, that field will be set to the value ``"default value"``.
 
 Customize Serialization
 =======================

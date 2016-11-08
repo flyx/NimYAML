@@ -413,12 +413,10 @@ proc writeTagAndAnchor(target: PresenterTarget, tag: TagId,
   try:
     if tag notin [yTagQuestionMark, yTagExclamationMark]:
       let tagUri = tagLib.uri(tag)
-      if tagUri.startsWith(tagLib.secondaryPrefix):
-        target.append("!!")
-        target.append(tagUri[18..tagUri.high])
-        target.append(' ')
-      elif tagUri.startsWith("!"):
-        target.append(tagUri)
+      let (handle, length) = tagLib.searchHandle(tagUri)
+      if length > 0:
+        target.append(handle)
+        target.append(tagUri[length..tagUri.high])
         target.append(' ')
       else:
         target.append("!<")
@@ -461,8 +459,15 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
           of ov1_2: target.append("%YAML 1.2" & newline)
           of ov1_1: target.append("%YAML 1.1" & newLine)
           of ovNone: discard
-          if tagLib.secondaryPrefix != yamlTagRepositoryPrefix:
-            target.append("%TAG !! " & tagLib.secondaryPrefix & newline)
+          for prefix, handle in tagLib.handles():
+            if handle == "!":
+              if prefix != "!":
+                target.append("%TAG ! " & prefix & newline)
+            elif handle == "!!":
+              if prefix != yamlTagRepositoryPrefix:
+                target.append("%TAG !! " & prefix & newline)
+            else:
+              target.append("%TAG " & handle & ' ' & prefix & newline)
           target.append("--- ")
         except:
           var e = newException(YamlPresenterOutputError, "")

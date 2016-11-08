@@ -54,10 +54,13 @@ header span:hover > ul {
 }
 
 header span ul a {
-    font-size: smaller;
-    font-family: "Source Code Pro", Menlo, "Courier New", Courier, monospace;
     padding: 0 10px;
     line-height: 40px;
+}
+
+header span ul.monospace a {
+    font-size: smaller;
+    font-family: "Source Code Pro", Menlo, "Courier New", Courier, monospace;
 }
 
 header a:link,
@@ -106,6 +109,11 @@ dt a:before {
     content: ' ';
     display: block;
     visibility: hidden;
+}
+
+#testingground {
+    margin-left: -50px;
+    margin-right: -50px;
 }
 
 #testingground textarea {

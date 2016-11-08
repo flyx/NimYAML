@@ -12,7 +12,7 @@
 ## and create own tags. It also enables you to define tags for types used with
 ## the serialization API.
 
-import tables, macros, hashes
+import tables, macros, hashes, strutils
 
 type
   TagId* = distinct int ## \
@@ -41,7 +41,7 @@ type
     ## `initExtendedTagLibrary <#initExtendedTagLibrary>`_.
     tags*: Table[string, TagId]
     nextCustomTagId*: TagId
-    secondaryPrefix*: string
+    tagHandles: Table[string, string]
 
 const
   # failsafe schema
@@ -94,11 +94,15 @@ const
     ## for seqs that are nil. This tag is used regardless of the seq's generic
     ## type parameter.
 
-  yFirstCustomTagId* : TagId = 1000.TagId ## \
+  yFirstStaticTagId* : TagId = 1000.TagId ## \
+    ## The first ``TagId`` assigned by the ``setTagId`` templates.
+
+  yFirstCustomTagId* : TagId = 10000.TagId ## \
     ## The first ``TagId`` which should be assigned to an URI that does not
     ## exist in the ``YamlTagLibrary`` which is used for parsing.
 
   yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
+  nimyamlTagRepositoryPrefix* = "tag:nimyaml.org,2016:"
 
 proc `==`*(left, right: TagId): bool {.borrow.}
 proc hash*(id: TagId): Hash {.borrow.}
@@ -130,7 +134,7 @@ proc initTagLibrary*(): TagLibrary {.raises: [].} =
   ## ``yFirstCustomTagId``.
   new(result)
   result.tags = initTable[string, TagId]()
-  result.secondaryPrefix = yamlTagRepositoryPrefix
+  result.tagHandles = {"!": "!", yamlTagRepositoryPrefix : "!!"}.toTable()
   result.nextCustomTagId = yFirstCustomTagId
 
 proc registerUri*(tagLib: TagLibrary, uri: string): TagId {.raises: [].} =
@@ -146,6 +150,9 @@ proc uri*(tagLib: TagLibrary, id: TagId): string {.raises: [KeyError].} =
     if iId == id: return iUri
   raise newException(KeyError, "Unknown tag id: " & $id)
 
+template y(suffix: string): string = yamlTagRepositoryPrefix & suffix
+template n(suffix: string): string = nimyamlTagRepositoryPrefix & suffix
+
 proc initFailsafeTagLibrary*(): TagLibrary {.raises: [].} =
   ## Contains only:
   ## - ``!``
@@ -156,9 +163,9 @@ proc initFailsafeTagLibrary*(): TagLibrary {.raises: [].} =
   result = initTagLibrary()
   result.tags["!"] = yTagExclamationMark
   result.tags["?"] = yTagQuestionMark
-  result.tags["tag:yaml.org,2002:str"] = yTagString
-  result.tags["tag:yaml.org,2002:seq"] = yTagSequence
-  result.tags["tag:yaml.org,2002:map"] = yTagMapping
+  result.tags[y"str"] = yTagString
+  result.tags[y"seq"] = yTagSequence
+  result.tags[y"map"] = yTagMapping
 
 proc initCoreTagLibrary*(): TagLibrary {.raises: [].} =
   ## Contains everything in ``initFailsafeTagLibrary`` plus:
@@ -167,10 +174,10 @@ proc initCoreTagLibrary*(): TagLibrary {.raises: [].} =
   ## - ``!!int``
   ## - ``!!float``
   result = initFailsafeTagLibrary()
-  result.tags["tag:yaml.org,2002:null"]  = yTagNull
-  result.tags["tag:yaml.org,2002:bool"]  = yTagBoolean
-  result.tags["tag:yaml.org,2002:int"]   = yTagInteger
-  result.tags["tag:yaml.org,2002:float"] = yTagFloat
+  result.tags[y"null"]  = yTagNull
+  result.tags[y"bool"]  = yTagBoolean
+  result.tags[y"int"]   = yTagInteger
+  result.tags[y"float"] = yTagFloat
 
 proc initExtendedTagLibrary*(): TagLibrary {.raises: [].} =
   ## Contains everything from ``initCoreTagLibrary`` plus:
@@ -183,29 +190,29 @@ proc initExtendedTagLibrary*(): TagLibrary {.raises: [].} =
   ## - ``!!value``
   ## - ``!!yaml``
   result = initCoreTagLibrary()
-  result.tags["tag:yaml.org,2002:omap"]      = yTagOrderedMap
-  result.tags["tag:yaml.org,2002:pairs"]     = yTagPairs
-  result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
-  result.tags["tag:yaml.org,2002:merge"]     = yTagMerge
-  result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
-  result.tags["tag:yaml.org,2002:value"]     = yTagValue
-  result.tags["tag:yaml.org,2002:yaml"]      = yTagYaml
-
+  result.tags[y"omap"]      = yTagOrderedMap
+  result.tags[y"pairs"]     = yTagPairs
+  result.tags[y"binary"]    = yTagBinary
+  result.tags[y"merge"]     = yTagMerge
+  result.tags[y"timestamp"] = yTagTimestamp
+  result.tags[y"value"]     = yTagValue
+  result.tags[y"yaml"]      = yTagYaml
 
 proc initSerializationTagLibrary*(): TagLibrary =
   result = initTagLibrary()
+  result.tagHandles[nimyamlTagRepositoryPrefix] = "!n!"
   result.tags["!"] = yTagExclamationMark
   result.tags["?"] = yTagQuestionMark
-  result.tags["tag:yaml.org,2002:str"]       = yTagString
-  result.tags["tag:yaml.org,2002:null"]      = yTagNull
-  result.tags["tag:yaml.org,2002:bool"]      = yTagBoolean
-  result.tags["tag:yaml.org,2002:float"]     = yTagFloat
-  result.tags["tag:yaml.org,2002:timestamp"] = yTagTimestamp
-  result.tags["tag:yaml.org,2002:value"]     = yTagValue
-  result.tags["tag:yaml.org,2002:binary"]    = yTagBinary
-  result.tags["!nim:field"]                  = yTagNimField
-  result.tags["!nim:nil:string"]             = yTagNimNilString
-  result.tags["!nim:nil:seq"]                = yTagNimNilSeq
+  result.tags[y"str"]        = yTagString
+  result.tags[y"null"]       = yTagNull
+  result.tags[y"bool"]       = yTagBoolean
+  result.tags[y"float"]      = yTagFloat
+  result.tags[y"timestamp"]  = yTagTimestamp
+  result.tags[y"value"]      = yTagValue
+  result.tags[y"binary"]     = yTagBinary
+  result.tags[n"field"]      = yTagNimField
+  result.tags[n"nil:string"] = yTagNimNilString
+  result.tags[n"nil:seq"]    = yTagNimNilSeq
 
 var
   serializationTagLibrary* = initSerializationTagLibrary() ## \
@@ -217,7 +224,7 @@ var
     ## `serializable <#serializable,stmt,stmt>`_.
 
 var
-  nextStaticTagId {.compileTime.} = 100.TagId ## \
+  nextStaticTagId {.compileTime.} = yFirstStaticTagId ## \
     ## used for generating unique TagIds with ``setTagUri``.
   registeredUris {.compileTime.} = newSeq[string]() ## \
     ## Since Table doesn't really work at compile time, we also store
@@ -249,61 +256,66 @@ template setTagUri*(t: typedesc, uri: string, idName: untyped): typed =
   static:
     registeredUris.add(uri)
     nextStaticTagId = TagId(int(nextStaticTagId) + 1)
+  when nextStaticTagId == yFirstCustomTagId:
+    {.fatal: "Too many tags!".}
   serializationTagLibrary.tags[uri] = idName
   proc yamlTag*(T: typedesc[t]): TagId {.inline, raises: [].} = idName
     ## autogenerated
-
-proc canBeImplicit(t: typedesc): bool {.compileTime.} =
-  let tDesc = getType(t)
-  if tDesc.kind != nnkObjectTy: return false
-  if tDesc[2].len != 1: return false
-  if tDesc[2][0].kind != nnkRecCase: return false
-  var foundEmptyBranch = false
-  for i in 1.. tDesc[2][0].len - 1:
-    case tDesc[2][0][i][1].len # branch contents
-    of 0:
-      if foundEmptyBranch: return false
-      else: foundEmptyBranch = true
-    of 1: discard
-    else: return false
-  return true
-
-template markAsImplicit*(t: typedesc): typed =
-  ## Mark a variant object type as implicit. This requires the type to consist
-  ## of nothing but a case expression and each branch of the case expression
-  ## containing exactly one field - with the exception that one branch may
-  ## contain zero fields.
-  when canBeImplicit(t):
-    # this will be checked by means of compiles(implicitVariantObject(...))
-    proc implicitVariantObject*(unused: t) = discard
-  else:
-    {. fatal: "This type cannot be marked as implicit" .}
 
 static:
   # standard YAML tags used by serialization
   registeredUris.add("!")
   registeredUris.add("?")
-  registeredUris.add("tag:yaml.org,2002:str")
-  registeredUris.add("tag:yaml.org,2002:null")
-  registeredUris.add("tag:yaml.org,2002:bool")
-  registeredUris.add("tag:yaml.org,2002:float")
-  registeredUris.add("tag:yaml.org,2002:timestamp")
-  registeredUris.add("tag:yaml.org,2002:value")
-  registeredUris.add("tag:yaml.org,2002:binary")
+  registeredUris.add(y"str")
+  registeredUris.add(y"null")
+  registeredUris.add(y"bool")
+  registeredUris.add(y"float")
+  registeredUris.add(y"timestamp")
+  registeredUris.add(y"value")
+  registeredUris.add(y"binary")
   # special tags used by serialization
-  registeredUris.add("!nim:field")
-  registeredUris.add("!nim:nil:string")
-  registeredUris.add("!nim:nil:seq")
+  registeredUris.add(n"field")
+  registeredUris.add(n"nil:string")
+  registeredUris.add(n"nil:seq")
 
 # tags for Nim's standard types
-setTagUri(char, "!nim:system:char", yTagNimChar)
-setTagUri(int8, "!nim:system:int8", yTagNimInt8)
-setTagUri(int16, "!nim:system:int16", yTagNimInt16)
-setTagUri(int32, "!nim:system:int32", yTagNimInt32)
-setTagUri(int64, "!nim:system:int64", yTagNimInt64)
-setTagUri(uint8, "!nim:system:uint8", yTagNimUInt8)
-setTagUri(uint16, "!nim:system:uint16", yTagNimUInt16)
-setTagUri(uint32, "!nim:system:uint32", yTagNimUInt32)
-setTagUri(uint64, "!nim:system:uint64", yTagNimUInt64)
-setTagUri(float32, "!nim:system:float32", yTagNimFloat32)
-setTagUri(float64, "!nim:system:float64", yTagNimFloat64)
+setTagUri(char, n"system:char", yTagNimChar)
+setTagUri(int8, n"system:int8", yTagNimInt8)
+setTagUri(int16, n"system:int16", yTagNimInt16)
+setTagUri(int32, n"system:int32", yTagNimInt32)
+setTagUri(int64, n"system:int64", yTagNimInt64)
+setTagUri(uint8, n"system:uint8", yTagNimUInt8)
+setTagUri(uint16, n"system:uint16", yTagNimUInt16)
+setTagUri(uint32, n"system:uint32", yTagNimUInt32)
+setTagUri(uint64, n"system:uint64", yTagNimUInt64)
+setTagUri(float32, n"system:float32", yTagNimFloat32)
+setTagUri(float64, n"system:float64", yTagNimFloat64)
+
+proc registerHandle*(tagLib: TagLibrary, handle, prefix: string) =
+  ## Registers a handle for a prefix. When presenting any tag that starts with
+  ## this prefix, the handle is used instead. Also causes the presenter to
+  ## output a TAG directive for the handle.
+  taglib.tagHandles[prefix] = handle
+
+proc searchHandle*(tagLib: TagLibrary, tag: string):
+    tuple[handle: string, len: int] {.raises: [].} =
+  ## search in the registered tag handles for one whose prefix matches the start
+  ## of the given tag. If multiple registered handles match, the one with the
+  ## longest prefix is returned. If no registered handle matches, (nil, 0) is
+  ## returned.
+  result.len = 0
+  for key, value in tagLib.tagHandles:
+    if key.len > result.len:
+      if tag.startsWith(key):
+        result.len = key.len
+        result.handle = value
+
+iterator handles*(tagLib: TagLibrary): tuple[prefix, handle: string] =
+  ## iterate over registered tag handles that may be used as shortcuts
+  ## (e.g. ``!n!`` for ``tag:nimyaml.org,2016:``)
+  for key, value in tagLib.tagHandles: yield (key, value)
+
+proc nimTag*(suffix: string): string =
+  ## prepends NimYAML's tag repository prefix to the given suffix. For example,
+  ## ``nimTag("system:char")`` yields ``"tag:nimyaml.org,2016:system:char"``.
+  nimyamlTagRepositoryPrefix & suffix
