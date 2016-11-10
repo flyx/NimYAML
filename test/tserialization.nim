@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, strutils, streams, tables, times
+import unittest, strutils, streams, tables, times, math
 
 type
   MyTuple = tuple
@@ -196,6 +196,15 @@ suite "Serialization":
     var result: int
     load(input, result)
     assert(result == 14)
+
+  test "Load floats":
+    let input = "[6.8523015e+5, 685.230_15e+03, 685_230.15, -.inf, .NaN]"
+    var result: seq[float]
+    load(input, result)
+    for i in 0..2:
+      assert result[i] == 6.8523015e+5
+    assert result[3] == NegInf
+    assert classify(result[4]) == fcNan
 
   test "Load nil string":
     let input = newStringStream("!<tag:nimyaml.org,2016:nil:string> \"\"")

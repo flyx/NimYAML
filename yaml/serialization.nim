@@ -16,7 +16,7 @@
 ## type. Please consult the serialization guide on the NimYAML website for more
 ## information.
 
-import tables, typetraits, strutils, macros, streams, times
+import tables, typetraits, strutils, macros, streams, times, parseutils
 import parser, taglib, presenter, stream, ../private/internal, hints
 export stream
   # *something* in here needs externally visible `==`(x,y: AnchorId),
@@ -138,7 +138,8 @@ template constructScalarItem*(s: var YamlStream, i: untyped,
   except YamlConstructionError: raise
   except Exception:
     var e = constructionError(s,
-        "Cannot construct to " & name(t) & ": " & item.scalarContent)
+        "Cannot construct to " & name(t) & ": " & item.scalarContent &
+        "; error: " & getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
 
