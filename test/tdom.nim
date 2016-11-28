@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, commonTestUtils, streams
+import unittest, commonTestUtils, streams, tables
 
 suite "DOM":
   test "Composing simple Scalar":
@@ -25,13 +25,13 @@ suite "DOM":
       result = loadDOM(input)
     assert result.root.kind == ySequence
     assert result.root.tag == "?"
-    assert result.root.children.len == 2
-    assert result.root.children[0].kind == yScalar
-    assert result.root.children[0].tag == "tag:yaml.org,2002:str"
-    assert result.root.children[0].content == "a"
-    assert result.root.children[1].kind == yScalar
-    assert result.root.children[1].tag == "tag:yaml.org,2002:bool"
-    assert result.root.children[1].content == "no"
+    assert result.root.len == 2
+    assert result.root[0].kind == yScalar
+    assert result.root[0].tag == "tag:yaml.org,2002:str"
+    assert result.root[0].content == "a"
+    assert result.root[1].kind == yScalar
+    assert result.root[1].tag == "tag:yaml.org,2002:bool"
+    assert result.root[1].content == "no"
   test "Serializing sequence":
     let input = initYamlDoc(newYamlNode([
         newYamlNode("a", "tag:yaml.org,2002:str"),
@@ -46,12 +46,13 @@ suite "DOM":
       result = loadDOM(input)
     assert result.root.kind == yMapping
     assert result.root.tag == "tag:yaml.org,2002:map"
-    assert result.root.pairs.len == 1
-    assert result.root.pairs[0].key.kind == yScalar
-    assert result.root.pairs[0].key.tag  == "!foo"
-    assert result.root.pairs[0].key.content == "bar"
-    assert result.root.pairs[0].value.kind == ySequence
-    assert result.root.pairs[0].value.children.len == 2
+    assert result.root.fields.len == 1
+    for key, value in result.root.fields.pairs:
+      assert key.kind == yScalar
+      assert key.tag  == "!foo"
+      assert key.content == "bar"
+      assert value.kind == ySequence
+      assert value.len == 2
   test "Serializing mapping":
     let input = initYamlDoc(newYamlNode([
         (key: newYamlNode("bar"), value: newYamlNode([newYamlNode("a"),
@@ -65,13 +66,13 @@ suite "DOM":
       input = newStringStream("- &a foo\n- &b bar\n- *a\n- *b")
       result = loadDOM(input)
     assert result.root.kind == ySequence
-    assert result.root.children.len == 4
-    assert result.root.children[0].kind == yScalar
-    assert result.root.children[0].content == "foo"
-    assert result.root.children[1].kind == yScalar
-    assert result.root.children[1].content == "bar"
-    assert result.root.children[0] == result.root.children[2]
-    assert result.root.children[1] == result.root.children[3]
+    assert result.root.len == 4
+    assert result.root[0].kind == yScalar
+    assert result.root[0].content == "foo"
+    assert result.root[1].kind == yScalar
+    assert result.root[1].content == "bar"
+    assert cast[pointer](result.root[0]) == cast[pointer](result.root[2])
+    assert cast[pointer](result.root[1]) == cast[pointer](result.root[3])
   test "Serializing with anchors":
     let
       a = newYamlNode("a")
