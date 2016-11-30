@@ -103,7 +103,7 @@ proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
     NimNode {.compileTime.} =
   result = newStmtList()
   let
-    baseDir = parentDir(staticExec("pwd"))
+    baseDir = staticExec("pwd")
     nimPathRaw = staticExec("which nim")
     nimPath = if nimPathRaw[0] == '/': nimPathRaw else: baseDir / nimPathRaw
     title = titlePrefix & slurp(baseDir / path / "title").splitLines()[0]
