@@ -429,21 +429,14 @@ proc endLevel(c: ParserContext, e: var YamlStreamEvent):
     LevelEndResult =
   result = lerOne
   case c.level.kind
-  of fplSequence:
-    e = endSeqEvent()
-  of fplMapKey:
-    e = endMapEvent()
+  of fplSequence: e = endSeqEvent()
+  of fplMapKey: e = endMapEvent()
   of fplMapValue, fplSinglePairValue:
     e = emptyScalar(c)
     c.level.kind = fplMapKey
     result = lerAdditionalMapEnd
-  of fplUnknown:
-    if c.ancestry.len > 1:
-      e = emptyScalar(c) # don't yield scalar for empty doc
-    else:
-      result = lerNothing
-  of fplDocument:
-    e = endDocEvent()
+  of fplUnknown: e = emptyScalar(c)
+  of fplDocument: e = endDocEvent()
   of fplSinglePairKey:
     internalError("Unexpected level kind: " & $c.level.kind)
 
