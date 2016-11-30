@@ -1402,6 +1402,21 @@ macro getFieldIndex(t: typedesc, field: untyped): untyped =
     result.intVal = fieldIndex
 
 macro markAsTransient*(t: typedesc, field: untyped): typed =
+  ## Mark an object field as *transient*, meaning that this object field will
+  ## not be serialized when an object instance is dumped as YAML, and also that
+  ## the field is not expected to be given in YAML input that is loaded to an
+  ## object instance.
+  ##
+  ## Example usage:
+  ##
+  ## .. code-block::
+  ##   type MyObject = object
+  ##     a, b: string
+  ##     c: int
+  ##   markAsTransient(MyObject, a)
+  ##   markAsTransient(MyObject, c)
+  ##
+  ## This does not work if the object has been marked as implicit.
   let nextBitvectorIndex = transientVectors.len
   result = quote do:
     when compiles(`implicitVariantObjectMarker`(`t`)):
@@ -1412,9 +1427,23 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
         `nextBitvectorIndex`
       static: transientVectors.add({})
     static:
-      transientVectors[`transientBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
+      transientVectors[`transientBitvectorProc`(`t`)].incl(
+          getFieldIndex(`t`, `field`))
 
 macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
+  ## Set the default value of an object field. Fields with default values may
+  ## be absent in YAML input when loading an instance of the object. If the
+  ## field is absent in the YAML input, the default value is assigned to the
+  ## field.
+  ##
+  ## Example usage:
+  ##
+  ## .. code-block::
+  ##   type MyObject = object
+  ##     a, b: string
+  ##     c: tuple[x, y: int]
+  ##   setDefaultValue(MyObject, a, "foo")
+  ##   setDefaultValue(MyObject, c, (1, 2))
   let
     dSym = genSym(nskVar, ":default")
     nextBitvectorIndex = defaultVectors.len
@@ -1435,6 +1464,16 @@ macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
       defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
 
 macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
+  ## Tell NimYAML that when loading an object of type ``t``, any mapping key
+  ## named ``name`` shall be ignored. This makes it possible to only load
+  ## relevant parts of a YAML input and ignoring other portions of the input.
+  ##
+  ## Example usage:
+  ##
+  ## .. code-block::
+  ##   type MyObject = object
+  ##     a, b: string
+  ##   ignoreInputKey(MyObject, "c")
   let nextIgnoredKeyList = ignoredKeyLists.len
   result = quote do:
     when not compiles(`ignoredKeyListProc`(`t`)):
