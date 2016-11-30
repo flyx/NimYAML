@@ -35,8 +35,7 @@ type
     case kind: AnimalKind
     of akCat:
       purringIntensity: int
-    of akDog:
-      barkometer: int
+    of akDog: barkometer: int
 
   DumbEnum = enum
     deA, deB, deC, deD

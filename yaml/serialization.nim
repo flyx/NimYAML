@@ -568,6 +568,19 @@ proc yamlTag*(T: typedesc[tuple]):
   try: serializationTagLibrary.tags[uri]
   except KeyError: serializationTagLibrary.registerUri(uri)
 
+iterator recListItems(n: NimNode): NimNode =
+  if n.kind == nnkRecList:
+    for item in n.children: yield item
+  else: yield n
+
+proc recListLen(n: NimNode): int {.compileTime.} =
+  if n.kind == nnkRecList: result = n.len
+  else: result = 1
+
+proc recListNode(n: NimNode): NimNode {.compileTime.} =
+  if n.kind == nnkRecList: result = n[0]
+  else: result = n
+
 proc fieldCount(t: typedesc): int {.compileTime.} =
   result = 0
   let tDesc = getType(getType(t)[1])
@@ -582,13 +595,11 @@ proc fieldCount(t: typedesc): int {.compileTime.} =
         for bIndex in 1..<len(child):
           var recListIndex = 0
           case child[bIndex].kind
-          of nnkOfBranch:
-            while child[bIndex][recListIndex].kind == nnkIntLit:
-              inc(recListIndex)
+          of nnkOfBranch: recListIndex = child[bIndex].len - 1
           of nnkElse: discard
           else: internalError("Unexpected child kind: " & $child[bIndex].kind)
           if child[bIndex].len > recListIndex:
-            inc(result, child[bIndex][recListIndex].len)
+            inc(result, child[bIndex][recListIndex].recListLen)
 
 macro matchMatrix(t: typedesc): untyped =
   result = newNimNode(nnkBracket)
@@ -682,13 +693,13 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
           recListIndex = 0
         case child[bIndex].kind
         of nnkOfBranch:
-          while recListIndex < child[bIndex].len and
-              child[bIndex][recListIndex].kind == nnkIntLit:
+          while recListIndex < child[bIndex].len - 1:
+            expectKind(child[bIndex][recListIndex], nnkIntLit)
             curValues.add(child[bIndex][recListIndex])
             inc(recListIndex)
         of nnkElse: discard
         else: internalError("Unexpected child kind: " & $child[bIndex].kind)
-        for item in child[bIndex][recListIndex].children:
+        for item in child[bIndex][recListIndex].recListItems:
           inc(field)
           discChecks.add(checkMissing(s, t, tName, item, field, matched, o,
                                       defaultValues))
@@ -739,7 +750,8 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
         case child[bIndex].kind
         of nnkOfBranch:
           discTest = newNimNode(nnkCurly)
-          while child[bIndex][recListIndex].kind == nnkIntLit:
+          while recListIndex < child[bIndex].len - 1:
+            yAssert child[bIndex][recListIndex].kind == nnkIntLit
             discTest.add(child[bIndex][recListIndex])
             alreadyUsedSet.add(child[bIndex][recListIndex])
             inc(recListIndex)
@@ -748,9 +760,8 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
           discTest = infix(discriminant, "notin", alreadyUsedSet)
         else:
           internalError("Unexpected child kind: " & $child[bIndex].kind)
-        doAssert child[bIndex][recListIndex].kind == nnkRecList
 
-        for item in child[bIndex][recListIndex].children:
+        for item in child[bIndex][recListIndex].recListItems:
           inc(fieldIndex)
           yAssert item.kind == nnkSym
           var ob = newNimNode(nnkOfBranch).add(newStrLitNode($item))
@@ -899,17 +910,17 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
         case child[bIndex].kind
         of nnkOfBranch:
           curBranch = newNimNode(nnkOfBranch)
-          while child[bIndex][recListIndex].kind == nnkIntLit:
+          while recListIndex < child[bIndex].len - 1:
+            expectKind(child[bIndex][recListIndex], nnkIntLit)
             curBranch.add(newCall(enumName, newLit(child[bIndex][recListIndex].intVal)))
             inc(recListIndex)
         of nnkElse:
           curBranch = newNimNode(nnkElse)
         else:
           internalError("Unexpected child kind: " & $child[bIndex].kind)
-        doAssert child[bIndex][recListIndex].kind == nnkRecList
         var curStmtList = newStmtList()
-        if child[bIndex][recListIndex].len > 0:
-          for item in child[bIndex][recListIndex].children:
+        if child[bIndex][recListIndex].recListLen > 0:
+          for item in child[bIndex][recListIndex].recListItems():
             inc(fieldIndex)
             let
               name = $item
@@ -996,16 +1007,16 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
     yAssert recCase[i].kind == nnkOfBranch
     var branch = newNimNode(nnkElifBranch)
     var branchContent = newStmtList(newAssignment(discriminant, recCase[i][0]))
-    case recCase[i][1].len
+    case recCase[i][1].recListLen
     of 0:
       branch.add(infix(newIdentNode("yTagNull"), "in", possibleTagIds))
       branchContent.add(newNimNode(nnkDiscardStmt).add(newCall("next", s)))
     of 1:
-      let field = newDotExpr(r, newIdentNode($recCase[i][1][0]))
+      let field = newDotExpr(r, newIdentNode($recCase[i][1].recListNode))
       branch.add(infix(
           newCall("yamlTag", newCall("type", field)), "in", possibleTagIds))
       branchContent.add(newCall("constructChild", s, c, field))
-    else: internalError("Too many children: " & $recCase[i][1].len)
+    else: internalError("Too many children: " & $recCase[i][1].recListlen)
     branch.add(branchContent)
     ifStmt.add(branch)
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
@@ -1325,7 +1336,7 @@ proc canBeImplicit(t: typedesc): bool {.compileTime.} =
   if tDesc[2][0].kind != nnkRecCase: return false
   var foundEmptyBranch = false
   for i in 1.. tDesc[2][0].len - 1:
-    case tDesc[2][0][i][1].len # branch contents
+    case tDesc[2][0][i][1].recListlen # branch contents
     of 0:
       if foundEmptyBranch: return false
       else: foundEmptyBranch = true
@@ -1371,8 +1382,7 @@ macro getFieldIndex(t: typedesc, field: untyped): untyped =
           else:
             internalError("Unexpected child kind: " &
                 $child[bIndex][bChildIndex].kind)
-          yAssert child[bIndex][bChildIndex].kind == nnkRecList
-          for item in child[bIndex][bChildIndex].children:
+          for item in child[bIndex][bChildIndex].recListItems:
             inc(fieldIndex)
             yAssert item.kind == nnkSym
             if $item == fieldName:
