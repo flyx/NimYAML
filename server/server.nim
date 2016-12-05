@@ -47,7 +47,7 @@ routes:
         var
           output = newStringStream()
           highlighted = ""
-        transform(newStringStream(@"input"), output, defineOptions(style))
+        transform(newStringStream(@"input"), output, defineOptions(style), true)
 
         # syntax highlighting (stolen and modified from stlib's rstgen)
         var g: GeneralTokenizer
