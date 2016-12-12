@@ -8,19 +8,21 @@ import os, osproc, terminal, strutils, streams, macros, unittest
 import testEventParser, commonTestUtils
 import "../yaml"
 
-const devKitFolder = "yaml-dev-kit"
+const
+  testSuiteFolder = "yaml-test-suite"
+  testSuiteUrl = "https://github.com/yaml/yaml-test-suite.git"
 
 proc echoError(msg: string) =
   styledWriteLine(stdout, fgRed, "[error] ", fgWhite, msg, resetStyle)
 
-proc ensureDevKitCloneCorrect(pwd: string) {.compileTime.} =
-  let absolutePath = pwd / devKitFolder
+proc ensureTestSuiteCloneCorrect(pwd: string) {.compileTime.} =
+  let absolutePath = pwd / testSuiteFolder
   if dirExists(absolutePath):
     var isCorrectClone = true
     if dirExists(absolutePath / ".git"):
       let remoteUrl =
           staticExec("cd \"" & absolutePath & "\" && git remote get-url origin")
-      if remoteUrl != "https://github.com/ingydotnet/yaml-dev-kit.git":
+      if remoteUrl != testSuiteUrl:
         isCorrectClone = false
       let branches = staticExec("cd \"" & absolutePath & "\" && git branch")
       if "* data" notin branches.splitLines():
@@ -28,25 +30,25 @@ proc ensureDevKitCloneCorrect(pwd: string) {.compileTime.} =
     if isCorrectClone:
       let updateOutput = staticExec("cd \"" & absolutePath & "\" && git pull")
       #if uError != 0:
-      #  echo "could not update yaml-dev-kit! please fix this problem and compile again."
+      #  echo "could not update yaml-test-suite! please fix this problem and compile again."
       #  echo "output:\n"
       #  echo "$ git pull"
       #  echo updateOutput
       #  quit 1
     else:
-      echo devKitFolder, " exists, but is not in expected state. Make sure it is a git repo,"
-      echo "cloned from https://github.com/ingydotnet/yaml-dev-kit.git, and the data branch"
-      echo "is active. Alternatively, delete the folder " & devKitFolder & '.'
+      echo testSuiteFolder, " exists, but is not in expected state. Make sure it is a git repo,"
+      echo "cloned from ", testSuiteUrl, ", and the data branch"
+      echo "is active. Alternatively, delete the folder " & testSuiteFolder & '.'
       quit 1
   else:
     let cloneOutput = staticExec("cd \"" & pwd &
-      "\" && git clone https://github.com/ingydotnet/yaml-dev-kit.git -b data")
+      "\" && git clone " & testSuiteUrl & " -b data")
     #if cError != 0:
     if not(dirExists(absolutePath)) or not(dirExists(absolutePath / ".git")) or
         not(dirExists(absolutePath / "229Q")):
-      echo "could not clone https://github.com/ingydotnet/yaml-dev-kit.git. Make sure"
+      echo "could not clone ", testSuiteUrl, ". Make sure"
       echo "you are connected to the internet and your proxy settings are correct. output:\n"
-      echo "$ git clone https://github.com/ingydotnet/yaml-dev-kit.git"
+      echo "$ git clone ", testSuiteUrl, " -b data"
       echo cloneOutput
       quit 1
 
@@ -95,9 +97,9 @@ proc parserTest(path: string): bool =
 macro genTests(): untyped =
   let
     pwd = staticExec("pwd")
-    absolutePath = '"' & (pwd / devKitFolder) & '"'
+    absolutePath = '"' & (pwd / testSuiteFolder) & '"'
   echo "[tparser] Generating tests from " & absolutePath
-  ensureDevKitCloneCorrect(pwd)
+  ensureTestSuiteCloneCorrect(pwd)
   result = newStmtList()
   # walkDir for some crude reason does not work with travis build
   let dirItems = staticExec("ls -1d " & absolutePath / "*")
@@ -108,6 +110,6 @@ macro genTests(): untyped =
         newLit(strip(title) & " [" &
         dirPath[^4..^1] & ']'), newCall("doAssert", newCall("parserTest",
         newLit(dirPath)))))
-  result = newCall("suite", newLit("Parser Tests (from yaml-dev-kit)"), result)
+  result = newCall("suite", newLit("Parser Tests (from yaml-test-suite)"), result)
 
 genTests()
