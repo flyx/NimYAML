@@ -792,7 +792,7 @@ proc blockScalarHeader[T](lex: YamlLexer): bool =
     of '1'..'9':
       if lex.blockScalarIndent != UnknownIndentation:
         raise generateError[T](lex, "Only one indentation indicator is allowed")
-      lex.blockScalarIndent = ord(lex.c) - ord('\x30') + lex.indentation
+      lex.blockScalarIndent = ord(lex.c) - ord('\x30')
     of spaceOrLineEnd: break
     else:
       raise generateError[T](lex,
@@ -870,7 +870,6 @@ proc blockScalarLineStart[T](lex: YamlLexer, recentWasMoreIndented: var bool):
 
 proc blockScalar[T](lex: YamlLexer): bool =
   debug("lex: blockScalar")
-  lex.indentation = 0
   block outer:
     var recentWasMoreIndented = true
     if lex.blockScalarIndent == UnknownIndentation:
@@ -896,6 +895,9 @@ proc blockScalar[T](lex: YamlLexer): bool =
             break outer
           lex.indentation = lex.blockScalarIndent
           break
+    else:
+      lex.blockScalarIndent += lex.indentation
+      lex.indentation = 0
     if lex.c notin {'.', '-'} or lex.indentation == 0:
       if not blockScalarLineStart[T](lex, recentWasMoreIndented): break outer
     else:
