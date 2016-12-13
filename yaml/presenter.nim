@@ -761,8 +761,11 @@ proc doTransform(input: Stream | string, output: PresenterTarget,
               event.scalarTag = yTagString
           BufferYamlStream(bys).put(event)
         else: BufferYamlStream(bys).put(e)
-      present(bys, output, tagLib, options)
-    else: present(events, output, tagLib, options)
+      when output is ptr[string]: output[] = present(bys, tagLib, options)
+      else: present(bys, output, tagLib, options)
+    else:
+      when output is ptr[string]: output[] = present(events, tagLib, options)
+      else: present(events, output, tagLib, options)
   except YamlStreamError:
     var e = getCurrentException()
     while e.parent of YamlStreamError: e = e.parent
