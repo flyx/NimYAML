@@ -5,12 +5,13 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import lexbase, streams, tables
+import lexbase, streams, tables, strutils
 
 type
   LexerToken = enum
     plusStr, minusStr, plusDoc, minusDoc, plusMap, minusMap, plusSeq, minusSeq,
-    eqVal, eqAli, chevTag, andAnchor, quotContent, colonContent, noToken
+    eqVal, eqAli, chevTag, andAnchor, starAnchor, quotContent, colonContent,
+    explDirEnd, explDocEnd, noToken
 
   StreamPos = enum
     beforeStream, inStream, afterStream
@@ -29,7 +30,7 @@ proc nextToken(lex: var EventLexer): LexerToken =
     else: break
   if lex.buf[lex.bufpos] == EndOfFile: return noToken
   case lex.buf[lex.bufpos]
-  of ':', '"':
+  of ':', '"', '\'', '|', '>':
     let t = if lex.buf[lex.bufpos] == ':': colonContent else: quotContent
     lex.content = ""
     lex.bufpos.inc()
@@ -73,6 +74,13 @@ proc nextToken(lex: var EventLexer): LexerToken =
       lex.content.add(lex.buf[lex.bufpos])
       lex.bufpos.inc()
     result = andAnchor
+  of '*':
+    lex.content = ""
+    lex.bufpos.inc()
+    while lex.buf[lex.bufpos] notin {' ', '\t', '\r', '\l', EndOfFile}:
+      lex.content.add(lex.buf[lex.bufpos])
+      lex.bufpos.inc()
+    result = starAnchor
   else:
     lex.content = ""
     while lex.buf[lex.bufpos] notin {' ', '\t', '\r', '\l', EndOfFile}:
@@ -89,6 +97,8 @@ proc nextToken(lex: var EventLexer): LexerToken =
     of "-SEQ": result = minusSeq
     of "=VAL": result = eqVal
     of "=ALI": result = eqAli
+    of "---": result = explDirEnd
+    of "...": result = explDocEnd
     else: raise newException(EventStreamError, "Invalid token: " & lex.content)
 
 template assertInStream() {.dirty.} =
@@ -210,12 +220,19 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
         if curAnchor() != yAnchorNone:
           raise newException(EventStreamError,
                              "Duplicate anchor in " & $curEvent.kind)
-        if curEvent.kind == yamlAlias:
-          curEvent.aliasTarget = anchors[lex.content]
+        anchors[lex.content] = nextAnchorId
+        setCurAnchor(nextAnchorId)
+        nextAnchorId = (AnchorId)(((int)nextAnchorId) + 1)
+      of starAnchor:
+        assertInEvent("alias")
+        if curEvent.kind != yamlAlias:
+          raise newException(EventStreamError, "Unexpected alias: " &
+              escape(lex.content))
+        elif curEvent.aliasTarget != yAnchorNone:
+          raise newException(EventStreamError, "Duplicate alias target: " &
+              escape(lex.content))
         else:
-          anchors[lex.content] = nextAnchorId
-          setCurAnchor(nextAnchorId)
-          nextAnchorId = (AnchorId)(((int)nextAnchorId) + 1)
+          curEvent.aliasTarget = anchors[lex.content]
       of quotContent:
         assertInEvent("scalar content")
         if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
@@ -229,5 +246,14 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
         if curEvent.kind != yamlScalar:
           raise newException(EventStreamError,
                              "scalar content in non-scalar tag")
+      of explDirEnd:
+        assertInEvent("explicit directives end")
+        if curEvent.kind != yamlStartDoc:
+          raise newException(EventStreamError,
+                             "Unexpected explicit directives end")
+      of explDocEnd:
+        if curEvent.kind != yamlEndDoc:
+          raise newException(EventStreamError,
+                             "Unexpected explicit document end")
       of noToken: discard
   result = initYamlStream(backend)

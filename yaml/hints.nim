@@ -124,6 +124,9 @@ template advanceTypeHint(ch: char) {.dirty.} =
     ythMonth1                 => ythMonthMinusNoYmd
     ythMonth2                 => ythMonthMinus
     [ythFraction, ythSecond2] => ythAfterTimePlusMinus
+  of '_':
+    [ythInt1, ythInt2, ythInt3, ythInt4] => ythInt
+    [ythInt, ythDecimal] => nil
   of ':':
     [ythHour1, ythHour2]      => ythHourColon
     ythMinute2                => ythMinuteColon

@@ -453,7 +453,6 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
     case item.kind
     of yamlStartDoc:
       if options.style != psJson:
-        # TODO: tag directives
         try:
           case options.outputVersion
           of ov1_2: target.append("%YAML 1.2" & newline)
@@ -728,7 +727,7 @@ proc present*(s: var YamlStream, tagLib: TagLibrary,
   doPresent(s, addr result, tagLib, options)
 
 proc doTransform(input: Stream | string, output: PresenterTarget,
-                 options: PresentationOptions = defaultPresentationOptions) =
+                 options: PresentationOptions, resolveToCoreYamlTags: bool) =
   var
     taglib = initExtendedTagLibrary()
     parser = newYamlParser(tagLib)
@@ -737,30 +736,36 @@ proc doTransform(input: Stream | string, output: PresenterTarget,
     if options.style == psCanonical:
       var bys: YamlStream = newBufferYamlStream()
       for e in events:
-        var event = e
-        case event.kind
-        of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
-          discard
-        of yamlStartMap:
-          if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
-            event.mapTag = yTagMapping
-        of yamlStartSeq:
-          if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
-            event.seqTag = yTagSequence
-        of yamlScalar:
-          if event.scalarTag == yTagQuestionMark:
-            case guessType(event.scalarContent)
-            of yTypeInteger: event.scalarTag = yTagInteger
-            of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
-              event.scalarTag = yTagFloat
-            of yTypeBoolTrue, yTypeBoolFalse: event.scalarTag = yTagBoolean
-            of yTypeNull: event.scalarTag = yTagNull
-            of yTypeUnknown: event.scalarTag = yTagString
-          elif event.scalarTag == yTagExclamationMark:
-            event.scalarTag = yTagString
-        BufferYamlStream(bys).put(e)
-      present(bys, output, tagLib, options)
-    else: present(events, output, tagLib, options)
+        if resolveToCoreYamlTags:
+          var event = e
+          case event.kind
+          of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
+            discard
+          of yamlStartMap:
+            if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
+              event.mapTag = yTagMapping
+          of yamlStartSeq:
+            if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
+              event.seqTag = yTagSequence
+          of yamlScalar:
+            if event.scalarTag == yTagQuestionMark:
+              case guessType(event.scalarContent)
+              of yTypeInteger: event.scalarTag = yTagInteger
+              of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
+                event.scalarTag = yTagFloat
+              of yTypeBoolTrue, yTypeBoolFalse: event.scalarTag = yTagBoolean
+              of yTypeNull: event.scalarTag = yTagNull
+              of yTypeTimestamp: event.scalarTag = yTagTimestamp
+              of yTypeUnknown: event.scalarTag = yTagString
+            elif event.scalarTag == yTagExclamationMark:
+              event.scalarTag = yTagString
+          BufferYamlStream(bys).put(event)
+        else: BufferYamlStream(bys).put(e)
+      when output is ptr[string]: output[] = present(bys, tagLib, options)
+      else: present(bys, output, tagLib, options)
+    else:
+      when output is ptr[string]: output[] = present(events, tagLib, options)
+      else: present(events, output, tagLib, options)
   except YamlStreamError:
     var e = getCurrentException()
     while e.parent of YamlStreamError: e = e.parent
@@ -769,20 +774,25 @@ proc doTransform(input: Stream | string, output: PresenterTarget,
     else: internalError("Unexpected exception: " & e.parent.repr)
 
 proc transform*(input: Stream | string, output: Stream,
-                options: PresentationOptions = defaultPresentationOptions)
+                options: PresentationOptions = defaultPresentationOptions,
+                resolveToCoreYamlTags: bool = false)
     {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
                YamlPresenterOutputError].} =
   ## Parser ``input`` as YAML character stream and then dump it to ``output``
   ## while resolving non-specific tags to the ones in the YAML core tag
-  ## library.
-  doTransform(input, output, options)
+  ## library. If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
+  ## be replaced by specific tags according to the YAML core schema.
+  doTransform(input, output, options, resolveToCoreYamlTags)
 
 proc transform*(input: Stream | string,
-                options: PresentationOptions = defaultPresentationOptions):
+                options: PresentationOptions = defaultPresentationOptions,
+                resolveToCoreYamlTags: bool = false):
     string {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
                       YamlPresenterOutputError].} =
   ## Parser ``input`` as YAML character stream, resolves non-specific tags to
   ## the ones in the YAML core tag library, and then returns a serialized
-  ## YAML string that represents the stream.
+  ## YAML string that represents the stream. If ``resolveToCoreYamlTags`` is
+  ## ``true``, non-specific tags will be replaced by specific tags according to
+  ## the YAML core schema.
   result = ""
-  doTransform(input, addr result, options)
+  doTransform(input, addr result, options, resolveToCoreYamlTags)

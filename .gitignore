@@ -5,7 +5,6 @@ test/tdom
 test/tserialization
 test/tjson
 test/tparser
-test/yamlTestSuite
 test/tquickstart
 test/*.exe
 test/*.pdb
@@ -22,5 +21,5 @@ docout
 doc/rstPreproc
 doc/tmp.rst
 doc/**/code
-yaml-dev-kit
+test/yaml-test-suite
 nimsuggest.log

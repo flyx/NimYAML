@@ -897,6 +897,7 @@ proc blockScalar[T](lex: YamlLexer): bool =
           break
     else:
       lex.blockScalarIndent += lex.indentation
+      lex.indentation = 0
     if lex.c notin {'.', '-'} or lex.indentation == 0:
       if not blockScalarLineStart[T](lex, recentWasMoreIndented): break outer
     else:
