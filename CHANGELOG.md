@@ -1,3 +1,19 @@
+### 0.9.0
+
+Features:
+
+ * Better DOM API:
+   - yMapping is now a Table
+   - field names have changed to imitate those of Nim's json API
+   - Better getter and setter procs
+ * Added ability to resolve non-specific tags in presenter.transform
+
+Bugfixes:
+
+ * Fixed parsing floating point literals (#30)
+ * Fixed a bug with variant records (#31)
+ * Empty documents now always contain an empty scalar
+
 ### 0.8.0
 
 Features:
