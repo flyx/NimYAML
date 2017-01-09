@@ -1047,3 +1047,11 @@ proc parse*(p: YamlParser, str: string): YamlStream
   c.lex = newYamlLexer(str)
   c.init(p)
   result = c
+
+proc anchorName*(p: YamlParser, anchor: AnchorId): string {.raises: [].} =
+  ## Retrieve the textual representation of the given anchor as it occurred in
+  ## the input (without the leading `&`). Returns the empty string for unknown
+  ## anchors.
+  for representation, value in p.anchors:
+    if value == anchor: return representation
+  return ""

@@ -13,6 +13,8 @@ Bugfixes:
  * Fixed parsing floating point literals (#30)
  * Fixed a bug with variant records (#31)
  * Empty documents now always contain an empty scalar
+ * Block scalars with indentation indicator now have correct whitespace on first
+   line.
 
 ### 0.8.0
 
