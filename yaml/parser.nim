@@ -975,7 +975,9 @@ parserState flowAfterObject:
       raise c.generateError("Unexpected token (expected ']')")
     of fplUnknown, fplSinglePairKey, fplDocument:
       internalError("Unexpected level kind: " & $c.level.kind)
-    result = c.leaveFlowLevel(e)
+    # we need the extra state for possibly emitting an additional empty value.
+    state = leaveFlowMap
+    return false
   of ltComma:
     case c.level.kind
     of fplSequence: discard
