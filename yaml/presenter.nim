@@ -554,7 +554,11 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
                              "Cannot have sequence as map key in JSON output!")
         nextState = dFlowSequenceStart
       of psMinimal, psCanonical: nextState = dFlowSequenceStart
-      of psBlockOnly: nextState = dBlockSequenceItem
+      of psBlockOnly:
+        yAssert(not s.finished())
+        let next = s.peek()
+        if next.kind == yamlEndSeq: nextState = dFlowSequenceStart
+        else: nextState = dBlockSequenceItem
 
       if levels.len == 0:
         case nextState
@@ -605,7 +609,11 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
           raise newException(YamlPresenterJsonError,
                              "Cannot have map as map key in JSON output!")
         nextState = dFlowMapStart
-      of psBlockOnly: nextState = dBlockMapValue
+      of psBlockOnly:
+        yAssert(not s.finished())
+        let next = s.peek()
+        if next.kind == yamlEndMap: nextState = dFlowMapStart
+        else: nextState = dBlockMapValue
       if levels.len == 0:
         case nextState
         of dBlockMapValue:
