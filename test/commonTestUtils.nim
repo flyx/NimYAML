@@ -4,7 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import "../yaml"
+import "../yaml", strutils
 
 proc escapeNewlines(s: string): string =
   result = ""
@@ -22,7 +22,7 @@ proc printDifference*(expected, actual: YamlStreamEvent) =
     case expected.kind
     of yamlScalar:
       if expected.scalarTag != actual.scalarTag:
-        echo "[\"", actual.scalarContent, "\".tag] expected tag ",
+        echo "[", escape(actual.scalarContent), ".tag] expected tag ",
              expected.scalarTag, ", got ", actual.scalarTag
       elif expected.scalarAnchor != actual.scalarAnchor:
         echo "[scalarEvent] expected anchor ", expected.scalarAnchor,
