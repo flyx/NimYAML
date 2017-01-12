@@ -267,7 +267,7 @@ proc guessType*(scalar: string): TypeHint {.raises: [].} =
   var typeHintState: YamlTypeHintState = ythInitial
   for c in scalar: advanceTypeHint(c)
   case typeHintState
-  of ythNULL: result = yTypeNull
+  of ythNULL, ythInitial: result = yTypeNull
   of ythTRUE, ythON, ythYES, ythY: result = yTypeBoolTrue
   of ythFALSE, ythOFF, ythNO, ythN: result = yTypeBoolFalse
   of ythInt1, ythInt2, ythInt3, ythInt4, ythInt, yth0: result = yTypeInteger
