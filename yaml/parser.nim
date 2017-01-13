@@ -592,17 +592,24 @@ parserState blockObjectStart:
     c.advance()
     state = scalarEnd
   of ltScalarPart:
+    let needsValueIndicator = c.level.kind == fplMapKey
     result = c.handleBlockItemStart(e)
     c.plainScalarStart = c.lex.curStartPos
     while true:
       c.advance()
       case c.lex.cur
       of ltIndentation:
-        if c.lex.indentation <= c.ancestry[^1].indentation: break
+        if c.lex.indentation <= c.ancestry[^1].indentation:
+          if needsValueIndicator and
+              c.lex.indentation == c.ancestry[^1].indentation:
+            raise c.generateError("Illegal multiline implicit key")
+          break
         c.lex.newlines.inc()
       of ltScalarPart: discard
       of ltEmptyLine: c.lex.newlines.inc()
       else: break
+    if needsValueIndicator and c.lex.cur != ltMapValInd:
+      raise c.generateError("Missing mapping value indicator (`:`)")
     c.lex.newlines = 0
     state = plainScalarEnd
     stored = blockAfterObject
