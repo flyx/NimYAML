@@ -586,7 +586,7 @@ parserState blockObjectStart:
   of ltBlockScalarHeader:
     c.lex.indentation = c.ancestry[^1].indentation
     c.advance()
-    assert c.lex.cur == ltBlockScalar
+    assert c.lex.cur in  {ltBlockScalar, ltStreamEnd}
     if c.level.indentation == UnknownIndentation:
       c.level.indentation = c.lex.indentation
     c.advance()
