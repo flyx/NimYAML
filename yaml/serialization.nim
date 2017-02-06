@@ -17,7 +17,7 @@
 ## information.
 
 import tables, typetraits, strutils, macros, streams, times, parseutils
-import parser, taglib, presenter, stream, ../private/internal, hints
+import parser, taglib, presenter, stream, private/internal, hints
 export stream
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.

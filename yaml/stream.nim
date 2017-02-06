@@ -13,7 +13,7 @@
 ## stdlib with that name.
 
 import hashes
-import ../private/internal, taglib
+import private/internal, taglib
 
 type
   AnchorId* = distinct int ## \

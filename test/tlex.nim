@@ -1,4 +1,4 @@
-import ../private/lex
+import ../yaml/private/lex
 
 import unittest, strutils
 

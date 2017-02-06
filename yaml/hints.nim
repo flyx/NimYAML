@@ -11,7 +11,7 @@
 ## The hints API enables you to guess the type of YAML scalars.
 
 import macros
-import ../private/internal
+import private/internal
 
 type
   TypeHint* = enum

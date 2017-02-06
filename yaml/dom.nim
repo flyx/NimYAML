@@ -20,7 +20,7 @@
 ## objects of Nim's `json module <http://nim-lang.org/docs/json.html>`_.
 
 import tables, streams, hashes, sets, strutils
-import stream, taglib, serialization, ../private/internal, parser,
+import stream, taglib, serialization, private/internal, parser,
        presenter
 
 type
