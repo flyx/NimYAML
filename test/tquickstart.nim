@@ -1,6 +1,13 @@
 import unittest, os, osproc, macros, strutils, streams
 
-proc inputTest(basePath, path, nimPath: string): bool =
+const baseDir = parentDir(staticExec("pwd"))
+let (nimPathRaw, nimPathRet) =
+    execCmdEx("which nim", {poStdErrToStdOut, poUsePath})
+if nimPathRet != 0: quit "could not locate nim executable:\n" & nimPathRaw
+let nimPath =
+    if nimPathRaw[0] == '/': nimPathRaw.strip else: baseDir / nimPathRaw.strip
+
+proc inputTest(basePath, path: string): bool =
   let
     absolutePath = basePath / path
     inFileOrig = absolutePath / "01-in.yaml"
@@ -35,7 +42,7 @@ proc inputTest(basePath, path, nimPath: string): bool =
       result = false
     else: result = true
 
-proc outputTest(basePath, path, nimPath: string): bool =
+proc outputTest(basePath, path: string): bool =
   let
     absolutePath = basePath / path
     codeFileOrig = absolutePath / "00-code.nim"
@@ -103,18 +110,15 @@ proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
     NimNode {.compileTime.} =
   result = newStmtList()
   let
-    baseDir = parentDir(staticExec("pwd"))
-    nimPathRaw = staticExec("which nim")
-    nimPath = if nimPathRaw[0] == '/': nimPathRaw else: baseDir / nimPathRaw
     title = titlePrefix & slurp(baseDir / path / "title").splitLines()[0]
   if fileExists(path / "00-code.nim"):
     var test = newCall("test", newLit(title))
     if fileExists(path / "01-in.yaml"):
       test.add(newCall("doAssert", newCall("inputTest", newLit(baseDir),
-          newLit(path), newLit(nimPath))))
+          newLit(path))))
     elif fileExists(path / "01-out.yaml"):
       test.add(newCall("doAssert", newCall("outputTest", newLit(baseDir),
-          newLit(path), newLit(nimPath))))
+          newLit(path))))
     else:
       echo "Error: neither 01-in.yaml nor 01-out.yaml exists in " & path & '!'
       quit 1
