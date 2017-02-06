@@ -1006,6 +1006,7 @@ parserState flowAfterObject:
     state = flow
     c.advance()
   of ltMapValInd:
+    c.explicitFlowKey = false
     case c.level.kind
     of fplSequence, fplMapKey:
       raise c.generateError("Unexpected token (expected ',')")
