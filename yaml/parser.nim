@@ -195,7 +195,7 @@ proc initDocValues(c: ParserContext) {.raises: [].} =
   c.anchor = yAnchorNone
   c.ancestry.add(FastParseLevel(kind: fplDocument, indentation: -1))
 
-proc advance(c: ParserContext) {.inline.} =
+proc advance(c: ParserContext) {.inline, raises: [YamlParserError].} =
   try: c.lex.next()
   except YamlLexerError:
     let e = (ref YamlLexerError)(getCurrentException())
@@ -1024,8 +1024,11 @@ parserState flowAfterObject:
 
 # --- parser initialization ---
 
-proc init(c: ParserContext, p: YamlParser) =
-  c.basicInit(lastTokenContext)
+proc init(c: ParserContext, p: YamlParser) {.raises: [YamlParserError].} =
+  # this try/except should not be necessary because basicInit cannot raise
+  # anything. however, compiling to JS does not work without it.
+  try: c.basicInit(lastTokenContext)
+  except: discard
   c.p = p
   c.ancestry = newSeq[FastParseLevel]()
   c.initDocValues()

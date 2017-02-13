@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, strutils, streams, tables, times, math
+import unittest, strutils, tables, times, math
 
 type
   MyTuple = tuple
@@ -125,12 +125,12 @@ let blockOnly = defineOptions(style=psBlockOnly)
 
 suite "Serialization":
   test "Load integer without fixed length":
-    var input = newStringStream("-4247")
+    var input = "-4247"
     var result: int
     load(input, result)
     assert result == -4247, "result is " & $result
 
-    input = newStringStream($(int64(int32.high) + 1'i64))
+    input = $(int64(int32.high) + 1'i64)
     var gotException = false
     try: load(input, result)
     except: gotException = true
@@ -149,49 +149,49 @@ suite "Serialization":
       assert gotException, "Expected exception, got none."
 
   test "Load Hex byte (0xFF)":
-    let input = newStringStream("0xFF")
+    let input = "0xFF"
     var result: byte
     load(input, result)
     assert(result == 255)
 
   test "Load Hex byte (0xC)":
-    let input = newStringStream("0xC")
+    let input = "0xC"
     var result: byte
     load(input, result)
     assert(result == 12)
 
   test "Load Octal byte (0o14)":
-    let input = newStringStream("0o14")
+    let input = "0o14"
     var result: byte
     load(input, result)
     assert(result == 12)
 
   test "Load byte (14)":
-    let input = newStringStream("14")
+    let input = "14"
     var result: byte
     load(input, result)
     assert(result == 14)
 
   test "Load Hex int (0xFF)":
-    let input = newStringStream("0xFF")
+    let input = "0xFF"
     var result: int
     load(input, result)
     assert(result == 255)
 
   test "Load Hex int (0xC)":
-    let input = newStringStream("0xC")
+    let input = "0xC"
     var result: int
     load(input, result)
     assert(result == 12)
 
   test "Load Octal int (0o14)":
-    let input = newStringStream("0o14")
+    let input = "0o14"
     var result: int
     load(input, result)
     assert(result == 12)
 
   test "Load int (14)":
-    let input = newStringStream("14")
+    let input = "14"
     var result: int
     load(input, result)
     assert(result == 14)
@@ -206,7 +206,7 @@ suite "Serialization":
     assert classify(result[4]) == fcNan
 
   test "Load nil string":
-    let input = newStringStream("!<tag:nimyaml.org,2016:nil:string> \"\"")
+    let input = "!<tag:nimyaml.org,2016:nil:string> \"\""
     var result: string
     load(input, result)
     assert isNil(result)
@@ -225,7 +225,7 @@ suite "Serialization":
     # the parsed Time may have any timezone offset.
 
   test "Load string sequence":
-    let input = newStringStream(" - a\n - b")
+    let input = " - a\n - b"
     var result: seq[string]
     load(input, result)
     assert result.len == 2
@@ -238,7 +238,7 @@ suite "Serialization":
     assertStringEqual yamlDirs & "\n- a\n- b", output
 
   test "Load nil seq":
-    let input = newStringStream("!<tag:nimyaml.org,2016:nil:seq> \"\"")
+    let input = "!<tag:nimyaml.org,2016:nil:seq> \"\""
     var result: seq[int]
     load(input, result)
     assert isNil(result)
@@ -249,7 +249,7 @@ suite "Serialization":
     assertStringEqual yamlDirs & "\n!n!nil:seq \"\"", output
 
   test "Load char set":
-    let input = newStringStream("- a\n- b")
+    let input = "- a\n- b"
     var result: set[char]
     load(input, result)
     assert result.card == 2
@@ -262,7 +262,7 @@ suite "Serialization":
     assertStringEqual yamlDirs & "\n- a\n- b", output
 
   test "Load array":
-    let input = newStringStream("- 23\n- 42\n- 47")
+    let input = "- 23\n- 42\n- 47"
     var result: array[0..2, int32]
     load(input, result)
     assert result[0] == 23
@@ -275,7 +275,7 @@ suite "Serialization":
     assertStringEqual yamlDirs & "\n- 23\n- 42\n- 47", output
 
   test "Load Table[int, string]":
-    let input = newStringStream("23: dreiundzwanzig\n42: zweiundvierzig")
+    let input = "23: dreiundzwanzig\n42: zweiundvierzig"
     var result: Table[int32, string]
     load(input, result)
     assert result.len == 2
@@ -291,7 +291,7 @@ suite "Serialization":
         output)
 
   test "Load OrderedTable[tuple[int32, int32], string]":
-    let input = newStringStream("- {a: 23, b: 42}: drzw\n- {a: 13, b: 47}: drsi")
+    let input = "- {a: 23, b: 42}: drzw\n- {a: 13, b: 47}: drsi"
     var result: OrderedTable[tuple[a, b: int32], string]
     load(input, result)
     var i = 0
@@ -325,7 +325,7 @@ suite "Serialization":
   : dreizehnsiebenundvierzig""", output)
 
   test "Load Sequences in Sequence":
-    let input = newStringStream(" - [1, 2, 3]\n - [4, 5]\n - [6]")
+    let input = " - [1, 2, 3]\n - [4, 5]\n - [6]"
     var result: seq[seq[int32]]
     load(input, result)
     assert result.len == 3
@@ -340,7 +340,7 @@ suite "Serialization":
 
   test "Load Enum":
     let input =
-      newStringStream("!<tag:nimyaml.org,2016:system:seq(tl)>\n- !tl tlRed\n- tlGreen\n- tlYellow")
+      "!<tag:nimyaml.org,2016:system:seq(tl)>\n- !tl tlRed\n- tlGreen\n- tlYellow"
     var result: seq[TrafficLight]
     load(input, result)
     assert result.len == 3
@@ -354,7 +354,7 @@ suite "Serialization":
     assertStringEqual yamlDirs & "\n- tlRed\n- tlGreen\n- tlYellow", output
 
   test "Load Tuple":
-    let input = newStringStream("str: value\ni: 42\nb: true")
+    let input = "str: value\ni: 42\nb: true"
     var result: MyTuple
     load(input, result)
     assert result.str == "value"
@@ -385,7 +385,7 @@ suite "Serialization":
       load(input, result)
 
   test "Load Multiple Documents":
-    let input = newStringStream("1\n---\n2")
+    let input = "1\n---\n2"
     var result: seq[int]
     loadMultiDoc(input, result)
     assert(result.len == 2)
@@ -393,14 +393,14 @@ suite "Serialization":
     assert result[1] == 2
 
   test "Load Multiple Documents (Single Doc)":
-    let input = newStringStream("1")
+    let input = "1"
     var result: seq[int]
     loadMultiDoc(input, result)
     assert(result.len == 1)
     assert result[0] == 1
 
   test "Load custom object":
-    let input = newStringStream("firstnamechar: P\nsurname: Pan\nage: 12")
+    let input = "firstnamechar: P\nsurname: Pan\nage: 12"
     var result: Person
     load(input, result)
     assert result.firstnamechar == 'P'
@@ -432,8 +432,8 @@ suite "Serialization":
       load(input, result)
 
   test "Load sequence with explicit tags":
-    let input = newStringStream(yamlDirs & "!n!system:seq(" &
-        "tag:yaml.org;2002:str)\n- !!str one\n- !!str two")
+    let input = yamlDirs & "!n!system:seq(" &
+        "tag:yaml.org;2002:str)\n- !!str one\n- !!str two"
     var result: seq[string]
     load(input, result)
     assert result[0] == "one"
@@ -446,8 +446,8 @@ suite "Serialization":
         "tag:yaml.org;2002:str) \n- !!str one\n- !!str two", output)
 
   test "Load custom object with explicit root tag":
-    let input = newStringStream(
-        "--- !<tag:nimyaml.org,2016:custom:Person>\nfirstnamechar: P\nsurname: Pan\nage: 12")
+    let input =
+        "--- !<tag:nimyaml.org,2016:custom:Person>\nfirstnamechar: P\nsurname: Pan\nage: 12"
     var result: Person
     load(input, result)
     assert result.firstnamechar == 'P'
@@ -461,9 +461,9 @@ suite "Serialization":
         "!n!custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
 
   test "Load custom variant object":
-    let input = newStringStream(
+    let input =
       "---\n- - name: Bastet\n  - kind: akCat\n  - purringIntensity: 7\n" &
-      "- - name: Anubis\n  - kind: akDog\n  - barkometer: 13")
+      "- - name: Anubis\n  - kind: akDog\n  - barkometer: 13"
     var result: seq[Animal]
     load(input, result)
     assert result.len == 2
@@ -577,16 +577,17 @@ suite "Serialization":
     expectConstructionError(1, 16, "While constructing WithIgnoredField: Unknown field: \"zz\""):
       load(input, result)
 
-  test "Dump cyclic data structure":
-    var
-      a = newNode("a")
-      b = newNode("b")
-      c = newNode("c")
-    a.next = b
-    b.next = c
-    c.next = a
-    var output = dump(a, tsRootOnly, asTidy, blockOnly)
-    assertStringEqual yamlDirs & """!example.net:Node &a 
+  when not defined(JS):
+    test "Dump cyclic data structure":
+      var
+        a = newNode("a")
+        b = newNode("b")
+        c = newNode("c")
+      a.next = b
+      b.next = c
+      c.next = a
+      var output = dump(a, tsRootOnly, asTidy, blockOnly)
+      assertStringEqual yamlDirs & """!example.net:Node &a 
 value: a
 next: 
   value: b
@@ -594,33 +595,33 @@ next:
     value: c
     next: *a""", output
 
-  test "Load cyclic data structure":
-    let input = newStringStream(yamlDirs & """!n!system:seq(example.net:Node)
-- &a
-  value: a
-  next: &b
-    value: b
-    next: &c
-      value: c
-      next: *a
-- *b
-- *c
-""")
-    var result: seq[ref Node]
-    try: load(input, result)
-    except YamlConstructionError:
-      let ex = (ref YamlConstructionError)(getCurrentException())
-      echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
-      echo ex.lineContent
-      raise ex
+    test "Load cyclic data structure":
+      let input = yamlDirs & """!n!system:seq(example.net:Node) 
+  - &a 
+    value: a
+    next: &b 
+      value: b
+      next: &c 
+        value: c
+        next: *a
+  - *b
+  - *c
+  """
+      var result: seq[ref Node]
+      try: load(input, result)
+      except YamlConstructionError:
+        let ex = (ref YamlConstructionError)(getCurrentException())
+        echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
+        echo ex.lineContent
+        raise ex
 
-    assert(result.len == 3)
-    assert(result[0].value == "a")
-    assert(result[1].value == "b")
-    assert(result[2].value == "c")
-    assert(result[0].next == result[1])
-    assert(result[1].next == result[2])
-    assert(result[2].next == result[0])
+      assert(result.len == 3)
+      assert(result[0].value == "a")
+      assert(result[1].value == "b")
+      assert(result[2].value == "c")
+      assert(result[0].next == result[1])
+      assert(result[1].next == result[2])
+      assert(result[2].next == result[0])
 
   test "Load object with default values":
     let input = "a: abc\nc: dce"
@@ -640,32 +641,33 @@ next:
     assert result.c == "cde"
     assert result.d == "d"
 
-  test "Load nil values":
-    let input = newStringStream("- ~\n- !!str ~")
-    var result: seq[ref string]
-    try: load(input, result)
-    except YamlConstructionError:
-      let ex = (ref YamlConstructionError)(getCurrentException())
-      echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
-      echo ex.lineContent
-      raise ex
+  when not defined(JS):
+    test "Load nil values":
+      let input = "- ~\n- !!str ~"
+      var result: seq[ref string]
+      try: load(input, result)
+      except YamlConstructionError:
+        let ex = (ref YamlConstructionError)(getCurrentException())
+        echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
+        echo ex.lineContent
+        raise ex
 
-    assert(result.len == 2)
-    assert(result[0] == nil)
-    assert(result[1][] == "~")
+      assert(result.len == 2)
+      assert(result[0] == nil)
+      assert(result[1][] == "~")
 
-  test "Dump nil values":
-    var input = newSeq[ref string]()
-    input.add(nil)
-    input.add(new string)
-    input[1][] = "~"
-    var output = dump(input, tsRootOnly, asTidy, blockOnly)
-    assertStringEqual(yamlDirs &
-        "!n!system:seq(tag:yaml.org;2002:str) \n- !!null ~\n- !!str ~",
-        output)
+    test "Dump nil values":
+      var input = newSeq[ref string]()
+      input.add(nil)
+      input.add(new string)
+      input[1][] = "~"
+      var output = dump(input, tsRootOnly, asTidy, blockOnly)
+      assertStringEqual(yamlDirs &
+          "!n!system:seq(tag:yaml.org;2002:str) \n- !!null ~\n- !!str ~",
+          output)
 
   test "Custom constructObject":
-    let input = newStringStream("- 1\n- !test:BetterInt 2")
+    let input = "- 1\n- !test:BetterInt 2"
     var result: seq[BetterInt]
     load(input, result)
     assert(result.len == 2)

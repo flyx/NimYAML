@@ -6,7 +6,7 @@
 
 import "../yaml"
 
-import unittest, json, streams
+import unittest, json
 
 proc wc(line, column: int, lineContent: string, message: string) =
   echo "Warning (", line, ",", column, "): ", message, "\n", lineContent
@@ -15,7 +15,7 @@ proc ensureEqual(yamlIn, jsonIn: string) =
   try:
     var
       parser = newYamlParser(initCoreTagLibrary(), wc)
-      s = parser.parse(newStringStream(yamlIn))
+      s = parser.parse(yamlIn)
       yamlResult = constructJson(s)
       jsonResult = parseJson(jsonIn)
     assert yamlResult.len == 1

@@ -220,7 +220,12 @@ proc representObject*(value: int, tagStyle: TagStyle,
     e.parent = getCurrentException()
     raise e
 
-proc constructObject*[T: uint8|uint16|uint32|uint64](
+when defined(JS):
+  type DefiniteUIntTypes = uint8 | uint16 | uint32
+else:
+  type DefiniteUIntTypes = uint8 | uint16 | uint32 | uint64
+
+proc constructObject*[T: DefiniteUIntTypes](
     s: var YamlStream, c: ConstructionContext, result: var T)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct an unsigned integer value from a YAML scalar
@@ -1131,6 +1136,23 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
       raise s.constructionError("Anchor on non-ref type")
   constructObject(s, c, result)
 
+when defined(JS):
+  # in JS, Time is a ref type. Therefore, we need this specialization so that
+  # it is not handled by the general ref-type handler.
+  proc constructChild*(s: var YamlStream, c: ConstructionContext,
+                       result: var Time) =
+    let e = s.peek()
+    if e.kind == yamlScalar:
+      if e.scalarTag notin [yTagQuestionMark, yTagTimestamp]:
+        raise s.constructionError("Wrong tag for Time")
+      elif guessType(e.scalarContent) != yTypeTimestamp:
+        raise s.constructionError("Invalid timestamp")
+      elif e.scalarAnchor != yAnchorNone:
+        raise s.constructionError("Anchor on non-ref type")
+      constructObject(s, c, result)
+    else:
+      raise s.constructionError("Unexpected structure, expected timestamp")
+
 proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
                         result: var ref O) =
   var e = s.peek()
@@ -1258,7 +1280,7 @@ proc load*[K](input: Stream | string, target: var K)
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: internalError("Unexpected exception: " & e.parent.repr)
+    else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
   if target.isNil:
@@ -1279,7 +1301,7 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: internalError("Unexpected exception: " & e.parent.repr)
+    else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
     {.inline.} =
@@ -1315,7 +1337,7 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
       if options.style == psJson: asNone else: anchorStyle)
   try: present(events, target, serializationTagLibrary, options)
   except YamlStreamError:
-    internalError("Unexpected exception: " & getCurrentException().repr)
+    internalError("Unexpected exception: " & $getCurrentException().name)
 
 proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
@@ -1327,7 +1349,7 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
       if options.style == psJson: asNone else: anchorStyle)
   try: result = present(events, serializationTagLibrary, options)
   except YamlStreamError:
-    internalError("Unexpected exception: " & getCurrentException().repr)
+    internalError("Unexpected exception: " & $getCurrentException().name)
 
 proc canBeImplicit(t: typedesc): bool {.compileTime.} =
   let tDesc = getType(t)

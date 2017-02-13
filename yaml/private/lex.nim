@@ -225,29 +225,30 @@ proc lineWithMarker(lex: YamlLexer, pos: tuple[line, column: int],
 
 # lexer states
 
-{.push raises: YamlLexerError, gcSafe, locks: 0.}
-proc outsideDoc[T](lex: YamlLexer): bool
-proc yamlVersion[T](lex: YamlLexer): bool
-proc tagShorthand[T](lex: YamlLexer): bool
-proc tagUri[T](lex: YamlLexer): bool
-proc unknownDirParams[T](lex: YamlLexer): bool
-proc expectLineEnd[T](lex: YamlLexer): bool
-proc possibleDirectivesEnd[T](lex: YamlLexer): bool
-proc possibleDocumentEnd[T](lex: YamlLexer): bool
-proc afterSeqInd[T](lex: YamlLexer): bool
-proc insideDoc[T](lex: YamlLexer): bool
-proc insideFlow[T](lex: YamlLexer): bool
-proc insideLine[T](lex: YamlLexer): bool
-proc plainScalarPart[T](lex: YamlLexer): bool
-proc blockScalarHeader[T](lex: YamlLexer): bool
-proc blockScalar[T](lex: YamlLexer): bool
-proc indentationAfterBlockScalar[T](lex: YamlLexer): bool
-proc dirEndAfterBlockScalar[T](lex: YamlLexer): bool
-proc docEndAfterBlockScalar[T](lex: YamlLexer): bool
-proc tagHandle[T](lex: YamlLexer): bool
-proc anchor[T](lex: YamlLexer): bool
-proc alias[T](lex: YamlLexer): bool
-proc streamEnd[T](lex: YamlLexer): bool
+{.push gcSafe, locks: 0.}
+# `raises` cannot be pushed.
+proc outsideDoc[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc yamlVersion[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc tagShorthand[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc tagUri[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc unknownDirParams[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc expectLineEnd[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc possibleDirectivesEnd[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc possibleDocumentEnd[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc afterSeqInd[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc insideDoc[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc insideFlow[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc insideLine[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc plainScalarPart[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc blockScalarHeader[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc blockScalar[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc indentationAfterBlockScalar[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc dirEndAfterBlockScalar[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc docEndAfterBlockScalar[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc tagHandle[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc anchor[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc alias[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
+proc streamEnd[T](lex: YamlLexer): bool {.raises: YamlLexerError.}
 {.pop.}
 
 # implementation
