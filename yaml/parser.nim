@@ -1083,3 +1083,46 @@ proc anchorName*(p: YamlParser, anchor: AnchorId): string {.raises: [].} =
   for representation, value in p.anchors:
     if value == anchor: return representation
   return ""
+
+proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId): string =
+  result = ""
+  case tag
+  of yTagQuestionmark: discard
+  of yTagExclamationmark: result = " !"
+  else:
+    let tagUri = p.taglib.uri(tag)
+    if tagUri.startsWith(yamlTagRepositoryPrefix):
+      result = " !!" & tagUri[yamlTagRepositoryPrefix.len..^1]
+    else:
+      result = " !<" & tagUri & ">"
+
+proc display*(p: YamlParser, event: YamlStreamEvent): string
+    {.raises: [KeyError].} =
+  ## Generate a representation of the given event with proper visualization of
+  ## anchor and tag (if any). The generated representation is conformant to the
+  ## format used in the yaml test suite.
+  ##
+  ## This proc is an informed version of ``$`` on ``YamlStreamEvent`` which can
+  ## properly display the anchor and tag name as it occurs in the input.
+  ## However, it shall only be used while using the streaming API because after
+  ## finishing the parsing of a document, the parser drops all information about
+  ## anchor and tag names.
+  case event.kind
+  of yamlEndMap: result = "-MAP"
+  of yamlEndSeq: result = "-SEQ"
+  of yamlStartDoc: result = "+DOC"
+  of yamlEndDoc: result = "-DOC"
+  of yamlStartMap: result = "+MAP" & p.renderAttrs(event.mapTag, event.mapAnchor)
+  of yamlStartSeq: result = "+SEQ" & p.renderAttrs(event.seqTag, event.seqAnchor)
+  of yamlScalar:
+    result = "=VAL" & p.renderAttrs(event.scalarTag, event.scalarAnchor)
+    when defined(yamlScalarRepInd):
+      case event.scalarRep
+      of srPlain: result &= " :"
+      of srSingleQuoted: result &= " \'"
+      of srDoubleQuoted: result &= " \""
+      of srLiteral: result &= " |"
+      of srFolded: result &= " >"
+    else: result &= " :"
+    result &= yamlTestSuiteEscape(event.scalarContent)
+  of yamlAlias: result = "=ALI *" & p.anchorName(event.aliasTarget)

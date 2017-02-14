@@ -35,7 +35,7 @@ routes:
           output = "+STR\n"
           parser = newYamlParser()
           events = parser.parse(newStringStream(@"input"))
-        for event in events: output.add($event & "\n")
+        for event in events: output.add(parser.display(event) & "\n")
         output &= "-STR"
         resultNode["code"] = %0
         resultNode["output"] = %output

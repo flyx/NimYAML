@@ -27,3 +27,12 @@ template yAssert*(e: typed) =
         except: discard
       echo "[NimYAML] Please report this bug."
       quit 1
+
+proc yamlTestSuiteEscape*(s: string): string =
+  result = ""
+  for c in s:
+    case c
+    of '\l': result.add("\\n")
+    of '\c': result.add("\\c")
+    of '\\': result.add("\\\\")
+    else: result.add(c)

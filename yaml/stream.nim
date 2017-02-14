@@ -253,19 +253,9 @@ proc renderAttrs(tag: TagId, anchor: AnchorId): string =
   else: result &= " !<" & $tag & ">"
   if anchor != yAnchorNone: result &= " &" & $anchor
 
-proc yamlEscape(s: string): string =
-  result = ""
-  for c in s:
-    case c
-    of '\l': result.add("\\n")
-    of '\c': result.add("\\c")
-    of '\\': result.add("\\\\")
-    else: result.add(c)
-
 proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
   ## outputs a human-readable string describing the given event.
   ## This string is compatible to the format used in the yaml test suite.
-  result = $event.kind & '('
   case event.kind
   of yamlEndMap: result = "-MAP"
   of yamlEndSeq: result = "-SEQ"
@@ -283,7 +273,7 @@ proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
       of srLiteral: result &= " |"
       of srFolded: result &= " >"
     else: result &= " :"
-    result &= yamlEscape(event.scalarContent)
+    result &= yamlTestSuiteEscape(event.scalarContent)
   of yamlAlias: result = "=ALI *" & $event.aliasTarget
 
 proc tag*(event: YamlStreamEvent): TagId {.raises: [FieldError].} =
