@@ -1095,6 +1095,7 @@ proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId): string =
       result = " !!" & tagUri[yamlTagRepositoryPrefix.len..^1]
     else:
       result = " !<" & tagUri & ">"
+  if anchor != yAnchorNone: result &= " &" & p.anchorName(anchor)
 
 proc display*(p: YamlParser, event: YamlStreamEvent): string
     {.raises: [KeyError].} =
