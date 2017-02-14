@@ -1120,7 +1120,10 @@ proc display*(p: YamlParser, event: YamlStreamEvent): string
     result = "+DOC"
     when defined(yamlScalarRepInd):
       if event.explicitDirectivesEnd: result &= " ---"
-  of yamlEndDoc: result = "-DOC"
+  of yamlEndDoc:
+    result = "-DOC"
+    when defined(yamlScalarRepInd):
+      if event.explicitDocumentEnd: result &= " ..."
   of yamlStartMap:
     result = "+MAP" & p.renderAttrs(event.mapTag, event.mapAnchor, true)
   of yamlStartSeq:
