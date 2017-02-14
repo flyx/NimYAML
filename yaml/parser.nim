@@ -1090,14 +1090,14 @@ proc anchorName*(p: YamlParser, anchor: AnchorId): string {.raises: [].} =
 proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId,
                  isPlain: bool): string =
   result = ""
+  if anchor != yAnchorNone: result &= " &" & p.anchorName(anchor)
   case tag
   of yTagQuestionmark: discard
   of yTagExclamationmark:
     when defined(yamlScalarRepInd):
       if isPlain: result &= " <!>"
   else:
-    result = "<" & p.taglib.uri(tag) & ">"
-  if anchor != yAnchorNone: result &= " &" & p.anchorName(anchor)
+    result = " <" & p.taglib.uri(tag) & ">"
 
 proc display*(p: YamlParser, event: YamlStreamEvent): string
     {.raises: [KeyError].} =

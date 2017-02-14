@@ -251,11 +251,11 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].} =
 
 proc renderAttrs(tag: TagId, anchor: AnchorId): string =
   result = ""
+  if anchor != yAnchorNone: result &= " &" & $anchor
   case tag
   of yTagQuestionmark: discard
   of yTagExclamationmark: result &= " !"
   else: result &= " <" & $tag & ">"
-  if anchor != yAnchorNone: result &= " &" & $anchor
 
 proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
   ## outputs a human-readable string describing the given event.
