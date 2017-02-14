@@ -547,7 +547,8 @@ parserState initial:
     state = blockObjectStart
   of ltStreamEnd: c.isFinished = true
   of ltDirectivesEnd:
-    e = startDocEvent()
+    when defined(yamlScalarRepInd): e = startDocEvent(true)
+    else: e = startDocEvent()
     result = true
     c.advance()
     state = blockObjectStart
@@ -738,7 +739,9 @@ parserState expectDocEnd:
 
 parserState startDoc:
   c.initDocValues()
-  e = startDocEvent()
+  when defined(yamlScalarRepInd):
+    e = startDocEvent(c.lex.cur == ltDirectivesEnd)
+  else: e = startDocEvent()
   result = true
   c.advance()
   state = blockObjectStart
@@ -1110,7 +1113,10 @@ proc display*(p: YamlParser, event: YamlStreamEvent): string
   case event.kind
   of yamlEndMap: result = "-MAP"
   of yamlEndSeq: result = "-SEQ"
-  of yamlStartDoc: result = "+DOC"
+  of yamlStartDoc:
+    result = "+DOC"
+    when defined(yamlScalarRepInd):
+      if event.explicitDirectivesEnd: result &= " ---"
   of yamlEndDoc: result = "-DOC"
   of yamlStartMap:
     result = "+MAP" & p.renderAttrs(event.mapTag, event.mapAnchor, true)

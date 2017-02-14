@@ -21,10 +21,10 @@ proc ensureTestSuiteCloneCorrect(pwd: string) {.compileTime.} =
     var isCorrectClone = true
     if dirExists(absolutePath / ".git"):
       let remoteUrl =
-          staticExec("cd \"" & absolutePath & "\" && git remote get-url origin")
+          staticExec("cd \"" & absolutePath & "\" && git remote get-url origin").strip
       if remoteUrl != testSuiteUrl:
         isCorrectClone = false
-      let branches = staticExec("cd \"" & absolutePath & "\" && git branch")
+      let branches = staticExec("cd \"" & absolutePath & "\" && git branch").strip
       if "* data" notin branches.splitLines():
         isCorrectClone = false
     if isCorrectClone:
@@ -96,7 +96,7 @@ proc parserTest(path: string): bool =
 
 macro genTests(): untyped =
   let
-    pwd = staticExec("pwd")
+    pwd = staticExec("pwd").strip
     absolutePath = '"' & (pwd / testSuiteFolder) & '"'
   echo "[tparser] Generating tests from " & absolutePath
   ensureTestSuiteCloneCorrect(pwd)
@@ -104,6 +104,7 @@ macro genTests(): untyped =
   # walkDir for some crude reason does not work with travis build
   let dirItems = staticExec("ls -1d " & absolutePath / "*")
   for dirPath in dirItems.splitLines():
+    if dirPath.strip.len == 0: continue
     if dirPath[^4..^1] in [".git", "name", "tags", "meta"]: continue
     let title = slurp(dirPath / "===")
     result.add(newCall("test",

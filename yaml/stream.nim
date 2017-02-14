@@ -58,7 +58,11 @@ type
       scalarContent*: string # may not be nil (but empty)
       when defined(yamlScalarRepInd):
         scalarRep*  : ScalarRepresentationIndicator
-    of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc: discard
+    of yamlStartDoc:
+      when defined(yamlScalarRepInd):
+        explicitDirectivesEnd*: bool
+      else: discard
+    of yamlEndMap, yamlEndSeq, yamlEndDoc: discard
     of yamlAlias:
       aliasTarget* : AnchorId
 
@@ -259,7 +263,10 @@ proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
   case event.kind
   of yamlEndMap: result = "-MAP"
   of yamlEndSeq: result = "-SEQ"
-  of yamlStartDoc: result = "+DOC"
+  of yamlStartDoc:
+    result = "+DOC"
+    when defined(yamlScalarRepInd):
+      if event.explicitDirectivesEnd: result &= " ---"
   of yamlEndDoc: result = "-DOC"
   of yamlStartMap: result = "+MAP" & renderAttrs(event.mapTag, event.mapAnchor)
   of yamlStartSeq: result = "+SEQ" & renderAttrs(event.seqTag, event.seqAnchor)
@@ -284,9 +291,16 @@ proc tag*(event: YamlStreamEvent): TagId {.raises: [FieldError].} =
   of yamlScalar: result = event.scalarTag
   else: raise newException(FieldError, "Event " & $event.kind & " has no tag")
 
-proc startDocEvent*(): YamlStreamEvent {.inline, raises: [].} =
-  ## creates a new event that marks the start of a YAML document
-  result = YamlStreamEvent(kind: yamlStartDoc)
+when defined(yamlScalarRepInd):
+  proc startDocEvent*(explicit: bool = false): YamlStreamEvent
+      {.inline, raises: [].} =
+    ## creates a new event that marks the start of a YAML document
+    result = YamlStreamEvent(kind: yamlStartDoc,
+                             explicitDirectivesEnd: explicit)
+else:
+  proc startDocEvent*(): YamlStreamEvent {.inline, raises: [].} =
+    ## creates a new event that marks the start of a YAML document
+    result = YamlStreamEvent(kind: yamlStartDoc)
 
 proc endDocEvent*(): YamlStreamEvent {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML document
