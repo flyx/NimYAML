@@ -250,7 +250,7 @@ proc renderAttrs(tag: TagId, anchor: AnchorId): string =
   case tag
   of yTagQuestionmark: discard
   of yTagExclamationmark: result &= " !"
-  else: result &= " !<" & $tag & ">"
+  else: result &= " <" & $tag & ">"
   if anchor != yAnchorNone: result &= " &" & $anchor
 
 proc `$`*(event: YamlStreamEvent): string {.raises: [].} =

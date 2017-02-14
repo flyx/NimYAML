@@ -1084,17 +1084,16 @@ proc anchorName*(p: YamlParser, anchor: AnchorId): string {.raises: [].} =
     if value == anchor: return representation
   return ""
 
-proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId): string =
+proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId,
+                 isPlain: bool): string =
   result = ""
   case tag
   of yTagQuestionmark: discard
-  of yTagExclamationmark: result = " !"
+  of yTagExclamationmark:
+    when defined(yamlScalarRepInd):
+      if isPlain: result &= " <!>"
   else:
-    let tagUri = p.taglib.uri(tag)
-    if tagUri.startsWith(yamlTagRepositoryPrefix):
-      result = " !!" & tagUri[yamlTagRepositoryPrefix.len..^1]
-    else:
-      result = " !<" & tagUri & ">"
+    result = "<" & p.taglib.uri(tag) & ">"
   if anchor != yAnchorNone: result &= " &" & p.anchorName(anchor)
 
 proc display*(p: YamlParser, event: YamlStreamEvent): string
@@ -1113,17 +1112,25 @@ proc display*(p: YamlParser, event: YamlStreamEvent): string
   of yamlEndSeq: result = "-SEQ"
   of yamlStartDoc: result = "+DOC"
   of yamlEndDoc: result = "-DOC"
-  of yamlStartMap: result = "+MAP" & p.renderAttrs(event.mapTag, event.mapAnchor)
-  of yamlStartSeq: result = "+SEQ" & p.renderAttrs(event.seqTag, event.seqAnchor)
+  of yamlStartMap:
+    result = "+MAP" & p.renderAttrs(event.mapTag, event.mapAnchor, true)
+  of yamlStartSeq:
+    result = "+SEQ" & p.renderAttrs(event.seqTag, event.seqAnchor, true)
   of yamlScalar:
-    result = "=VAL" & p.renderAttrs(event.scalarTag, event.scalarAnchor)
     when defined(yamlScalarRepInd):
+      result = "=VAL" & p.renderAttrs(event.scalarTag, event.scalarAnchor,
+                                      event.scalarRep == srPlain)
       case event.scalarRep
       of srPlain: result &= " :"
       of srSingleQuoted: result &= " \'"
       of srDoubleQuoted: result &= " \""
       of srLiteral: result &= " |"
       of srFolded: result &= " >"
-    else: result &= " :"
+    else:
+      let isPlain = event.scalarTag == yTagExclamationmark
+      result = "=VAL" & p.renderAttrs(event.scalarTag, event.scalarAnchor,
+                                      isPlain)
+      if isPlain: result &= " :"
+      else: result &= " \""
     result &= yamlTestSuiteEscape(event.scalarContent)
   of yamlAlias: result = "=ALI *" & p.anchorName(event.aliasTarget)
