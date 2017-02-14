@@ -32,10 +32,11 @@ routes:
       of "block": style = psBlockOnly
       of "tokens":
         var
-          output = ""
+          output = "+STR\n"
           parser = newYamlParser()
           events = parser.parse(newStringStream(@"input"))
         for event in events: output.add($event & "\n")
+        output &= "-STR"
         resultNode["code"] = %0
         resultNode["output"] = %output
         msg = resultNode.pretty

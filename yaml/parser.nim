@@ -143,7 +143,10 @@ proc initLevel(k: FastParseLevelKind): FastParseLevel {.raises: [], inline.} =
   FastParseLevel(kind: k, indentation: UnknownIndentation)
 
 proc emptyScalar(c: ParserContext): YamlStreamEvent {.raises: [], inline.} =
-  result = scalarEvent("", c.tag, c.anchor)
+  when defined(yamlScalarRepInd):
+    result = scalarEvent("", c.tag, c.anchor, srPlain)
+  else:
+    result = scalarEvent("", c.tag, c.anchor)
   c.tag = yTagQuestionMark
   c.anchor = yAnchorNone
 
@@ -244,6 +247,12 @@ proc handlePossibleMapStart(c: ParserContext, e: var YamlStreamEvent,
       result = true
     c.level.indentation = c.lex.indentation
 
+template implicitScalar(): YamlStreamEvent =
+  when defined(yamlScalarRepInd):
+    scalarEvent("", yTagQuestionMark, yAnchorNone, srPlain)
+  else:
+    scalarEvent("", yTagQuestionMark, yAnchorNone)
+
 proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
   result = false
   case c.level.kind
@@ -255,7 +264,7 @@ proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
       raise c.generateError("Invalid p.indentation of map key indicator " &
           "(expected" & $c.level.indentation & ", got " & $c.lex.indentation &
           ")")
-    e = scalarEvent("", yTagQuestionMark, yAnchorNone)
+    e = implicitScalar()
     result = true
     c.level.kind = fplMapKey
     c.ancestry.add(c.level)
@@ -456,7 +465,7 @@ proc handleMapValueIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
   of fplMapKey:
     if c.level.indentation != c.lex.indentation:
       raise c.generateError("Invalid p.indentation of map key indicator")
-    e = scalarEvent("", yTagQuestionMark, yAnchorNone)
+    e = implicitScalar()
     result = true
     c.level.kind = fplMapValue
     c.ancestry.add(c.level)
@@ -640,6 +649,12 @@ parserState blockObjectStart:
 parserState scalarEnd:
   if c.tag == yTagQuestionMark: c.tag = yTagExclamationMark
   c.currentScalar(e)
+  when defined(yamlScalarRepInd):
+    case c.lex.scalarKind
+    of skSingleQuoted: e.scalarRep = srSingleQuoted
+    of skDoubleQuoted: e.scalarRep = srDoubleQuoted
+    of skLiteral: e.scalarRep = srLiteral
+    of skFolded: e.scalarRep = srFolded
   result = true
   state = objectEnd
   stored = blockAfterObject
@@ -671,7 +686,7 @@ parserState blockAfterObject:
       e = c.objectStart(yamlStartMap)
       result = true
     of fplMapKey:
-      e = scalarEvent("", yTagQuestionMark, yAnchorNone)
+      e = implicitScalar()
       result = true
       c.level.kind = fplMapValue
       c.ancestry.add(c.level)
@@ -771,7 +786,7 @@ parserState closeMoreIndentedLevels:
     state = stored
 
 parserState emitEmptyScalar:
-  e = scalarEvent("", yTagQuestionMark, yAnchorNone)
+  e = implicitScalar()
   result = true
   state = stored
 
@@ -989,7 +1004,7 @@ parserState flowAfterObject:
     case c.level.kind
     of fplSequence: discard
     of fplMapValue:
-      e = scalarEvent("", yTagQuestionMark, yAnchorNone)
+      e = implicitScalar()
       result = true
       c.level.kind = fplMapKey
       c.explicitFlowKey = false

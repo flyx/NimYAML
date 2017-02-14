@@ -15,6 +15,10 @@
 import hashes
 import private/internal, taglib
 
+when defined(yamlScalarRepInd):
+  type ScalarRepresentationIndicator* = enum
+    srPlain, srSingleQuoted, srDoubleQuoted, srLiteral, srFolded
+
 type
   AnchorId* = distinct int ## \
     ## An ``AnchorId`` identifies an anchor in the current document. It
@@ -52,6 +56,8 @@ type
       scalarAnchor* : AnchorId
       scalarTag*    : TagId
       scalarContent*: string # may not be nil (but empty)
+      when defined(yamlScalarRepInd):
+        scalarRep*  : ScalarRepresentationIndicator
     of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc: discard
     of yamlAlias:
       aliasTarget* : AnchorId
@@ -97,8 +103,7 @@ proc noLastContext(s: YamlStream, line, column: var int,
 
 proc basicInit*(s: YamlStream, lastTokenContextImpl:
     proc(s: YamlStream, line, column: var int, lineContent: var string): bool
-    {.raises: [].} = noLastContext)
-    {.raises: [].} =
+    {.raises: [].} = noLastContext) {.raises: [].} =
   ## initialize basic values of the YamlStream. Call this in your constructor
   ## if you subclass YamlStream.
   s.peeked = false
@@ -240,25 +245,46 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].} =
              left.scalarContent == right.scalarContent
   of yamlAlias: result = left.aliasTarget == right.aliasTarget
 
+proc renderAttrs(tag: TagId, anchor: AnchorId): string =
+  result = ""
+  case tag
+  of yTagQuestionmark: discard
+  of yTagExclamationmark: result &= " !"
+  else: result &= " !<" & $tag & ">"
+  if anchor != yAnchorNone: result &= " &" & $anchor
+
+proc yamlEscape(s: string): string =
+  result = ""
+  for c in s:
+    case c
+    of '\l': result.add("\\n")
+    of '\c': result.add("\\c")
+    of '\\': result.add("\\\\")
+    else: result.add(c)
+
 proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
-  ## outputs a human-readable string describing the given event
+  ## outputs a human-readable string describing the given event.
+  ## This string is compatible to the format used in the yaml test suite.
   result = $event.kind & '('
   case event.kind
-  of yamlEndMap, yamlEndSeq, yamlStartDoc, yamlEndDoc: discard
-  of yamlStartMap:
-    result &= "tag=" & $event.mapTag
-    if event.mapAnchor != yAnchorNone: result &= ", anchor=" & $event.mapAnchor
-  of yamlStartSeq:
-    result &= "tag=" & $event.seqTag
-    if event.seqAnchor != yAnchorNone: result &= ", anchor=" & $event.seqAnchor
+  of yamlEndMap: result = "-MAP"
+  of yamlEndSeq: result = "-SEQ"
+  of yamlStartDoc: result = "+DOC"
+  of yamlEndDoc: result = "-DOC"
+  of yamlStartMap: result = "+MAP" & renderAttrs(event.mapTag, event.mapAnchor)
+  of yamlStartSeq: result = "+SEQ" & renderAttrs(event.seqTag, event.seqAnchor)
   of yamlScalar:
-    result &= "tag=" & $event.scalarTag
-    if event.scalarAnchor != yAnchorNone:
-      result &= ", anchor=" & $event.scalarAnchor
-    result &= ", content=\"" & event.scalarContent & '\"'
-  of yamlAlias:
-    result &= "aliasTarget=" & $event.aliasTarget
-  result &= ")"
+    result = "=VAL" & renderAttrs(event.scalarTag, event.scalarAnchor)
+    when defined(yamlScalarRepInd):
+      case event.scalarRep
+      of srPlain: result &= " :"
+      of srSingleQuoted: result &= " \'"
+      of srDoubleQuoted: result &= " \""
+      of srLiteral: result &= " |"
+      of srFolded: result &= " >"
+    else: result &= " :"
+    result &= yamlEscape(event.scalarContent)
+  of yamlAlias: result = "=ALI *" & $event.aliasTarget
 
 proc tag*(event: YamlStreamEvent): TagId {.raises: [FieldError].} =
   ## returns the tag of the given event
@@ -294,11 +320,21 @@ proc endSeqEvent*(): YamlStreamEvent {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML sequence
   result = YamlStreamEvent(kind: yamlEndSeq)
 
-proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
-    anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline, raises: [].} =
-  ## creates a new event that represents a YAML scalar
-  result = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
-                           scalarAnchor: anchor, scalarContent: content)
+when defined(yamlScalarRepInd):
+  proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
+      anchor: AnchorId = yAnchorNone,
+      scalarRep: ScalarRepresentationIndicator = srPlain):
+      YamlStreamEvent {.inline, raises: [].} =
+    ## creates a new event that represents a YAML scalar
+    result = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
+                            scalarAnchor: anchor, scalarContent: content,
+                            scalarRep: scalarRep)
+else:
+  proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
+      anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline, raises: [].} =
+    ## creates a new event that represents a YAML scalar
+    result = YamlStreamEvent(kind: yamlScalar, scalarTag: tag,
+                            scalarAnchor: anchor, scalarContent: content)
 
 proc aliasEvent*(anchor: AnchorId): YamlStreamEvent {.inline, raises: [].} =
   ## creates a new event that represents a YAML alias

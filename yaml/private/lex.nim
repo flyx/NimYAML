@@ -9,6 +9,10 @@ when defined(yamlDebug):
   import terminal
   export terminal
 
+when defined(yamlScalarRepInd):
+  type ScalarKind* = enum
+    skSingleQuoted, skDoubleQuoted, skLiteral, skFolded
+
 type
   StringSource* = object
     src: string
@@ -30,6 +34,9 @@ type
     indentation*: int
     # ltTagHandle
     shorthandEnd*: int
+    when defined(yamlScalarRepInd):
+      # ltQuotedScalar, ltBlockScalarHeader
+      scalarKind*: ScalarKind
 
     # may be modified from outside; will be consumed at plain scalar starts
     newlines*: int
@@ -585,6 +592,7 @@ proc processQuotedWhitespace[T](lex: YamlLexer, newlines: var int) =
 proc singleQuotedScalar[T](lex: YamlLexer) =
   debug("lex: singleQuotedScalar")
   startToken[T](lex)
+  when defined(yamlScalarRepInd): lex.scalarKind = skSingleQuoted
   lex.advance(T)
   while true:
     case lex.c
@@ -627,6 +635,7 @@ proc unicodeSequence[T](lex: YamlLexer, length: int) =
 proc doubleQuotedScalar[T](lex: YamlLexer) =
   debug("lex: doubleQuotedScalar")
   startToken[T](lex)
+  when defined(yamlScalarRepInd): lex.scalarKind = skDoubleQuoted
   lex.advance(T)
   while true:
     case lex.c
@@ -778,6 +787,8 @@ proc blockScalarHeader[T](lex: YamlLexer): bool =
   lex.chomp = ctClip
   lex.blockScalarIndent = UnknownIndentation
   lex.folded = lex.c == '>'
+  when defined(yamlScalarRepInd):
+    lex.scalarKind = if lex.folded: skFolded else: skLiteral
   startToken[T](lex)
   while true:
     lex.advance(T)
