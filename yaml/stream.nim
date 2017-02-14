@@ -62,7 +62,10 @@ type
       when defined(yamlScalarRepInd):
         explicitDirectivesEnd*: bool
       else: discard
-    of yamlEndMap, yamlEndSeq, yamlEndDoc: discard
+    of yamlEndDoc:
+      when defined(yamlScalarRepInd):
+        explicitDocumentEnd*: bool
+    of yamlEndMap, yamlEndSeq: discard
     of yamlAlias:
       aliasTarget* : AnchorId
 
@@ -297,14 +300,19 @@ when defined(yamlScalarRepInd):
     ## creates a new event that marks the start of a YAML document
     result = YamlStreamEvent(kind: yamlStartDoc,
                              explicitDirectivesEnd: explicit)
+
+  proc endDocEvent*(explicit: bool = false): YamlStreamEvent
+      {.inline, raises: [].} =
+    ## creates a new event that marks the end of a YAML document
+    result = YamlStreamEvent(kind: yamlEndDoc, explicitDocumentEnd: explicit)
 else:
   proc startDocEvent*(): YamlStreamEvent {.inline, raises: [].} =
     ## creates a new event that marks the start of a YAML document
     result = YamlStreamEvent(kind: yamlStartDoc)
 
-proc endDocEvent*(): YamlStreamEvent {.inline, raises: [].} =
-  ## creates a new event that marks the end of a YAML document
-  result = YamlStreamEvent(kind: yamlEndDoc)
+  proc endDocEvent*(): YamlStreamEvent {.inline, raises: [].} =
+    ## creates a new event that marks the end of a YAML document
+    result = YamlStreamEvent(kind: yamlEndDoc)
 
 proc startMapEvent*(tag: TagId = yTagQuestionMark,
     anchor: AnchorId = yAnchorNone): YamlStreamEvent {.inline, raises: [].} =

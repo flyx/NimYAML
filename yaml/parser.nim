@@ -445,7 +445,9 @@ proc endLevel(c: ParserContext, e: var YamlStreamEvent):
     c.level.kind = fplMapKey
     result = lerAdditionalMapEnd
   of fplUnknown: e = emptyScalar(c)
-  of fplDocument: e = endDocEvent()
+  of fplDocument:
+    when defined(yamlScalarRepInd): e = endDocEvent(c.lex.cur == ltDocumentEnd)
+    else: e = endDocEvent()
   of fplSinglePairKey:
     internalError("Unexpected level kind: " & $c.level.kind)
 
@@ -725,7 +727,8 @@ parserState expectDocEnd:
     state = startDoc
     c.ancestry.setLen(0)
   of ltDocumentEnd:
-    e = endDocEvent()
+    when defined(yamlScalarRepInd): e = endDocEvent(true)
+    else: e = endDocEvent()
     result = true
     state = afterDocument
     c.advance()
@@ -1097,7 +1100,7 @@ proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId,
     when defined(yamlScalarRepInd):
       if isPlain: result &= " <!>"
   else:
-    result = " <" & p.taglib.uri(tag) & ">"
+    result &= " <" & p.taglib.uri(tag) & ">"
 
 proc display*(p: YamlParser, event: YamlStreamEvent): string
     {.raises: [KeyError].} =
