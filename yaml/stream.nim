@@ -257,8 +257,11 @@ proc renderAttrs(tag: TagId, anchor: AnchorId): string =
   if anchor != yAnchorNone: result &= " &" & $anchor
   case tag
   of yTagQuestionmark: discard
-  of yTagExclamationmark: result &= " !"
-  else: result &= " <" & $tag & ">"
+  of yTagExclamationmark:
+    when defined(yamlScalarRepInd):
+      if isPlain: result &= " <!>"
+  else:
+    result &= " <" & $tag & ">"
 
 proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
   ## outputs a human-readable string describing the given event.

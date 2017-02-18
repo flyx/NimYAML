@@ -446,8 +446,10 @@ proc endLevel(c: ParserContext, e: var YamlStreamEvent):
     result = lerAdditionalMapEnd
   of fplUnknown: e = emptyScalar(c)
   of fplDocument:
-    when defined(yamlScalarRepInd): e = endDocEvent(c.lex.cur == ltDocumentEnd)
+    when defined(yamlScalarRepInd):
+      e = endDocEvent(c.lex.cur == ltDocumentEnd)
     else: e = endDocEvent()
+    if c.lex.cur == ltDocumentEnd: c.advance()
   of fplSinglePairKey:
     internalError("Unexpected level kind: " & $c.level.kind)
 
@@ -584,7 +586,6 @@ parserState blockObjectStart:
     c.closeEverything()
     stored = startDoc
   of ltDocumentEnd:
-    c.advance()
     c.closeEverything()
     stored = afterDocument
   of ltMapKeyInd:
@@ -901,6 +902,12 @@ parserState flow:
     if c.handleFlowItemStart(e): return true
     if c.tag == yTagQuestionMark: c.tag = yTagExclamationMark
     c.currentScalar(e)
+    when defined(yamlScalarRepInd):
+      case c.lex.scalarKind
+      of skSingleQuoted: e.scalarRep = srSingleQuoted
+      of skDoubleQuoted: e.scalarRep = srDoubleQuoted
+      of skLiteral: e.scalarRep = srLiteral
+      of skFolded: e.scalarRep = srFolded
     result = true
     state = objectEnd
     stored = flowAfterObject
