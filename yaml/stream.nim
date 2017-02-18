@@ -252,7 +252,7 @@ proc `==`*(left: YamlStreamEvent, right: YamlStreamEvent): bool {.raises: [].} =
              left.scalarContent == right.scalarContent
   of yamlAlias: result = left.aliasTarget == right.aliasTarget
 
-proc renderAttrs(tag: TagId, anchor: AnchorId): string =
+proc renderAttrs(tag: TagId, anchor: AnchorId, isPlain: bool = true): string =
   result = ""
   if anchor != yAnchorNone: result &= " &" & $anchor
   case tag
@@ -280,15 +280,20 @@ proc `$`*(event: YamlStreamEvent): string {.raises: [].} =
   of yamlStartMap: result = "+MAP" & renderAttrs(event.mapTag, event.mapAnchor)
   of yamlStartSeq: result = "+SEQ" & renderAttrs(event.seqTag, event.seqAnchor)
   of yamlScalar:
-    result = "=VAL" & renderAttrs(event.scalarTag, event.scalarAnchor)
     when defined(yamlScalarRepInd):
+      result = "=VAL" & renderAttrs(event.scalarTag, event.scalarAnchor,
+                                    event.scalarRep == srPlain)
       case event.scalarRep
       of srPlain: result &= " :"
       of srSingleQuoted: result &= " \'"
       of srDoubleQuoted: result &= " \""
       of srLiteral: result &= " |"
       of srFolded: result &= " >"
-    else: result &= " :"
+    else:
+      result = "=VAL" & renderAttrs(event.scalarTag, event.scalarAnchor,
+                                    false)
+      if event.scalarTag == yTagExclamationmark: result &= " \""
+      else: result &= " :"
     result &= yamlTestSuiteEscape(event.scalarContent)
   of yamlAlias: result = "=ALI *" & $event.aliasTarget
 
