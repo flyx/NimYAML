@@ -111,7 +111,7 @@ template advanceTypeHint(ch: char) {.dirty.} =
   typeHintStateMachine ch:
   of '~': ythInitial => ythNULL
   of '.':
-    [yth0, ythInt1, ythInt2, ythInt3, ythInt4, ythInt] => ythDecimal
+    [yth0, ythInt1Zero, ythInt1, ythInt2, ythInt3, ythInt4, ythInt] => ythDecimal
     [ythInitial, ythMinus] => ythPoint
     ythSecond2             => ythFraction
   of '+':
