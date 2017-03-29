@@ -111,7 +111,7 @@ template advanceTypeHint(ch: char) {.dirty.} =
   typeHintStateMachine ch:
   of '~': ythInitial => ythNULL
   of '.':
-    [yth0, ythInt1, ythInt2, ythInt3, ythInt4, ythInt] => ythDecimal
+    [yth0, ythInt1Zero, ythInt1, ythInt2, ythInt3, ythInt4, ythInt] => ythDecimal
     [ythInitial, ythMinus] => ythPoint
     ythSecond2             => ythFraction
   of '+':
@@ -270,7 +270,7 @@ proc guessType*(scalar: string): TypeHint {.raises: [].} =
   of ythNULL, ythInitial: result = yTypeNull
   of ythTRUE, ythON, ythYES, ythY: result = yTypeBoolTrue
   of ythFALSE, ythOFF, ythNO, ythN: result = yTypeBoolFalse
-  of ythInt1, ythInt2, ythInt3, ythInt4, ythInt, yth0: result = yTypeInteger
+  of ythInt1, ythInt2, ythInt3, ythInt4, ythInt, yth0, ythInt1Zero: result = yTypeInteger
   of ythDecimal, ythExponent: result = yTypeFloat
   of ythPointINF: result = yTypeFloatInf
   of ythPointNAN: result = yTypeFloatNaN
