@@ -1,3 +1,19 @@
+### 0.9.1
+
+Features:
+
+ * Added `YamlParser.display()` which is mainly used by tests
+ * NimYAML now builds for JS target (but does not work properly yet)
+
+Bugfixes:
+
+ * Correctly present empty collections in block-only style (#33)
+ * Correctly handle `{1}` (#34)
+ * Recognize empty plain scalar as possible `!!null` value
+ * Require colons before subsequent keys in a flow mapping (#35)
+ * Allow stream end after block scalar indicators
+ * Fixed regression bugs introduced with timestamp parsing (#37)
+
 ### 0.9.0
 
 Features:
