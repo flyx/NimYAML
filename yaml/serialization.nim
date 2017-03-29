@@ -1423,6 +1423,14 @@ macro getFieldIndex(t: typedesc, field: untyped): untyped =
     result = newNimNode(nnkInt16Lit)
     result.intVal = fieldIndex
 
+proc fieldIdent(field: NimNode): NimNode {.compileTime.} =
+  case field.kind
+  of nnkIdent: result = field
+  of nnkAccQuoted: result = field[0]
+  else:
+    raise newException(Exception, "invalid node type (expected ident):" &
+        $field.kind)
+
 macro markAsTransient*(t: typedesc, field: untyped): typed =
   ## Mark an object field as *transient*, meaning that this object field will
   ## not be serialized when an object instance is dumped as YAML, and also that
@@ -1439,7 +1447,9 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
   ##   markAsTransient(MyObject, c)
   ##
   ## This does not work if the object has been marked as implicit.
-  let nextBitvectorIndex = transientVectors.len
+  let
+    nextBitvectorIndex = transientVectors.len
+    fieldName = fieldIdent(field)
   result = quote do:
     when compiles(`implicitVariantObjectMarker`(`t`)):
       {.fatal: "Cannot mark fields of implicit variant objects as transient." .}
@@ -1450,7 +1460,7 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
       static: transientVectors.add({})
     static:
       transientVectors[`transientBitvectorProc`(`t`)].incl(
-          getFieldIndex(`t`, `field`))
+          getFieldIndex(`t`, `fieldName`))
 
 macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
   ## Set the default value of an object field. Fields with default values may
@@ -1469,6 +1479,7 @@ macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
   let
     dSym = genSym(nskVar, ":default")
     nextBitvectorIndex = defaultVectors.len
+    fieldName = fieldIdent(field)
   result = quote do:
     when compiles(`transientBitvectorProc`(`t`)):
       {.fatal: "Cannot set default value of transient field".}
@@ -1482,8 +1493,8 @@ macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
           {.compileTime.} = `nextBitvectorIndex`
       static: defaultVectors.add({})
     static:
-      `defaultValueGetter`(`t`).`field` = `value`
-      defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `field`))
+      `defaultValueGetter`(`t`).`fieldName` = `value`
+      defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `fieldName`))
 
 macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
   ## Tell NimYAML that when loading an object of type ``t``, any mapping key
