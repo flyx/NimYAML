@@ -132,6 +132,14 @@ proc initYamlDoc*(root: YamlNode): YamlDocument = result.root = root
 proc composeNode(s: var YamlStream, tagLib: TagLibrary,
                  c: ConstructionContext):
     YamlNode {.raises: [YamlStreamError, YamlConstructionError].} =
+  template addAnchor(c: ConstructionContext, target: AnchorId): typed =
+    if target != yAnchorNone:
+      when defined(JS):
+        {.emit: [c, """.refs.set(""", target, ", ", result, ");"].}
+      else:
+        yAssert(not c.refs.hasKey(target))
+        c.refs[target] = cast[pointer](result)
+
   var start: YamlStreamEvent
   shallowCopy(start, s.next())
   new(result)
@@ -149,28 +157,25 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
           raise newException(YamlConstructionError,
               "Duplicate key: " & $key)
       discard s.next()
-      if start.mapAnchor != yAnchorNone:
-        yAssert(not c.refs.hasKey(start.mapAnchor))
-        c.refs[start.mapAnchor] = cast[pointer](result)
+      addAnchor(c, start.mapAnchor)
     of yamlStartSeq:
       result.tag = tagLib.uri(start.seqTag)
       result.kind = ySequence
       result.elems = newSeq[YamlNode]()
       while s.peek().kind != yamlEndSeq:
         result.elems.add(composeNode(s, tagLib, c))
-      if start.seqAnchor != yAnchorNone:
-        yAssert(not c.refs.hasKey(start.seqAnchor))
-        c.refs[start.seqAnchor] = cast[pointer](result)
+      addAnchor(c, start.seqAnchor)
       discard s.next()
     of yamlScalar:
       result.tag = tagLib.uri(start.scalarTag)
       result.kind = yScalar
       shallowCopy(result.content, start.scalarContent)
-      if start.scalarAnchor != yAnchorNone:
-        yAssert(not c.refs.hasKey(start.scalarAnchor))
-        c.refs[start.scalarAnchor] = cast[pointer](result)
+      addAnchor(c, start.scalarAnchor)
     of yamlAlias:
-      result = cast[YamlNode](c.refs[start.aliasTarget])
+      when defined(JS):
+        {.emit: [result, " = ", c, ".refs.get(", start.aliasTarget, ");"].}
+      else:
+        result = cast[YamlNode](c.refs[start.aliasTarget])
     else: internalError("Malformed YamlStream")
   except KeyError:
     raise newException(YamlConstructionError,
@@ -203,26 +208,49 @@ proc loadDom*(s: Stream | string): YamlDocument
 
 proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
                    tagLib: TagLibrary) {.raises: [].}=
-  let p = cast[pointer](n)
-  if a != asNone and c.refs.hasKey(p):
-    if c.refs.getOrDefault(p) == yAnchorNone:
-      c.refs[p] = c.nextAnchorId
-      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-    c.put(aliasEvent(c.refs.getOrDefault(p)))
+  var val = yAnchorNone
+  when defined(JS):
+    {.emit: ["""
+      if (""", a, " != ", asNone, " && ", c, ".refs.has(", n, """) {
+        """, val, " = ", c, ".refs.get(", n, """);
+        if (""", c, ".refs.get(", n, ") == ", yAnchorNone, ") {"].}
+    val = c.nextAnchorId
+    {.emit: [c, """.refs.set(""", n, """, """, val, """);"""].}
+    c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+    {.emit: "}".}
+    c.put(aliasEvent(val))
     return
+    {.emit: "}".}
+  else:
+    let p = cast[pointer](n)
+    if a != asNone and c.refs.hasKey(p):
+      val = c.refs.getOrDefault(p)
+      if val == yAnchorNone:
+        val = c.nextAnchorId
+        c.refs[p] = val
+        c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+      c.put(aliasEvent(val))
+      return
   var
     tagId: TagId
     anchor: AnchorId
   if a == asAlways:
-    c.refs[p] = c.nextAnchorId
+    when defined(JS):
+      {.emit: [c, ".refs.set(", n, ", ", c.nextAnchorId, ");"].}
+    else:
+      c.refs[p] = c.nextAnchorId
     c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-  else: c.refs[p] = yAnchorNone
+  else:
+    when defined(JS):
+      {.emit: [c, ".refs.set(", n, ", ", yAnchorNone, ");"].}
+    else:
+      c.refs[p] = yAnchorNone
   tagId = if tagLib.tags.hasKey(n.tag): tagLib.tags.getOrDefault(n.tag) else:
           tagLib.registerUri(n.tag)
   case a
   of asNone: anchor = yAnchorNone
   of asTidy: anchor = cast[AnchorId](n)
-  of asAlways: anchor = c.refs.getOrDefault(p)
+  of asAlways: anchor = val
 
   case n.kind
   of yScalar: c.put(scalarEvent(n.content, tagId, anchor))
@@ -239,7 +267,11 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
     c.put(endMapEvent())
 
 template processAnchoredEvent(target: untyped, c: SerializationContext): typed =
-  let anchorId = c.refs.getOrDefault(cast[pointer](target))
+  var anchorId: AnchorId
+  when defined(JS):
+    {.emit: [anchorId, " = ", c, ".refs.get(", target, ");"].}
+  else:
+    anchorId = c.refs.getOrDefault(cast[pointer](target))
   if anchorId != yAnchorNone: target = anchorId
   else: target = yAnchorNone
 

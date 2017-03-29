@@ -25,14 +25,16 @@ export stream
 type
   SerializationContext* = ref object
     ## Context information for the process of serializing YAML from Nim values.
-    refs*: Table[pointer, AnchorId]
+    when not defined(JS):
+      refs*: Table[pointer, AnchorId] # `pointer` does not work with JS
     style: AnchorStyle
     nextAnchorId*: AnchorId
     put*: proc(e: YamlStreamEvent) {.raises: [], closure.}
 
   ConstructionContext* = ref object
     ## Context information for the process of constructing Nim values from YAML.
-    refs*: Table[AnchorId, pointer]
+    when not defined(JS):
+      refs*: Table[AnchorId, pointer]
 
   YamlConstructionError* = object of YamlLoadingError
     ## Exception that may be raised when constructing data objects from a
@@ -86,13 +88,19 @@ proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext)
 
 proc newConstructionContext*(): ConstructionContext =
   new(result)
-  result.refs = initTable[AnchorId, pointer]()
+  when defined(JS):
+    {.emit: [result, """.refs = new Map();"""].}
+  else:
+    result.refs = initTable[AnchorId, pointer]()
 
 proc newSerializationContext*(s: AnchorStyle,
     putImpl: proc(e: YamlStreamEvent) {.raises: [], closure.}):
     SerializationContext =
-  SerializationContext(refs: initTable[pointer, AnchorId](), style: s,
-      nextAnchorId: 0.AnchorId, put: putImpl)
+  result = SerializationContext(style: s, nextAnchorId: 0.AnchorId,
+                                put: putImpl)
+  when defined(JS):
+    {.emit: [result, """.refs = new Map();"""].}
+  else: result.refs = initTable[pointer, AnchorId]()
 
 template presentTag*(t: typedesc, ts: TagStyle): TagId =
   ## Get the TagId that represents the given type in the given style
@@ -814,10 +822,14 @@ macro injectIgnoredKeyList(t: typedesc, ident: untyped): typed =
     else:
       const `ident` = newSeq[string]()
 
-proc constructObject*[O: object|tuple](
+proc constructObjectDefault*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
     {.raises: [YamlConstructionError, YamlStreamError].} =
-  ## constructs a Nim object or tuple from a YAML mapping
+  ## Constructs a Nim object or tuple from a YAML mapping.
+  ## This is the default implementation for custom objects and tuples and should
+  ## not be redefined. If you are adding a custom constructObject()
+  ## implementation, you can use this proc to call the default implementation
+  ## within it.
   var matched = matchMatrix(O)
   var e = s.next()
   const
@@ -880,6 +892,12 @@ proc constructObject*[O: object|tuple](
             typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
   else: ensureAllFieldsPresent(s, O, tIndex, result, matched)
+
+proc constructObject*[O: object|tuple](
+    s: var YamlStream, c: ConstructionContext, result: var O)
+    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ## Overridable default implementation for custom object and tuple types
+  constructObjectDefault(s, c, result)
 
 macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
   result = newStmtList()
@@ -1163,14 +1181,20 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
       discard s.next()
       return
   elif e.kind == yamlAlias:
-    result = cast[ref O](c.refs.getOrDefault(e.aliasTarget))
+    when defined(JS):
+      {.emit: [result, """ = """, c, """.refs.get(""", e.aliasTarget, """);"""].}
+    else:
+       result = cast[ref O](c.refs.getOrDefault(e.aliasTarget))
     discard s.next()
     return
   new(result)
   template removeAnchor(anchor: var AnchorId) {.dirty.} =
     if anchor != yAnchorNone:
-      yAssert(not c.refs.hasKey(anchor))
-      c.refs[anchor] = cast[pointer](result)
+      when defined(JS):
+        {.emit: [c, """.refs.set(""", anchor, """, """, result, """);"""].}
+      else:
+        yAssert(not c.refs.hasKey(anchor))
+        c.refs[anchor] = cast[pointer](result)
       anchor = yAnchorNone
 
   case e.kind
@@ -1198,21 +1222,36 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("~", yTagNull))
   elif c.style == asNone: representChild(value[], ts, c)
   else:
-    let p = cast[pointer](value)
-    if c.refs.hasKey(p):
-      if c.refs.getOrDefault(p) == yAnchorNone:
+    var val: AnchorId
+    when defined(JS):
+      {.emit: ["""
+      if (""", c, """.refs.has(""", value, """) {
+        """, val, """ = """, c, """.refs.get(""", value, """);
+        if (val == """, yAnchorNone, ") {"].}
+      val = c.nextAnchorId
+      {.emit: [c, """.refs.set(""", value, """, """, val, """);"""].}
+      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+      {.emit: "}".}
+      c.put(aliasEvent(val))
+      return
+    else:
+      let p = cast[pointer](value)
+      if c.refs.hasKey(p):
+        val = c.refs.getOrDefault(p)
+        if val == yAnchorNone:
+          val = c.nextAnchorId
+          c.refs[p] = val
+          c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+        c.put(aliasEvent(val))
+        return
+      if c.style == asAlways:
         c.refs[p] = c.nextAnchorId
         c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-      c.put(aliasEvent(c.refs.getOrDefault(p)))
-      return
-    if c.style == asAlways:
-      c.refs[p] = c.nextAnchorId
-      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-    else: c.refs[p] = yAnchorNone
+      else: c.refs[p] = yAnchorNone
     let
-      a = if c.style == asAlways: c.refs.getOrDefault(p) else: cast[AnchorId](p)
+      a = if c.style == asAlways: val else: cast[AnchorId](p)
       childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
-    let origPut = c.put
+      origPut = c.put
     c.put = proc(e: YamlStreamEvent) =
       var ex = e
       case ex.kind
@@ -1303,9 +1342,13 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
-proc setAnchor(a: var AnchorId, q: var Table[pointer, AnchorId])
+proc setAnchor(a: var AnchorId, c: var SerializationContext)
     {.inline.} =
-  if a != yAnchorNone: a = q.getOrDefault(cast[pointer](a))
+  if a != yAnchorNone:
+    when defined(JS):
+      {.emit: [a, """ = """, c, """.refs.get(""", a, """);"""].}
+    else:
+      a = c.refs.getOrDefault(cast[pointer](a))
 
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream =
@@ -1320,9 +1363,9 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
   if a == asTidy:
     for item in bys.mitems():
       case item.kind
-      of yamlStartMap: item.mapAnchor.setAnchor(context.refs)
-      of yamlStartSeq: item.seqAnchor.setAnchor(context.refs)
-      of yamlScalar: item.scalarAnchor.setAnchor(context.refs)
+      of yamlStartMap: setAnchor(item.mapAnchor, context)
+      of yamlStartSeq: setAnchor(item.seqAnchor, context)
+      of yamlScalar: setAnchor(item.scalarAnchor, context)
       else: discard
   result = bys
 
