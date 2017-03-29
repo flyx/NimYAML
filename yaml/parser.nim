@@ -1065,21 +1065,22 @@ proc init(c: ParserContext, p: YamlParser) {.raises: [YamlParserError].} =
   c.explicitFlowKey = false
   c.advance()
 
-proc parse*(p: YamlParser, s: Stream): YamlStream
-    {.raises: [YamlParserError].} =
-  ## Parse the given stream as YAML character stream.
-  let c = new(ParserContext)
-  try: c.lex = newYamlLexer(s)
-  except:
-    let e = newException(YamlParserError,
-        "Error while opening stream: " & getCurrentExceptionMsg())
-    e.parent = getCurrentException()
-    e.line = 1
-    e.column = 1
-    e.lineContent = ""
-    raise e
-  c.init(p)
-  result = c
+when not defined(JS):
+  proc parse*(p: YamlParser, s: Stream): YamlStream
+      {.raises: [YamlParserError].} =
+    ## Parse the given stream as YAML character stream.
+    let c = new(ParserContext)
+    try: c.lex = newYamlLexer(s)
+    except:
+      let e = newException(YamlParserError,
+          "Error while opening stream: " & getCurrentExceptionMsg())
+      e.parent = getCurrentException()
+      e.line = 1
+      e.column = 1
+      e.lineContent = ""
+      raise e
+    c.init(p)
+    result = c
 
 proc parse*(p: YamlParser, str: string): YamlStream
     {.raises: [YamlParserError].} =

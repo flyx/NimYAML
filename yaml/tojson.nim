@@ -176,23 +176,24 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
 
-proc loadToJson*(s: Stream): seq[JsonNode]
-    {.raises: [YamlParserError, YamlConstructionError, IOError].} =
-  ## Uses `YamlParser <#YamlParser>`_ and
-  ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
-  ## from a YAML character stream.
-  var
-    parser = newYamlParser(initCoreTagLibrary())
-    events = parser.parse(s)
-  try:
-    return constructJson(events)
-  except YamlStreamError:
-    let e = getCurrentException()
-    if e.parent of IOError:
-      raise (ref IOError)(e.parent)
-    elif e.parent of YamlParserError:
-      raise (ref YamlParserError)(e.parent)
-    else: internalError("Unexpected exception: " & e.parent.repr)
+when not defined(JS):
+  proc loadToJson*(s: Stream): seq[JsonNode]
+      {.raises: [YamlParserError, YamlConstructionError, IOError].} =
+    ## Uses `YamlParser <#YamlParser>`_ and
+    ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
+    ## from a YAML character stream.
+    var
+      parser = newYamlParser(initCoreTagLibrary())
+      events = parser.parse(s)
+    try:
+      return constructJson(events)
+    except YamlStreamError:
+      let e = getCurrentException()
+      if e.parent of IOError:
+        raise (ref IOError)(e.parent)
+      elif e.parent of YamlParserError:
+        raise (ref YamlParserError)(e.parent)
+      else: internalError("Unexpected exception: " & e.parent.repr)
 
 proc loadToJson*(str: string): seq[JsonNode]
     {.raises: [YamlParserError, YamlConstructionError].} =

@@ -42,7 +42,8 @@ type
     newlines*: int
 
     # internals
-    source: pointer
+    when defined(JS): sSource: StringSource
+    else: source: pointer
     inFlow: bool
     literalEndIndent: int
     nextState, lineStartState, inlineState, insideLineImpl, insideDocImpl,
@@ -1140,34 +1141,41 @@ proc init*[T](lex: YamlLexer) =
   lex.tokenLineGetter = tokenLine[T]
   lex.searchColonImpl = searchColon[T]
 
-proc newYamlLexer*(source: Stream): YamlLexer {.raises: [YamlLexerError].} =
-  let blSource = new(BaseLexer)
-  try: blSource[].open(source)
-  except:
-    var e = newException(YamlLexerError,
-        "Could not open stream for reading:\n" & getCurrentExceptionMsg())
-    e.parent = getCurrentException()
-    raise e
-  GC_ref(blSource)
-  new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-      GC_unref(cast[ref BaseLexer](x.source))
-  )
-  result[] = YamlLexerObj(source: cast[pointer](blSource), inFlow: false,
-      buf: "", c: blSource[].buf[blSource[].bufpos], newlines: 0,
-      folded: true)
-  init[BaseLexer](result)
+when not defined(JS):
+  proc newYamlLexer*(source: Stream): YamlLexer {.raises: [YamlLexerError].} =
+    let blSource = new(BaseLexer)
+    try: blSource[].open(source)
+    except:
+      var e = newException(YamlLexerError,
+          "Could not open stream for reading:\n" & getCurrentExceptionMsg())
+      e.parent = getCurrentException()
+      raise e
+    GC_ref(blSource)
+    new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+        GC_unref(cast[ref BaseLexer](x.source))
+    )
+    result[] = YamlLexerObj(source: cast[pointer](blSource), inFlow: false,
+        buf: "", c: blSource[].buf[blSource[].bufpos], newlines: 0,
+        folded: true)
+    init[BaseLexer](result)
 
 proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
     {.raises: [].} =
-  let sSource = new(StringSource)
-  sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1,
-      src: source)
-  GC_ref(sSource)
-  new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
-      GC_unref(cast[ref StringSource](x.source))
-  )
-  result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource),
-      inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
+  when defined(JS):
+    let sSource = StringSource(pos: startAt, lineStart: startAt, line: 1,
+        src: source)
+    result = YamlLexer(buf: "", sSource: sSource,
+        inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
+  else:
+    let sSource = new(StringSource)
+    sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1,
+        src: source)
+    GC_ref(sSource)
+    new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
+        GC_unref(cast[ref StringSource](x.source))
+    )
+    result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource),
+        inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
   init[StringSource](result)
 
 proc next*(lex: YamlLexer) =
