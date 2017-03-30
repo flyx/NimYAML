@@ -235,11 +235,12 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
     tagId: TagId
     anchor: AnchorId
   if a == asAlways:
+    val = c.nextAnchorId
     when defined(JS):
-      {.emit: [c, ".refs.set(", n, ", ", c.nextAnchorId, ");"].}
+      {.emit: [c, ".refs.set(", n, ", ", val, ");"].}
     else:
       c.refs[p] = c.nextAnchorId
-    c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+    c.nextAnchorId = AnchorId(int(val) + 1)
   else:
     when defined(JS):
       {.emit: [c, ".refs.set(", n, ", ", yAnchorNone, ");"].}

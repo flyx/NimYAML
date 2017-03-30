@@ -1244,10 +1244,13 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
           c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
         c.put(aliasEvent(val))
         return
-      if c.style == asAlways:
-        c.refs[p] = c.nextAnchorId
-        c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-      else: c.refs[p] = yAnchorNone
+    if c.style == asAlways:
+      val = c.nextAnchorId
+      when defined(JS):
+        {.emit: [c, ".refs.set(", p, ", ", val, ");"].}
+      else: c.refs[p] = val
+      c.nextAnchorId = AnchorId(int(val) + 1)
+    else: c.refs[p] = yAnchorNone
     let
       a = if c.style == asAlways: val else: cast[AnchorId](p)
       childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
