@@ -74,7 +74,9 @@ type
 macro typeHintStateMachine(c: untyped, content: varargs[untyped]): typed =
   yAssert content.kind == nnkArgList
   result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
-  for branch in content.children:
+  for branchStmt in content:
+    let branch = branchStmt[0]
+    echo $branch.kind
     yAssert branch.kind == nnkOfBranch
     var
       charBranch = newNimNode(nnkOfBranch, branch)
