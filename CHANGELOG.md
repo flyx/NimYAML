@@ -1,3 +1,11 @@
+### 0.10.0
+
+Features:
+
+ * Compatibility with Nim 0.17.0 (#40).
+   **Important:** This fix breaks compatibility with previous
+   Nim versions!
+
 ### 0.9.1
 
 Features:
