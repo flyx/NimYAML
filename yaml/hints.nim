@@ -71,8 +71,8 @@ type
     ythAfterTimeSpace, ythAfterTimeZ, ythAfterTimePlusMinus, ythTzHour1,
     ythTzHour2, ythTzHourColon, ythTzMinute1, ythTzMinute2
 
-macro typeHintStateMachine(c: untyped, content: untyped): typed =
-  yAssert content.kind == nnkStmtList
+macro typeHintStateMachine(c: untyped, content: varargs[untyped]): typed =
+  yAssert content.kind == nnkArgList
   result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
   for branch in content.children:
     yAssert branch.kind == nnkOfBranch
