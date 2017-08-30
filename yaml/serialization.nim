@@ -1212,7 +1212,12 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("", yTagNimNilString))
-  else: representObject(value, ts, c, presentTag(string, ts))
+  else:
+    let tag = presentTag(string, ts)
+    echo "tag == ", tag
+    representObject(value, ts, c,
+        if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
+          yTagExclamationMark else: tag)
 
 proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("", yTagNimNilSeq))
