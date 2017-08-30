@@ -1,3 +1,11 @@
+### 0.10.2
+
+Bugfixes:
+
+ * Fixed a nimble warning (#42)
+ * Make sure special strings (e.g. "null") are properly quoted when dumping JSON
+   (#44)
+
 ### 0.10.1
 
 Bugfixes:
