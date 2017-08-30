@@ -1214,7 +1214,6 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("", yTagNimNilString))
   else:
     let tag = presentTag(string, ts)
-    echo "tag == ", tag
     representObject(value, ts, c,
         if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
           yTagExclamationMark else: tag)
