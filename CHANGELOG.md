@@ -1,3 +1,14 @@
+### 0.10.3
+
+Bugfixes:
+
+ * Fixed a nimble error when installing the package.
+
+Features:
+
+ * Added `ignoreUnknownKeys` macro to ignore all mapping keys that do not map
+   to a field of an object / tuple (#43).
+
 ### 0.10.2
 
 Bugfixes:
