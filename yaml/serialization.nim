@@ -638,6 +638,8 @@ let
       newIdentNode(":defaultValueGetter")
   ignoredKeyListProc {.compileTime.} =
       newIdentNode(":ignoredKeyList")
+  ignoreUnknownKeysProc {.compileTime.} =
+      newIdentNode(":ignoreUnknownKeys")
 
 var
   transientVectors {.compileTime.} = newSeq[set[int16]]()
@@ -733,7 +735,7 @@ macro fetchTransientIndex(t: typedesc, tIndex: untyped): typed =
 
 macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
                           context: untyped, name: untyped, o: untyped,
-                          matched: untyped): typed =
+                          matched: untyped, failOnUnknown: bool): typed =
   let
     tDecl = getType(t)
     tName = $tDecl[1]
@@ -800,10 +802,12 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
           markAsFound(fieldIndex, matched)], true, stream, tName, $child))
       caseStmt.add(ob)
     inc(fieldIndex)
-  caseStmt.add(newNimNode(nnkElse).add(newNimNode(nnkRaiseStmt).add(
-      newCall(bindSym("constructionError"), stream,
-      infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
-      newCall(bindSym("escape"), name))))))
+  caseStmt.add(newNimNode(nnkElse).add(newNimNode(nnkWhenStmt).add(
+    newNimNode(nnkElifBranch).add(failOnUnknown,
+      newNimNode(nnkRaiseStmt).add(
+        newCall(bindSym("constructionError"), stream,
+        infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
+        newCall(bindSym("escape"), name))))))))
   result.add(caseStmt)
 
 proc isVariantObject(t: typedesc): bool {.compileTime.} =
@@ -821,6 +825,13 @@ macro injectIgnoredKeyList(t: typedesc, ident: untyped): typed =
       const `ident` = ignoredKeyLists[`ignoredKeyListproc`(`t`)]
     else:
       const `ident` = newSeq[string]()
+
+macro injectFailOnUnknownKeys(t: typedesc, ident: untyped): typed =
+  result = quote do:
+    when compiles(`ignoreUnknownKeysProc`(`t`)):
+      const `ident` = false
+    else:
+      const `ident` = true
 
 proc constructObjectDefault*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
@@ -841,6 +852,7 @@ proc constructObjectDefault*[O: object|tuple](
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
   when isVariantObject(O): reset(result) # make discriminants writeable
   injectIgnoredKeyList(O, ignoredKeyList)
+  injectFailOnUnknownKeys(O, failOnUnknown)
   while s.peek.kind != endKind:
     e = s.next()
     when isVariantObject(O):
@@ -863,12 +875,14 @@ proc constructObjectDefault*[O: object|tuple](
           found = true
           break
         inc(i)
-      if not found:
-        raise s.constructionError("While constructing " &
-            typetraits.name(O) & ": Unknown field: " & escape(name))
+      when failOnUnknown:
+        if not found:
+          raise s.constructionError("While constructing " &
+              typetraits.name(O) & ": Unknown field: " & escape(name))
     else:
       if name notin ignoredKeyList:
-        constructFieldValue(O, tIndex, s, c, name, result, matched)
+        constructFieldValue(O, tIndex, s, c, name, result, matched,
+                            failOnUnknown)
       else:
         e = s.next()
         var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
@@ -1548,8 +1562,9 @@ macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
 
 macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
   ## Tell NimYAML that when loading an object of type ``t``, any mapping key
-  ## named ``name`` shall be ignored. This makes it possible to only load
-  ## relevant parts of a YAML input and ignoring other portions of the input.
+  ## named ``name`` shall be ignored. Note that this even ignores the key if
+  ## the value of that key is necessary to construct a value of type ``t``,
+  ## making deserialization fail.
   ##
   ## Example usage:
   ##
@@ -1567,3 +1582,17 @@ macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
       {.fatal: "Input key " & `name` & " is already ignored!".}
     static:
       ignoredKeyLists[`ignoredKeyListProc`(`t`)].add(`name`)
+
+macro ignoreUnknownKeys*(t: typedesc): typed =
+  ## Tell NimYAML that when loading an object or tuple of type ``t``, any
+  ## mapping key that does not map to an existing field inside the object or
+  ## tuple shall be ignored.
+  ##
+  ## Example usage:
+  ##
+  ## .. code-block::
+  ##   type MyObject = object
+  ##     a, b: string
+  ##   ignoreUnknownKeys(MyObject)
+  result = quote do:
+    proc `ignoreUnknownKeysProc`*(t: typedesc[`t`]): bool {.compileTime.} = true
