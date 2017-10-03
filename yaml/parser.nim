@@ -414,6 +414,8 @@ macro parserState(name: untyped, impl: untyped): typed =
     nameId = newIdentNode("state" & capitalize(nameStr))
   var procImpl = quote do:
     debug("state: " & `nameStr`)
+  if procImpl.kind == nnkStmtList and procImpl.len == 1: procImpl = procImpl[0]
+  procImpl = newStmtList(procImpl)
   procImpl.add(newLetStmt(ident("c"), newCall("ParserContext", ident("s"))))
   procImpl.add(newAssignment(newIdentNode("result"), newLit(false)))
   assert impl.kind == nnkStmtList
