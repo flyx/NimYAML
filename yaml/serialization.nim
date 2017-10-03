@@ -678,6 +678,8 @@ proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
   result = quote do:
     when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
       `stmts`
+  if result.kind == nnkStmtList and result.len == 1: result = result[0]
+  result = newStmtList(result)
   if elseError:
     result[0].add(newNimNode(nnkElse).add(quote do:
       raise constructionError(`s`, "While constructing " & `tName` &
@@ -692,6 +694,8 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
   result = quote do:
     when compiles(`dbp`(`t`)):
       const `defaultValues` = `defaultValueGetter`(`t`)
+  if result.kind == nnkStmtList and result.len == 1: result = result[0]
+  result = newStmtList(result)
   let
     tDecl = getType(t)
     tName = $tDecl[1]
