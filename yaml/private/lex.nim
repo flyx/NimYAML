@@ -1064,7 +1064,7 @@ proc searchColon[T](lex: YamlLexer): bool =
     recentAllowsAdjacent = lex.cur == ltQuotedScalar
   result = false
 
-  proc skipPlainScalarContent(lex: YamlLexer) {.inline.} =
+  proc skipPlainScalarContent(lex: YamlLexer) {.closure.} =
     while true:
       inc(peek)
       case lex.at(T, peek)
