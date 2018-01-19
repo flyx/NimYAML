@@ -4,7 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-template internalError*(s: string) =
+proc internalError*(s: string) =
   when not defined(release):
     let ii = instantiationInfo()
     echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
