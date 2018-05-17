@@ -1057,7 +1057,9 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
       branch.add(infix(
           newCall("yamlTag", newCall("type", field)), "in", possibleTagIds))
       branchContent.add(newCall("constructChild", s, c, field))
-    else: internalError("Too many children: " & $recCase[i][1].recListlen)
+    else:
+      block:
+        internalError("Too many children: " & $recCase[i][1].recListlen)
     branch.add(branchContent)
     ifStmt.add(branch)
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
