@@ -1,4 +1,4 @@
-#            NimYAML - YAML implementation in Nim
+    #            NimYAML - YAML implementation in Nim
 #        (c) Copyright 2016 Felix Krause
 #
 #    See the file "copying.txt", included in this
@@ -15,6 +15,9 @@
 import hashes
 import private/internal, taglib
 
+when defined(nimNoNil):
+    {.experimental: "notnil".}
+    
 when defined(yamlScalarRepInd):
   type ScalarRepresentationIndicator* = enum
     srPlain, srSingleQuoted, srDoubleQuoted, srLiteral, srFolded
