@@ -22,7 +22,9 @@
 import tables, streams, hashes, sets, strutils
 import stream, taglib, serialization, private/internal, parser,
        presenter
-
+       
+when defined(nimNoNil):
+    {.experimental: "notnil".}
 type
   YamlNodeKind* = enum
     yScalar, yMapping, ySequence
