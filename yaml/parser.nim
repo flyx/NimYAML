@@ -14,6 +14,9 @@
 import tables, strutils, macros, streams
 import taglib, stream, private/lex, private/internal
 
+when defined(nimNoNil):
+    {.experimental: "notnil".}
+    
 type
   WarningCallback* = proc(line, column: int, lineContent: string,
                           message: string)
