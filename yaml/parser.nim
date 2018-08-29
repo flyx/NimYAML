@@ -158,7 +158,7 @@ proc currentScalar(c: ParserContext, e: var YamlStreamEvent)
   e = YamlStreamEvent(kind: yamlScalar, scalarTag: c.tag,
                       scalarAnchor: c.anchor)
   shallowCopy(e.scalarContent, c.lex.buf)
-  c.lex.buf = cast[string not nil](newStringOfCap(256))
+  c.lex.buf = cast[string](newStringOfCap(256))
   c.tag = yTagQuestionMark
   c.anchor = yAnchorNone
 
