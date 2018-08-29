@@ -672,7 +672,7 @@ proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
       newLit(true))
 
 proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
-    elseError: bool = false, s: NimNode = nil, tName, fName: string = nil):
+    elseError: bool = false, s: NimNode = nil, tName, fName: string = ""):
     NimNode {.compileTime.} =
   var stmts = newStmtList(content)
   result = quote do:
@@ -1150,7 +1150,7 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
   if item.kind == yamlScalar:
     if item.scalarTag == yTagNimNilString:
       discard s.next()
-      result = nil
+      result = ""
       return
     elif item.scalarTag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
@@ -1165,7 +1165,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
   if item.kind == yamlScalar:
     if item.scalarTag == yTagNimNilSeq:
       discard s.next()
-      result = nil
+      result = @[]
       return
   elif item.kind == yamlStartSeq:
     if item.seqTag notin [yTagQuestionMark, yamlTag(seq[T])]:
@@ -1231,7 +1231,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     raise e
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
-  if isNil(value): c.put(scalarEvent("", yTagNimNilString))
+  if value.len == 0: c.put(scalarEvent("", yTagNimNilString))
   else:
     let tag = presentTag(string, ts)
     representObject(value, ts, c,
@@ -1239,7 +1239,7 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
           yTagExclamationMark else: tag)
 
 proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
-  if isNil(value): c.put(scalarEvent("", yTagNimNilSeq))
+  if value.len == 0: c.put(scalarEvent("", yTagNimNilSeq))
   else: representObject(value, ts, c, presentTag(seq[T], ts))
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
