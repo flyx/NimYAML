@@ -194,9 +194,9 @@ proc constructObject*[T: int8|int16|int32|int64](
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs an integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    if item.scalarContent[0] == '0' and item.scalarContent[1] in {'x', 'X' }:
+    if item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'x', 'X' }:
       result = parseHex[T](s, item.scalarContent)
-    elif item.scalarContent[0] == '0' and item.scalarContent[1] in {'o', 'O'}:
+    elif item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'o', 'O'}:
       result = parseOctal[T](s, item.scalarContent)
     else:
       result = T(parseBiggestInt(item.scalarContent))
