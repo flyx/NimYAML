@@ -12,15 +12,19 @@ Documentation, examples and an online demo are available [here][1]. Releases are
 available as tags in this repository and can be fetched via nimble:
 
     nimble install yaml
+    
+## Status
 
-## Features that may come in the future
+The library is fairly stable, I only maintain it and will not add any features due to lack of time and interest. There are few issues with YAML corner cases in the lexer which you are unlikely to encounter unless you're going for them. Fixing them would mean a larger refactor of the lexer which I am not willing to do.
+
+PRs for bugs are welcome. If you want to add a feature, you are free to; but be aware that I will not maintain it and am unlikely to review it in depth, so if I accept it, you will be co-maintainer.
+
+## Features that have been planned, but will not be implemented by myself
 
  * Serialization:
    - Support for more standard library types
    - Support for polymorphism
    - Support for generic objects
-   - Support for transient fields (i.e. object fields that will not be
-     (de-)serialized
 
 ## Developers
 
