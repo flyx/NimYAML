@@ -140,7 +140,7 @@ when not defined(JS):
 type
   BufferYamlStream* = ref object of YamlStream
     pos: int
-    buf: seq[YamlStreamEvent] not nil
+    buf: seq[YamlStreamEvent]
 
 proc newBufferYamlStream*(): BufferYamlStream not nil =
   result = cast[BufferYamlStream not nil](new(BufferYamlStream))
