@@ -672,7 +672,7 @@ proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
       newLit(true))
 
 proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
-    elseError: bool = false, s: NimNode = nil, tName, fName: string = nil):
+    elseError: bool = false, s: NimNode = nil, tName, fName: string = ""):
     NimNode {.compileTime.} =
   var stmts = newStmtList(content)
   result = quote do:
@@ -1150,7 +1150,7 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
   if item.kind == yamlScalar:
     if item.scalarTag == yTagNimNilString:
       discard s.next()
-      result = nil
+      result = ""
       return
     elif item.scalarTag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
@@ -1231,7 +1231,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     raise e
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
-  if isNil(value): c.put(scalarEvent("", yTagNimNilString))
+  if value == "" : c.put(scalarEvent("", yTagNimNilString))
   else:
     let tag = presentTag(string, ts)
     representObject(value, ts, c,

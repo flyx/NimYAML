@@ -29,7 +29,7 @@ type
   YamlNodeKind* = enum
     yScalar, yMapping, ySequence
 
-  YamlNode* = ref YamlNodeObj not nil
+  YamlNode* = ref YamlNodeObj 
     ## Represents a node in a ``YamlDocument``.
 
   YamlNodeObj* = object
@@ -37,7 +37,7 @@ type
     case kind*: YamlNodeKind
     of yScalar: content*: string
     of ySequence: elems*: seq[YamlNode]
-    of yMapping: fields*: TableRef[YamlNode, YamlNode]
+    of yMapping: fields*: OrderedTableRef[YamlNode, YamlNode]
       # compiler does not like Table[YamlNode, YamlNode]
 
   YamlDocument* = object
@@ -127,7 +127,7 @@ proc newYamlNode*(elems: openarray[YamlNode], tag: string = "?"):
 
 proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
                   tag: string = "?"): YamlNode =
-  YamlNode(kind: yMapping, fields: newTable(fields), tag: tag)
+  YamlNode(kind: yMapping, fields: newOrderedTable(fields), tag: tag)
 
 proc initYamlDoc*(root: YamlNode): YamlDocument = result.root = root
 
@@ -150,7 +150,7 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
     of yamlStartMap:
       result.tag = tagLib.uri(start.mapTag)
       result.kind = yMapping
-      result.fields = newTable[YamlNode, YamlNode]()
+      result.fields = newOrderedTable[YamlNode, YamlNode]()
       while s.peek().kind != yamlEndMap:
         let
           key = composeNode(s, tagLib, c)
