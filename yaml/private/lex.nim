@@ -29,7 +29,7 @@ type
     curStartPos*: tuple[line, column: int]
     # ltScalarPart, ltQuotedScalar, ltYamlVersion, ltTagShorthand, ltTagUri,
     # ltLiteralTag, ltTagHandle, ltAnchor, ltAlias
-    buf*: string not nil
+    buf*: string 
     # ltIndentation
     indentation*: int
     # ltTagHandle

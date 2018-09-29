@@ -140,10 +140,10 @@ when not defined(JS):
 type
   BufferYamlStream* = ref object of YamlStream
     pos: int
-    buf: seq[YamlStreamEvent] not nil
+    buf: seq[YamlStreamEvent] 
 
-proc newBufferYamlStream*(): BufferYamlStream not nil =
-  result = cast[BufferYamlStream not nil](new(BufferYamlStream))
+proc newBufferYamlStream*(): BufferYamlStream  =
+  result = cast[BufferYamlStream ](new(BufferYamlStream))
   result.basicInit()
   result.buf = @[]
   result.pos = 0
