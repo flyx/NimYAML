@@ -89,10 +89,10 @@ const
     ## This tag is used in serialization for the name of a field of an
     ## object. It may contain any string scalar that is a valid Nim symbol.
 
-  yTagNimNilString* : TagId = 101.TagId ## for strings that are nil
-  yTagNimNilSeq*    : TagId = 102.TagId ## \
-    ## for seqs that are nil. This tag is used regardless of the seq's generic
-    ## type parameter.
+  #yTagNimNilString* : TagId = 101.TagId ## for strings that are nil
+  #yTagNimNilSeq*    : TagId = 102.TagId ## \
+  ## for seqs that are nil. This tag is used regardless of the seq's generic
+  ## type parameter.
 
   yFirstStaticTagId* : TagId = 1000.TagId ## \
     ## The first ``TagId`` assigned by the ``setTagId`` templates.
@@ -211,8 +211,8 @@ proc initSerializationTagLibrary*(): TagLibrary =
   result.tags[y"value"]      = yTagValue
   result.tags[y"binary"]     = yTagBinary
   result.tags[n"field"]      = yTagNimField
-  result.tags[n"nil:string"] = yTagNimNilString
-  result.tags[n"nil:seq"]    = yTagNimNilSeq
+  #result.tags[n"nil:string"] = yTagNimNilString
+  #result.tags[n"nil:seq"]    = yTagNimNilSeq
 
 var
   serializationTagLibrary* = initSerializationTagLibrary() ## \
@@ -275,8 +275,8 @@ static:
   registeredUris.add(y"binary")
   # special tags used by serialization
   registeredUris.add(n"field")
-  registeredUris.add(n"nil:string")
-  registeredUris.add(n"nil:seq")
+  #registeredUris.add(n"nil:string")
+  #registeredUris.add(n"nil:seq")
 
 # tags for Nim's standard types
 setTagUri(char, n"system:char", yTagNimChar)
