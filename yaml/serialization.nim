@@ -390,7 +390,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
             tmp.add(item.scalarContent[pos + 1])
           else:
             tmp.add(item.scalarContent[pos .. pos + 2])
-      let info = tmp.parse("yyyy-M-d'T'H-mm-sszzz")
+      let info = tmp.parse("yyyy-M-d'T'H:mm:sszzz")
       result = info.toTime()
     else:
       raise s.constructionError("Not a parsable timestamp: " &
