@@ -505,9 +505,9 @@ suite "Serialization":
     let input = "{b: b, d: d}"
     var result: NonVariantWithTransient
     load(input, result)
-    assert isNil(result.a)
+    assert result.a.len == 0
     assert result.b == "b"
-    assert isNil(result.c)
+    assert result.c.len == 0
     assert result.d == "d"
 
   test "Load non-variant object with transient fields - unknown field":
