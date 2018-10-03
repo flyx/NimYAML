@@ -1349,7 +1349,7 @@ proc load*[K](input: Stream | string, target: var K)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
-  if target.isNil:
+  if target.len == 0:
     target = newSeq[K]()
   var
     parser = newYamlParser(serializationTagLibrary)
