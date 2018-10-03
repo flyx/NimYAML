@@ -985,11 +985,11 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
         childAccessor = newDotExpr(value, newIdentNode(name))
       result.add(quote do:
         when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
-          when `isVO`: c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
+          when bool(`isVO`): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
           c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
               yTagQuestionMark else: yTagNimField, yAnchorNone))
           representChild(`childAccessor`, `childTagStyle`, c)
-          when `isVO`: c.put(endMapEvent())
+          when bool(`isVO`): c.put(endMapEvent())
       )
     inc(fieldIndex)
 
