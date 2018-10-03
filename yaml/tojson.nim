@@ -116,7 +116,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       if levels.len == 0:
         # parser ensures that next event will be yamlEndDocument
         levels.add((node: jsonFromScalar(event.scalarContent,
-                                         event.scalarTag), key: nil))
+                                         event.scalarTag), key: ""))
         continue
 
       case levels[levels.high].node.kind
@@ -127,7 +127,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
         if event.scalarAnchor != yAnchorNone:
           anchors[event.scalarAnchor] = jsonScalar
       of JObject:
-        if isNil(levels[levels.high].key):
+        if levels[levels.high].key.len == 0:
           # JSON only allows strings as keys
           levels[levels.high].key = event.scalarContent
           if event.scalarAnchor != yAnchorNone:
@@ -137,7 +137,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
           let jsonScalar = jsonFromScalar(event.scalarContent,
                                           event.scalarTag)
           levels[levels.high].node[levels[levels.high].key] = jsonScalar
-          levels[levels.high].key = nil
+          levels[levels.high].key = ""
           if event.scalarAnchor != yAnchorNone:
             anchors[event.scalarAnchor] = jsonScalar
       else:
@@ -148,12 +148,12 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
         case levels[levels.high].node.kind
         of JArray: levels[levels.high].node.elems.add(level.node)
         of JObject:
-          if isNil(levels[levels.high].key):
+          if levels[levels.high].key.len == 0:
             raise newException(YamlConstructionError,
                 "non-scalar as key not allowed in JSON")
           else:
             levels[levels.high].node[levels[levels.high].key] = level.node
-            levels[levels.high].key = nil
+            levels[levels.high].key = ""
         else:
           internalError("Unexpected node kind: " &
                         $levels[levels.high].node.kind)
@@ -166,13 +166,13 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
         levels[levels.high].node.elems.add(
             anchors.getOrDefault(event.aliasTarget))
       of JObject:
-        if isNil(levels[levels.high].key):
+        if levels[levels.high].key.len == 0:
           raise newException(YamlConstructionError,
               "cannot use alias node as key in JSON")
         else:
           levels[levels.high].node.fields.add(
               levels[levels.high].key, anchors.getOrDefault(event.aliasTarget))
-          levels[levels.high].key = nil
+          levels[levels.high].key = ""
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
 
