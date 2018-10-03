@@ -199,7 +199,13 @@ proc constructObject*[T: int8|int16|int32|int64](
     elif item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'o', 'O'}:
       result = parseOctal[T](s, item.scalarContent)
     else:
-      result = T(parseBiggestInt(item.scalarContent))
+      let nInt = parseBiggestInt(item.scalarContent)
+      if nInt <= T.high:
+        # make sure we don't produce a range error
+        result = T(nInt)
+      else:
+        # if outside of range, what to do?!
+        raise newException(YamlConstructionError, "AAA")
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var int)
