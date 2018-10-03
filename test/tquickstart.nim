@@ -120,8 +120,7 @@ proc testsFor(path: string, root: bool = true, titlePrefix: string = ""):
       test.add(newCall("doAssert", newCall("outputTest", newLit(baseDir),
           newLit(path))))
     else:
-      echo "Error: neither 01-in.yaml nor 01-out.yaml exists in " & path & '!'
-      quit 1
+      error("Error: neither 01-in.yaml nor 01-out.yaml exists in " & path & '!')
     result.add(test)
   for kind, childPath in walkDir(path):
     if kind == pcDir:
