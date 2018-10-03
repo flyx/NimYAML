@@ -97,7 +97,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
     result = BetterInt(parseBiggestInt(item.scalarContent) + 1)
 
 template assertStringEqual(expected, actual: string) =
-  for i in countup(0, min(expected.len, actual.len)):
+  for i in countup(0, min(expected.len, actual.len) - 1):
     if expected[i] != actual[i]:
       echo "string mismatch at character #", i, "(expected:\'",
             expected[i], "\', was \'", actual[i], "\'):"
