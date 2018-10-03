@@ -140,7 +140,10 @@ template lexLF(lex: YamlLexer, t: typedesc[StringSource]) =
   lex.sSource.pos.inc()
   lex.sSource.lineStart = lex.sSource.pos
   lex.sSource.line.inc()
-  lex.c = lex.sSource.src[lex.sSource.pos]
+  if lex.sSource.pos < lex.sSource.src.len:
+    lex.c = lex.sSource.src[lex.sSource.pos]
+  else:
+    lex.c = '\0'
 
 template lineNumber(lex: YamlLexer, t: typedesc[BaseLexer]): int =
   lex.blSource.lineNumber
@@ -187,7 +190,10 @@ proc at(lex: YamlLexer, t: typedesc[BaseLexer], pos: int): char {.inline.} =
   lex.blSource.buf[pos]
 
 proc at(lex: YamlLexer, t: typedesc[StringSource], pos: int): char {.inline.} =
-  lex.sSource.src[pos]
+  if lex.sSource.src.len == pos:
+    '\0'
+  else:
+    lex.sSource.src[pos]
 
 proc mark(lex: YamlLexer, t: typedesc[BaseLexer]): int = lex.blSource.bufpos
 proc mark(lex: YamlLexer, t: typedesc[StringSource]): int = lex.sSource.pos
@@ -1174,8 +1180,12 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
     new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
         GC_unref(cast[ref StringSource](x.source))
     )
+    var sChar = '\0'
+    if source.len > 0:
+      sChar = sSource.src[startAt]
     result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource),
-        inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
+                            inFlow: false, c: sChar, newlines: 0, folded: true)
+
   init[StringSource](result)
 
 proc next*(lex: YamlLexer) =
