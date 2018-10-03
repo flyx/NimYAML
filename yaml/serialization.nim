@@ -1148,11 +1148,11 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var string) =
   let item = s.peek()
   if item.kind == yamlScalar:
-    if item.scalarTag == yTagNimNilString:
-      discard s.next()
-      result = ""
-      return
-    elif item.scalarTag notin
+    #if item.scalarTag == yTagNimNilString:
+    #  discard s.next()
+    #  result = ""
+    #  return
+    if item.scalarTag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
       raise s.constructionError("Wrong tag for string")
     elif item.scalarAnchor != yAnchorNone:
@@ -1163,10 +1163,11 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var seq[T]) =
   let item = s.peek()
   if item.kind == yamlScalar:
-    if item.scalarTag == yTagNimNilSeq:
-      discard s.next()
-      result = @[]
-      return
+    #if item.scalarTag == yTagNimNilSeq:
+    # TODO: this whole branch still makes sense
+    discard s.next()
+    result = @[]
+    return
   elif item.kind == yamlStartSeq:
     if item.seqTag notin [yTagQuestionMark, yamlTag(seq[T])]:
       raise s.constructionError("Wrong tag for " & typetraits.name(seq[T]))
@@ -1231,16 +1232,19 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     raise e
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
-  if value.len == 0: c.put(scalarEvent("", yTagNimNilString))
-  else:
-    let tag = presentTag(string, ts)
-    representObject(value, ts, c,
-        if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
-          yTagExclamationMark else: tag)
+  #if value.len == 0: c.put(scalarEvent("", yTagNimNilString))
+  #else:
+  let tag = presentTag(string, ts)
+  representObject(value, ts, c,
+                  if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
+                    yTagExclamationMark
+                  else:
+                    tag)
 
 proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
-  if value.len == 0: c.put(scalarEvent("", yTagNimNilSeq))
-  else: representObject(value, ts, c, presentTag(seq[T], ts))
+  #if value.len == 0: c.put(scalarEvent("", yTagNimNilSeq))
+  #else:
+  representObject(value, ts, c, presentTag(seq[T], ts))
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("~", yTagNull))
