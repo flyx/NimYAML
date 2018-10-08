@@ -1154,10 +1154,6 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var string) =
   let item = s.peek()
   if item.kind == yamlScalar:
-    #if item.scalarTag == yTagNimNilString:
-    #  discard s.next()
-    #  result = ""
-    #  return
     if item.scalarTag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
       raise s.constructionError("Wrong tag for string")
@@ -1238,8 +1234,6 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     raise e
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
-  #if value.len == 0: c.put(scalarEvent("", yTagNimNilString))
-  #else:
   let tag = presentTag(string, ts)
   representObject(value, ts, c,
                   if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
@@ -1248,8 +1242,6 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
                     tag)
 
 proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
-  #if value.len == 0: c.put(scalarEvent("", yTagNimNilSeq))
-  #else:
   representObject(value, ts, c, presentTag(seq[T], ts))
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =

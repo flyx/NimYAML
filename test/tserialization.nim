@@ -205,17 +205,6 @@ suite "Serialization":
     assert result[3] == NegInf
     assert classify(result[4]) == fcNan
 
-  #test "Load nil string":
-  #  let input = "!<tag:nimyaml.org,2016:nil:string> \"\""
-  #  var result: string
-  #  load(input, result)
-  #  assert result.len == 0
-  #
-  #test "Dump nil string":
-  #  let input: string = ""
-  #  var output = dump(input, tsNone, asTidy, blockOnly)
-  #  assertStringEqual yamlDirs & "\n!n!nil:string \"\"", output
-
   test "Load timestamps":
     let input = "[2001-12-15T02:59:43.1Z, 2001-12-14t21:59:43.10-05:00, 2001-12-14 21:59:43.10-5]"
     var result: seq[Time]
@@ -236,17 +225,6 @@ suite "Serialization":
     var input = @["a", "b"]
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & "\n- a\n- b", output
-
-  #test "Load nil seq":
-  #  let input = "!<tag:nimyaml.org,2016:nil:seq> \"\""
-  #  var result: seq[int]
-  #  load(input, result)
-  #  assert result.len == 0
-  #
-  #test "Dump nil seq":
-  #  let input: seq[int] = @[]
-  #  var output = dump(input, tsNone, asTidy, blockOnly)
-  #  assertStringEqual yamlDirs & "\n!n!nil:seq \"\"", output
 
   test "Load char set":
     let input = "- a\n- b"
@@ -640,31 +618,6 @@ next:
     assert result.b == "bcd"
     assert result.c == "cde"
     assert result.d == "d"
-
-  #when not defined(JS):
-  #  test "Load nil values":
-  #    let input = "- ~\n- !!str ~"
-  #    var result: seq[ref string]
-  #    try: load(input, result)
-  #    except YamlConstructionError:
-  #      let ex = (ref YamlConstructionError)(getCurrentException())
-  #      echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
-  #      echo ex.lineContent
-  #      raise ex
-  #
-  #    assert(result.len == 2)
-  #    assert(result[0] == nil)
-  #    assert(result[1][] == "~")
-  #
-  #  test "Dump nil values":
-  #    var input = newSeq[ref string]()
-  #    input.add(nil)
-  #    input.add(new string)
-  #    input[1][] = "~"
-  #    var output = dump(input, tsRootOnly, asTidy, blockOnly)
-  #    assertStringEqual(yamlDirs &
-  #        "!n!system:seq(tag:yaml.org;2002:str) \n- !!null ~\n- !!str ~",
-  #        output)
 
   test "Custom constructObject":
     let input = "- 1\n- !test:BetterInt 2"
