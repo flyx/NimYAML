@@ -218,19 +218,31 @@ proc lineWithMarker(lex: YamlLexer, pos: tuple[line, column: int],
     lineStartIndex = lex.sSource.pos
     lineEndIndex: int
     curLine = lex.sSource.line
+  let srcHigh = lex.sSource.src.high
   if pos.line == curLine:
     lineEndIndex = lex.sSource.pos
-    while lex.sSource.src[lineEndIndex] notin lineEnd: inc(lineEndIndex)
+    if lineEndIndex < srcHigh:
+      while lineEndIndex < srcHigh and
+            lex.sSource.src[lineEndIndex] notin lineEnd:
+        inc(lineEndIndex)
   while true:
-    while lineStartIndex >= 0 and lex.sSource.src[lineStartIndex] notin lineEnd:
+    while lineStartIndex >= 0 and
+          lineStartIndex < srcHigh and
+          lex.sSource.src[lineStartIndex] notin lineEnd:
       dec(lineStartIndex)
-    if curLine == pos.line:
+    if curLine == pos.line and lineStartIndex < srcHigh:
       inc(lineStartIndex)
       break
-    let wasLF = lex.sSource.src[lineStartIndex] == '\l'
+    let wasLF = if lineStartIndex > srcHigh or lineStartIndex < 0: false
+                else: lex.sSource.src[lineStartIndex] == '\l'
     lineEndIndex = lineStartIndex
-    dec(lineStartIndex)
-    if lex.sSource.src[lineStartIndex] == '\c' and wasLF:
+    if lineStartIndex > 0:
+      dec(lineStartIndex)
+    else:
+      break
+    if lineStartIndex > 0 and
+       lineStartIndex <= srcHigh and
+       lex.sSource.src[lineStartIndex] == '\c' and wasLF:
       dec(lineStartIndex)
       dec(lineEndIndex)
     dec(curLine)
