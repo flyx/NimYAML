@@ -204,8 +204,8 @@ proc constructObject*[T: int8|int16|int32|int64](
         # make sure we don't produce a range error
         result = T(nInt)
       else:
-        # if outside of range, what to do?!
-        raise newException(YamlConstructionError, "AAA")
+        raise s.constructionError("Cannot construct int; out of range: " &
+          $nInt & " for type " & T.name & " with max of: " & $T.high)
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var int)
