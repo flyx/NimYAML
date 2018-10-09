@@ -5,16 +5,24 @@
 #    distribution, for details about the copyright.
 
 template internalError*(s: string) =
+  # Note: to get the internal stacktrace that caused the error
+  # compile with the `d:debug` flag.
   when not defined(release):
     let ii = instantiationInfo()
     echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
     echo s
     when not defined(JS):
       echo "[NimYAML] Stacktrace:"
-      try: writeStackTrace()
+      try:
+        writeStackTrace()
+        when defined(debug):
+          echo "Internal stacktrace:"
+          let exc = getCurrentException()
+          echo getStackTrace(exc.parent)
       except: discard
     echo "[NimYAML] Please report this bug."
     quit 1
+
 template yAssert*(e: typed) =
   when not defined(release):
     if not e:
@@ -23,7 +31,12 @@ template yAssert*(e: typed) =
       echo "assertion failed!"
       when not defined(JS):
         echo "[NimYAML] Stacktrace:"
-        try: writeStackTrace()
+        try:
+          writeStackTrace()
+          when defined(debug):
+            echo "Internal stacktrace:"
+            let exc = getCurrentException()
+            echo getStackTrace(exc.parent)
         except: discard
       echo "[NimYAML] Please report this bug."
       quit 1

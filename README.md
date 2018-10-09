@@ -44,6 +44,8 @@ nim build # build a library
 NimYAML needs at least Nim 0.17.0 in order to compile. Version 0.9.1
 is the last release to support 0.15.x and 0.16.0.
 
+When debugging crashes in this library, use the `d:debug` compile flag to enable printing of the internal stack traces for calls to `internalError` and `yAssert`.
+
 ## License
 
 [MIT][2]
