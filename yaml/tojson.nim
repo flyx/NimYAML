@@ -14,10 +14,12 @@
 import json, streams, strutils, tables
 import taglib, hints, serialization, stream, private/internal, parser
 
-type Level = tuple[node: JsonNode, key: string]
+# represents a single YAML level. The `node` with name `key`.
+# `expKey` is used to indicate that an empty node shall be filled
+type Level = tuple[node: JsonNode, key: string, expKey: bool]
 
 proc initLevel(node: JsonNode): Level {.raises: [].} =
-  (node: node, key: cast[string](nil))
+  (node: node, key: "", expKey: true)
 
 proc jsonFromScalar(content: string, tag: TagId): JsonNode
    {.raises: [YamlConstructionError].}=
@@ -116,7 +118,9 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       if levels.len == 0:
         # parser ensures that next event will be yamlEndDocument
         levels.add((node: jsonFromScalar(event.scalarContent,
-                                         event.scalarTag), key: ""))
+                                         event.scalarTag),
+                    key: "",
+                    expKey: true))
         continue
 
       case levels[levels.high].node.kind
@@ -127,7 +131,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
         if event.scalarAnchor != yAnchorNone:
           anchors[event.scalarAnchor] = jsonScalar
       of JObject:
-        if levels[levels.high].key.len == 0:
+        if levels[levels.high].expKey:
+          levels[levels.high].expKey = false
           # JSON only allows strings as keys
           levels[levels.high].key = event.scalarContent
           if event.scalarAnchor != yAnchorNone:
@@ -138,6 +143,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
                                           event.scalarTag)
           levels[levels.high].node[levels[levels.high].key] = jsonScalar
           levels[levels.high].key = ""
+          levels[levels.high].expKey = true
           if event.scalarAnchor != yAnchorNone:
             anchors[event.scalarAnchor] = jsonScalar
       else:
@@ -154,6 +160,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
           else:
             levels[levels.high].node[levels[levels.high].key] = level.node
             levels[levels.high].key = ""
+            levels[levels.high].expKey = true
         else:
           internalError("Unexpected node kind: " &
                         $levels[levels.high].node.kind)
@@ -173,6 +180,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
           levels[levels.high].node.fields.add(
               levels[levels.high].key, anchors.getOrDefault(event.aliasTarget))
           levels[levels.high].key = ""
+          levels[levels.high].expKey = true
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
 
