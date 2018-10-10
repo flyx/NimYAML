@@ -1164,13 +1164,7 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var seq[T]) =
   let item = s.peek()
-  if item.kind == yamlScalar:
-    #if item.scalarTag == yTagNimNilSeq:
-    # TODO: this whole branch still makes sense
-    discard s.next()
-    result = @[]
-    return
-  elif item.kind == yamlStartSeq:
+  if item.kind == yamlStartSeq:
     if item.seqTag notin [yTagQuestionMark, yamlTag(seq[T])]:
       raise s.constructionError("Wrong tag for " & typetraits.name(seq[T]))
     elif item.seqAnchor != yAnchorNone:
