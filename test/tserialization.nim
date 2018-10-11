@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, strutils, tables, times, math, os
+import unittest, strutils, tables, times, math
 
 type
   MyTuple = tuple

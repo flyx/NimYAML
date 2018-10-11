@@ -1161,22 +1161,22 @@ when not defined(JS):
 
 proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
     {.raises: [].} =
+  # append a `\0` at the very end to work around null terminator being
+  # inaccessible
+  let sourceNull = source & '\0'
   when defined(JS):
     let sSource = StringSource(pos: startAt, lineStart: startAt, line: 1,
-        src: source)
+                               src: sourceNull)
     result = YamlLexer(buf: "", sSource: sSource,
         inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
   else:
     let sSource = new(StringSource)
     sSource[] = StringSource(pos: startAt, lineStart: startAt, line: 1,
-        src: source)
+                             src: sourceNull)
     GC_ref(sSource)
     new(result, proc(x: ref YamlLexerObj) {.nimcall.} =
         GC_unref(cast[ref StringSource](x.source))
     )
-    # append a `\0` at the very end to work around null terminator being
-    # inaccessible
-    sSource.src.add '\0'
     result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource),
         inFlow: false, c: sSource.src[startAt], newlines: 0, folded: true)
   init[StringSource](result)
