@@ -1181,6 +1181,9 @@ proc newYamlLexer*(source: string, startAt: int = 0): YamlLexer
         GC_unref(cast[ref StringSource](x.source))
     )
     var sChar = '\0'
+    # append a `\0` at the very end to work around null terminator being
+    # inaccessible
+    sSource.src.add sChar
     if source.len > 0:
       sChar = sSource.src[startAt]
     result[] = YamlLexerObj(buf: "", source: cast[pointer](sSource),
