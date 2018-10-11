@@ -38,7 +38,8 @@
 ## * The hints API in `hints <yaml.hints.html>`_ provides a simple proc for
 ##   guessing the type of a scalar value.
 
-import yaml.dom, yaml.hints, yaml.parser, yaml.presenter,
-       yaml.serialization, yaml.stream, yaml.taglib, yaml.tojson
-export yaml.dom, yaml.hints, yaml.parser, yaml.presenter,
-       yaml.serialization, yaml.stream, yaml.taglib, yaml.tojson
+import yaml / [dom, hints, parser, presenter,
+               serialization, stream, taglib, tojson]
+
+export dom, hints, parser, presenter,
+       serialization, stream, taglib, tojson
