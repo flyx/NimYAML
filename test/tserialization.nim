@@ -400,7 +400,7 @@ suite "Serialization":
     var result: Person
     load(input, result)
     assert result.firstnamechar == 'P'
-    assert result.surname   == "Pan"
+    assert result.surname == "Pan"
     assert result.age == 12
 
   test "Dump custom object":
@@ -447,8 +447,8 @@ suite "Serialization":
     var result: Person
     load(input, result)
     assert result.firstnamechar == 'P'
-    assert result.surname   == "Pan"
-    assert result.age       == 12
+    assert result.surname == "Pan"
+    assert result.age == 12
 
   test "Dump custom object with explicit root tag":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
