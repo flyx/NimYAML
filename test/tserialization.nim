@@ -96,30 +96,30 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
   constructScalarItem(s, item, BetterInt):
     result = BetterInt(parseBiggestInt(item.scalarContent) + 1)
 
-template assertStringEqual(expected, actual: string, file = stdout) =
+template assertStringEqual(expected, actual: string) =
   if expected != actual:
     # if they are unequal, walk through the strings and check each
     # character for a better error message
     if expected.len != actual.len:
-      file.write "Expected and actual string's length differs.\n"
-      file.write "Expected length: ", expected.len, "\n"
-      file.write "Actual length: ", actual.len, "\n"
+      echo "Expected and actual string's length differs.\n"
+      echo "Expected length: ", expected.len, "\n"
+      echo "Actual length: ", actual.len, "\n"
     # check length up to smaller of the two strings
     for i in countup(0, min(expected.high, actual.high)):
       if expected[i] != actual[i]:
-        file.write "string mismatch at character #", i, "(expected:\'",
+        echo "string mismatch at character #", i, "(expected:\'",
          expected[i], "\', was \'", actual[i], "\'):\n"
-        file.write "expected:\n", expected, "\nactual:\n", actual, "\n"
+        echo "expected:\n", expected, "\nactual:\n", actual, "\n"
         assert(false)
     # if we haven't raised an assertion error here, the problem is that
     # one string is longer than the other
     let minInd = min(expected.len, actual.len) # len instead of high to continue
                                                # after shorter string
     if expected.high > actual.high:
-      file.write "Expected continues with: '", expected[minInd .. ^1], "'"
+      echo "Expected continues with: '", expected[minInd .. ^1], "'"
       assert false
     else:
-      file.write "Actual continues with: '", actual[minInd .. ^1], "'"
+      echo "Actual continues with: '", actual[minInd .. ^1], "'"
       assert false
 
 template expectConstructionError(li, co: int, message: string, body: typed) =
@@ -142,19 +142,6 @@ proc newNode(v: string): ref Node =
 let blockOnly = defineOptions(style=psBlockOnly)
 
 suite "Serialization":
-  test "Internal string assert":
-    let s1 = "foo"
-    let s2 = "foobar"
-    let fname = "dump.txt"
-    let f: File = open(fname, fmWrite)
-    try:
-      assertStringEqual(s1, s2, file=f)
-    except AssertionError:
-      discard
-    finally:
-      f.close()
-      removeFile(fname)
-
   test "Load integer without fixed length":
     var input = "-4247"
     var result: int
