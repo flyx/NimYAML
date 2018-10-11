@@ -76,7 +76,7 @@ macro genTests(): untyped =
   let errorTests = toSet(staticExec("cd " & (absolutePath / "tags" / "error") &
                          " && ls -1d *").splitLines())
   let ignored = toSet(["3MYT", "JDH8", "2EBW", "9KAX", "AB8U", "B63P", "FBC9",
-                       "Q5MG", ".git", "name", "tags", "meta"])
+                       "Q5MG", "S98Z", ".git", "name", "tags", "meta"])
 
   result = newStmtList()
   # walkDir for some crude reason does not work with travis build
