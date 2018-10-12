@@ -15,9 +15,9 @@ template internalError*(s: string) =
       echo "[NimYAML] Stacktrace:"
       try:
         writeStackTrace()
-        echo "Internal stacktrace:"
         let exc = getCurrentException()
         if not isNil(exc.parent):
+          echo "Internal stacktrace:"
           echo getStackTrace(exc.parent)
       except: discard
     echo "[NimYAML] Please report this bug."
@@ -33,9 +33,9 @@ template yAssert*(e: typed) =
         echo "[NimYAML] Stacktrace:"
         try:
           writeStackTrace()
-          echo "Internal stacktrace:"
           let exc = getCurrentException()
           if not isNil(exc.parent):
+            echo "Internal stacktrace:"
             echo getStackTrace(exc.parent)
         except: discard
       echo "[NimYAML] Please report this bug."
