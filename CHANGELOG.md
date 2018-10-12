@@ -1,3 +1,17 @@
+### 0.11.0
+
+Bugfixes:
+
+ * Made it work with Nim 0.19.0
+
+NimYAML 0.11.0 is unlikely to work with older Nim versions.
+
+## 0.10.4
+
+Bugfixes:
+
+ * Made it work with Nim 0.18.0
+
 ### 0.10.3
 
 Bugfixes:
