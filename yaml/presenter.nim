@@ -10,7 +10,7 @@
 ##
 ## This is the presenter API, used for generating YAML character streams.
 
-import streams, queues, strutils
+import streams, deques, strutils
 import taglib, stream, private/internal, hints, parser, stream
 
 type
@@ -111,7 +111,7 @@ type
 
 const
   defaultPresentationOptions* =
-        PresentationOptions(style: psDefault, indentationStep: 2,
+    PresentationOptions(style: psDefault, indentationStep: 2,
                             newlines: nlOSDefault)
 
 proc defineOptions*(style: PresentationStyle = psDefault,
@@ -153,7 +153,7 @@ proc inspect(scalar: string, indentation: int,
           # linebreak. that is currently too complex to handle.
           canUseFolded = false
     of '\l':
-      canUsePlain = false # we don't use multiline plain scalars
+      canUsePlain = false     # we don't use multiline plain scalars
       curWord.finish = i - 1
       if curWord.finish - curWord.start + 1 > 80 - indentation:
         return if canUsePlain: sPlain else: sDoubleQuoted
@@ -399,17 +399,17 @@ proc startItem(target: PresenterTarget, style: PresentationStyle,
     raise e
 
 proc anchorName(a: AnchorId): string {.raises: [].} =
-    result = ""
-    var i = int(a)
-    while i >= 0:
-        let j = i mod 36
-        if j < 26: result.add(char(j + ord('a')))
-        else: result.add(char(j + ord('0') - 26))
-        i -= 36
+  result = ""
+  var i = int(a)
+  while i >= 0:
+    let j = i mod 36
+    if j < 26: result.add(char(j + ord('a')))
+    else: result.add(char(j + ord('0') - 26))
+    i -= 36
 
 proc writeTagAndAnchor(target: PresenterTarget, tag: TagId,
                        tagLib: TagLibrary,
-                       anchor: AnchorId) {.raises:[YamlPresenterOutputError].} =
+                       anchor: AnchorId) {.raises: [YamlPresenterOutputError].} =
   try:
     if tag notin [yTagQuestionMark, yTagExclamationMark]:
       let tagUri = tagLib.uri(tag)
@@ -431,10 +431,10 @@ proc writeTagAndAnchor(target: PresenterTarget, tag: TagId,
     e.parent = getCurrentException()
     raise e
 
-proc nextItem(c: var Queue, s: var YamlStream):
+proc nextItem(c: var Deque, s: var YamlStream):
     YamlStreamEvent {.raises: [YamlStreamError].} =
   if c.len > 0:
-    try: result = c.dequeue
+    try: result = c.popFirst
     except IndexError: internalError("Unexpected IndexError")
   else:
     result = s.next()
@@ -445,9 +445,9 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
   var
     indentation = 0
     levels = newSeq[DumperState]()
-    cached = initQueue[YamlStreamEvent]()
+    cached = initDeQue[YamlStreamEvent]()
   let newline = if options.newlines == nlLF: "\l"
-        elif options.newlines == nlCRLF: "\c\l" else: "\n"
+    elif options.newlines == nlCRLF: "\c\l" else: "\n"
   while cached.len > 0 or not s.finished():
     let item = nextItem(cached, s)
     case item.kind
@@ -538,7 +538,7 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         while true:
           yAssert(not s.finished())
           let next = s.next()
-          cached.enqueue(next)
+          cached.addLast(next)
           case next.kind
           of yamlScalar: length += 2 + next.scalarContent.len
           of yamlAlias: length += 6
@@ -551,7 +551,13 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         if levels.len > 0 and levels[levels.high] in
             [dFlowMapStart, dFlowMapValue]:
           raise newException(YamlPresenterJsonError,
-                             "Cannot have sequence as map key in JSON output!")
+
+
+
+
+
+
+                                                     "Cannot have sequence as map key in JSON output!")
         nextState = dFlowSequenceStart
       of psMinimal, psCanonical: nextState = dFlowSequenceStart
       of psBlockOnly:
