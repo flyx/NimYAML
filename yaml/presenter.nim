@@ -550,14 +550,7 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
       of psJson:
         if levels.len > 0 and levels[levels.high] in
             [dFlowMapStart, dFlowMapValue]:
-          raise newException(YamlPresenterJsonError,
-
-
-
-
-
-
-                                                     "Cannot have sequence as map key in JSON output!")
+          raise newException(YamlPresenterJsonError, "Cannot have sequence as map key in JSON output!")
         nextState = dFlowSequenceStart
       of psMinimal, psCanonical: nextState = dFlowSequenceStart
       of psBlockOnly:
