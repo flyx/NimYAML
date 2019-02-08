@@ -55,7 +55,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
 
 proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var string)
-    {.raises: [YamlConstructionError, YamlStreamError].}
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].}
   ## Constructs a Nim value that is a string from a part of a YAML stream.
   ## This specialization takes care of possible nil strings.
 
@@ -156,7 +156,7 @@ proc yamlTag*(T: typedesc[string]): TagId {.inline, noSideEffect, raises: [].} =
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var string)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   ## costructs a string from a YAML scalar
   constructScalarItem(s, item, string):
     result = item.scalarContent
@@ -191,7 +191,7 @@ proc parseOctal[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
 
 proc constructObject*[T: int8|int16|int32|int64](
     s: var YamlStream, c: ConstructionContext, result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   ## constructs an integer value from a YAML scalar
   constructScalarItem(s, item, T):
     if item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'x', 'X' }:
@@ -209,7 +209,7 @@ proc constructObject*[T: int8|int16|int32|int64](
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var int)
-    {.raises: [YamlConstructionError, YamlStreamError], inline.} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception], inline.} =
   ## constructs an integer of architecture-defined length by loading it into
   ## int32 and then converting it.
   var i32Result: int32
@@ -223,7 +223,7 @@ proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
 
 proc representObject*(value: int, tagStyle: TagStyle,
                       c: SerializationContext, tag: TagId)
-    {.raises: [YamlStreamError], inline.}=
+    {.raises: [YamlStreamError], inline.} =
   ## represent an integer of architecture-defined length by casting it to int32.
   ## on 64-bit systems, this may cause a RangeError.
 
@@ -241,7 +241,7 @@ else:
 
 proc constructObject*[T: DefiniteUIntTypes](
     s: var YamlStream, c: ConstructionContext, result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   ## construct an unsigned integer value from a YAML scalar
   constructScalarItem(s, item, T):
     if item.scalarContent[0] == '0' and item.scalarContent[1] in {'x', 'X'}:
@@ -252,12 +252,12 @@ proc constructObject*[T: DefiniteUIntTypes](
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var uint)
-    {.raises: [YamlConstructionError, YamlStreamError], inline.} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception], inline.} =
   ## represent an unsigned integer of architecture-defined length by loading it
   ## into uint32 and then converting it.
   var u32Result: uint32
   constructObject(s, c, u32Result)
-  result= uint(u32Result)
+  result = uint(u32Result)
 
 when defined(JS):
   # TODO: this is a dirty hack and may lead to overflows!
@@ -281,7 +281,7 @@ proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
 
 proc constructObject*[T: float|float32|float64](
     s: var YamlStream, c: ConstructionContext, result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   ## construct a float value from a YAML scalar
   constructScalarItem(s, item, T):
     let hint = guessType(item.scalarContent)
@@ -311,7 +311,7 @@ proc yamlTag*(T: typedesc[bool]): TagId {.inline, raises: [].} = yTagBoolean
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var bool)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   ## constructs a bool value from a YAML scalar
   constructScalarItem(s, item, bool):
     case guessType(item.scalarContent)
@@ -328,7 +328,7 @@ proc representObject*(value: bool, ts: TagStyle, c: SerializationContext,
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var char)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   ## constructs a char value from a YAML scalar
   constructScalarItem(s, item, char):
     if item.scalarContent.len != 1:
@@ -345,7 +345,7 @@ proc yamlTag*(T: typedesc[Time]): TagId {.inline, raises: [].} = yTagTimestamp
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var Time)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+    {.raises: [YamlConstructionError, YamlStreamError, Exception].} =
   constructScalarItem(s, item, Time):
     if guessType(item.scalarContent) == yTypeTimestamp:
       var
@@ -935,7 +935,7 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
   let
     tDecl = getType(t)
     tDesc = getType(tDecl[1])
-    isVO  = isVariantObject(t)
+    isVO = isVariantObject(t)
   var fieldIndex = 0'i16
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
@@ -1421,7 +1421,7 @@ proc canBeImplicit(t: typedesc): bool {.compileTime.} =
   if tDesc[2].len != 1: return false
   if tDesc[2][0].kind != nnkRecCase: return false
   var foundEmptyBranch = false
-  for i in 1.. tDesc[2][0].len - 1:
+  for i in 1 .. tDesc[2][0].len - 1:
     case tDesc[2][0][i][1].recListlen # branch contents
     of 0:
       if foundEmptyBranch: return false
@@ -1445,7 +1445,7 @@ template markAsImplicit*(t: typedesc): typed =
     # this will be checked by means of compiles(implicitVariantObject(...))
     setImplicitVariantObjectMarker(t)
   else:
-    {. fatal: "This type cannot be marked as implicit" .}
+    {.fatal: "This type cannot be marked as implicit".}
 
 macro getFieldIndex(t: typedesc, field: untyped): untyped =
   let
@@ -1516,7 +1516,7 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
     fieldName = fieldIdent(field)
   result = quote do:
     when compiles(`implicitVariantObjectMarker`(`t`)):
-      {.fatal: "Cannot mark fields of implicit variant objects as transient." .}
+      {.fatal: "Cannot mark fields of implicit variant objects as transient.".}
     when not compiles(`transientBitvectorProc`(`t`)):
       proc `transientBitvectorProc`*(myType: typedesc[`t`]): int
           {.compileTime.} =
