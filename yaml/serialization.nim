@@ -1086,7 +1086,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
       newCall(bindSym("constructionError"), s,
       infix(newStrLitNode("This value type does not map to any field in " &
-                          getTypeImpl(t).repr & ": "), "&",
+                          getTypeImpl(t)[1].repr & ": "), "&",
             newCall("uri", newIdentNode("serializationTagLibrary"),
               newNimNode(nnkBracketExpr).add(possibleTagIds, newIntLitNode(0)))
       )
