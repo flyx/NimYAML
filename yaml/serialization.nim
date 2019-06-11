@@ -143,7 +143,7 @@ template constructScalarItem*(s: var YamlStream, i: untyped,
   if i.kind != yamlScalar:
     raise constructionError(s, "Expected scalar")
   try: content
-  except YamlConstructionError: raise
+  except YamlConstructionError as e: raise e
   except Exception:
     var e = constructionError(s,
         "Cannot construct to " & name(t) & ": " & item.scalarContent &
@@ -600,25 +600,40 @@ proc recListNode(n: NimNode): NimNode {.compileTime.} =
   if n.kind == nnkRecList: result = n[0]
   else: result = n
 
-proc fieldCount(t: typedesc): int {.compileTime.} =
-  result = 0
-  let tDesc = getType(getType(t)[1])
-  if tDesc.kind == nnkBracketExpr:
-    # tuple
-    result = tDesc.len - 1
-  else:
-    # object
-    for child in tDesc[2].children:
-      inc(result)
-      if child.kind == nnkRecCase:
-        for bIndex in 1..<len(child):
-          var recListIndex = 0
-          case child[bIndex].kind
-          of nnkOfBranch: recListIndex = child[bIndex].len - 1
-          of nnkElse: discard
-          else: internalError("Unexpected child kind: " & $child[bIndex].kind)
-          if child[bIndex].len > recListIndex:
-            inc(result, child[bIndex][recListIndex].recListLen)
+proc fieldCount(t: NimNode): int {.compiletime.} =
+   result = 0
+   let tDesc = getType(getType(t)[1])
+   if tDesc.kind == nnkBracketExpr:
+      # tuple
+      result = tDesc.len - 1
+   else:
+      # object
+      for child in tDesc[2].children:
+         inc(result)
+         if child.kind == nnkRecCase:
+            for bIndex in 1..<len(child):
+               var increment = 0
+               case child[bIndex].kind
+               of nnkOfBranch:
+                  # We cannot assume that child[bIndex][1] is a RecList due to
+                  # a one-liner like 'of akDog: barkometer' not resulting in a
+                  # RecList but in an Ident node.
+                  case child[bIndex][1].kind
+                  of nnkRecList:
+                     increment = len(child[bIndex][1])
+                  else:
+                     increment = 1
+               of nnkElse:
+                  # Same goes for the else branch.
+                  case child[bIndex][0].kind
+                  of nnkRecList:
+                     increment = len(child[bIndex][0])
+                  else:
+                     increment = 1
+               else:
+                  internalError("Unexpected child kind: " & $child[bIndex].kind)
+               inc(result, increment)
+
 
 macro matchMatrix(t: typedesc): untyped =
   result = newNimNode(nnkBracket)
@@ -664,7 +679,7 @@ proc addDefaultOr(tName: string, i: int, o: NimNode,
       else: `elseBranch`
     else: `elseBranch`
 
-proc checkMissing(s: NimNode, t: typedesc, tName: string, field: NimNode,
+proc checkMissing(s: NimNode, t: NimNode, tName: string, field: NimNode,
                   i: int, matched, o, defaultValues: NimNode):
     NimNode {.compileTime.} =
   result = newIfStmt((newCall("not", newNimNode(nnkBracketExpr).add(matched,
@@ -820,7 +835,7 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
         newCall(bindSym("escape"), name))))))))
   result.add(caseStmt)
 
-proc isVariantObject(t: typedesc): bool {.compileTime.} =
+proc isVariantObject(t: NimNode): bool {.compileTime.} =
   var tDesc = getType(t)
   if tDesc.kind == nnkBracketExpr: tDesc = getType(tDesc[1])
   if tDesc.kind != nnkObjectTy:
@@ -854,18 +869,18 @@ proc constructObjectDefault*[O: object|tuple](
   var matched = matchMatrix(O)
   var e = s.next()
   const
-    startKind = when isVariantObject(O): yamlStartSeq else: yamlStartMap
-    endKind = when isVariantObject(O): yamlEndSeq else: yamlEndMap
+    startKind = when isVariantObject(getType(O)): yamlStartSeq else: yamlStartMap
+    endKind = when isVariantObject(getType(O)): yamlEndSeq else: yamlEndMap
   fetchTransientIndex(O, tIndex)
   if e.kind != startKind:
     raise s.constructionError("While constructing " &
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
-  when isVariantObject(O): reset(result) # make discriminants writeable
+  when isVariantObject(getType(O)): reset(result) # make discriminants writeable
   injectIgnoredKeyList(O, ignoredKeyList)
   injectFailOnUnknownKeys(O, failOnUnknown)
   while s.peek.kind != endKind:
     e = s.next()
-    when isVariantObject(O):
+    when isVariantObject(getType(O)):
       if e.kind != yamlStartMap:
         raise s.constructionError("Expected single-pair map, got " & $e.kind)
       e = s.next()
@@ -902,7 +917,7 @@ proc constructObjectDefault*[O: object|tuple](
           of yamlEndMap, yamlEndSeq: dec(depth)
           of yamlScalar: discard
           else: internalError("Unexpected event kind.")
-    when isVariantObject(O):
+    when isVariantObject(getType(O)):
       e = s.next()
       if e.kind != yamlEndMap:
         raise s.constructionError("Expected end of single-pair map, got " &
@@ -1003,10 +1018,10 @@ proc representObject*[O: object](value: O, ts: TagStyle,
     c: SerializationContext, tag: TagId) =
   ## represents a Nim object or tuple as YAML mapping
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  when isVariantObject(O): c.put(startSeqEvent(tag, yAnchorNone))
+  when isVariantObject(getType(O)): c.put(startSeqEvent(tag, yAnchorNone))
   else: c.put(startMapEvent(tag, yAnchorNone))
   genRepresentObject(O, value, childTagStyle)
-  when isVariantObject(O): c.put(endSeqEvent())
+  when isVariantObject(getType(O)): c.put(endSeqEvent())
   else: c.put(endMapEvent())
 
 proc representObject*[O: tuple](value: O, ts: TagStyle,
@@ -1071,7 +1086,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
       newCall(bindSym("constructionError"), s,
       infix(newStrLitNode("This value type does not map to any field in " &
-                          typetraits.name(t) & ": "), "&",
+                          getTypeImpl(t).repr & ": "), "&",
             newCall("uri", newIdentNode("serializationTagLibrary"),
               newNimNode(nnkBracketExpr).add(possibleTagIds, newIntLitNode(0)))
       )
@@ -1221,7 +1236,12 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   else: internalError("Unexpected event kind: " & $e.kind)
   s.peek = e
   try: constructChild(s, c, result[])
-  except YamlConstructionError, YamlStreamError: raise
+  except YamlConstructionError:
+    var e = newException(YamlStreamError, getCurrentExceptionMsg())
+    e.parent = getCurrentException()
+    raise e
+  except YamlStreamError as e:
+    raise e
   except Exception:
     var e = newException(YamlStreamError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
@@ -1308,7 +1328,7 @@ proc representChild*[O](value: O, ts: TagStyle,
         if ts == tsNone: yTagQuestionMark else: yamlTag(O))
 
 proc construct*[T](s: var YamlStream, target: var T)
-    {.raises: [YamlStreamError].} =
+    {.raises: [YamlStreamError, YamlConstructionError].} =
   ## Constructs a Nim value from a YAML stream.
   var context = newConstructionContext()
   try:
