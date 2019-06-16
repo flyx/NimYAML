@@ -774,13 +774,21 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
         discriminant = newDotExpr(o, newIdentNode($child[0]))
         discType = newCall("type", discriminant)
       var disOb = newNimNode(nnkOfBranch).add(newStrLitNode($child[0]))
+      var objConstr = newNimNode(nnkObjConstr).add(newCall("type", o))
+      objConstr.add(newColonExpr(newIdentNode($child[0]), newIdentNode(
+          "value")))
+      for otherChild in tDesc[2].children:
+        if otherChild == child:
+          continue
+        objConstr.add(newColonExpr(newIdentNode($otherChild), newDotExpr(o,
+            newIdentNode($otherChild))))
       disOb.add(newStmtList(
           checkDuplicate(stream, tName, $child[0], fieldIndex, matched),
           newNimNode(nnkVarSection).add(
               newNimNode(nnkIdentDefs).add(
                   newIdentNode("value"), discType, newEmptyNode())),
           newCall("constructChild", stream, context, newIdentNode("value")),
-          newAssignment(discriminant, newIdentNode("value")),
+          newAssignment(o, objConstr),
           markAsFound(fieldIndex, matched)))
       caseStmt.add(disOb)
       var alreadyUsedSet = newNimNode(nnkCurly)
@@ -875,7 +883,6 @@ proc constructObjectDefault*[O: object|tuple](
   if e.kind != startKind:
     raise s.constructionError("While constructing " &
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
-  when isVariantObject(getType(O)): reset(result) # make discriminants writeable
   injectIgnoredKeyList(O, ignoredKeyList)
   injectFailOnUnknownKeys(O, failOnUnknown)
   while s.peek.kind != endKind:
@@ -1063,12 +1070,15 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
   yAssert tDesc.kind == nnkObjectTy
   let recCase = tDesc[2][0]
   yAssert recCase.kind == nnkRecCase
-  let discriminant = newDotExpr(r, newIdentNode($recCase[0]))
-  var ifStmt = newNimNode(nnkIfStmt)
+  result = newNimNode(nnkIfStmt)
   for i in 1 .. recCase.len - 1:
     yAssert recCase[i].kind == nnkOfBranch
     var branch = newNimNode(nnkElifBranch)
-    var branchContent = newStmtList(newAssignment(discriminant, recCase[i][0]))
+    var branchContent = newStmtList(newAssignment(r,
+        newNimNode(nnkObjConstr).add(
+          newCall("type", r),
+          newColonExpr(newIdentNode($recCase[0]), recCase[i][0])
+    )))
     case recCase[i][1].recListLen
     of 0:
       branch.add(infix(newIdentNode("yTagNull"), "in", possibleTagIds))
@@ -1082,7 +1092,7 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
       block:
         internalError("Too many children: " & $recCase[i][1].recListlen)
     branch.add(branchContent)
-    ifStmt.add(branch)
+    result.add(branch)
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
       newCall(bindSym("constructionError"), s,
       infix(newStrLitNode("This value type does not map to any field in " &
@@ -1091,12 +1101,11 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
               newNimNode(nnkBracketExpr).add(possibleTagIds, newIntLitNode(0)))
       )
   ))
-  ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
+  result.add(newNimNode(nnkElse).add(newNimNode(nnkTryStmt).add(
       newStmtList(raiseStmt), newNimNode(nnkExceptBranch).add(
         newIdentNode("KeyError"),
         newNimNode(nnkDiscardStmt).add(newEmptyNode())
   ))))
-  result = newStmtList(newCall("reset", r), ifStmt)
 
 macro isImplicitVariantObject(o: typed): untyped =
   result = newCall("compiles", newCall(implicitVariantObjectMarker, o))

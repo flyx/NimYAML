@@ -51,27 +51,21 @@ proc jsonFromScalar(content: string, tag: TagId): JsonNode
   try:
     case mappedType
     of yTypeInteger:
-      result.kind = JInt
-      result.num = parseBiggestInt(content)
+      result = JsonNode(kind: JInt, num: parseBiggestInt(content))
     of yTypeFloat:
-      result.kind = JFloat
-      result.fnum = parseFloat(content)
+      result = JsonNode(kind: JFloat, fnum: parseFloat(content))
     of yTypeFloatInf:
-      result.kind = JFloat
-      result.fnum = if content[0] == '-': NegInf else: Inf
+      result = JsonNode(kind: JFloat, fnum: if content[0] == '-': NegInf else: Inf)
     of yTypeFloatNaN:
-      result.kind = JFloat
-      result.fnum = NaN
+      result = JsonNode(kind: JFloat, fnum: NaN)
     of yTypeBoolTrue:
-      result.kind = JBool
-      result.bval = true
+      result = JsonNode(kind: JBool, bval: true)
     of yTypeBoolFalse:
-      result.kind = JBool
-      result.bval = false
+      result = JsonNode(kind: JBool, bval: false)
     of yTypeNull:
-      result.kind = JNull
+      result = JsonNode(kind: JNull)
     else:
-      result.kind = JString
+      result = JsonNode(kind: JString)
       shallowCopy(result.str, content)
   except ValueError:
     var e = newException(YamlConstructionError, "Cannot parse numeric value")

@@ -170,8 +170,7 @@ template setCurAnchor(val: AnchorId) =
 template eventStart(k: YamlStreamEventKind) {.dirty.} =
   assertInStream()
   yieldEvent()
-  reset(curEvent)
-  curEvent.kind = k
+  curEvent = YamlStreamEvent(kind: k)
   setTag(yTagQuestionMark)
   setAnchor(yAnchorNone)
   inEvent = true

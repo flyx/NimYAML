@@ -148,9 +148,9 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
   try:
     case start.kind
     of yamlStartMap:
-      result.tag = tagLib.uri(start.mapTag)
-      result.kind = yMapping
-      result.fields = newTable[YamlNode, YamlNode]()
+      result = YamlNode(tag: tagLib.uri(start.mapTag),
+                        kind: yMapping,
+                        fields: newTable[YamlNode, YamlNode]())
       while s.peek().kind != yamlEndMap:
         let
           key = composeNode(s, tagLib, c)
@@ -161,16 +161,16 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
       discard s.next()
       addAnchor(c, start.mapAnchor)
     of yamlStartSeq:
-      result.tag = tagLib.uri(start.seqTag)
-      result.kind = ySequence
-      result.elems = newSeq[YamlNode]()
+      result = YamlNode(tag: tagLib.uri(start.seqTag),
+                        kind: ySequence,
+                        elems: newSeq[YamlNode]())
       while s.peek().kind != yamlEndSeq:
         result.elems.add(composeNode(s, tagLib, c))
       addAnchor(c, start.seqAnchor)
       discard s.next()
     of yamlScalar:
-      result.tag = tagLib.uri(start.scalarTag)
-      result.kind = yScalar
+      result = YamlNode(tag: tagLib.uri(start.scalarTag),
+                        kind: yScalar)
       shallowCopy(result.content, start.scalarContent)
       addAnchor(c, start.scalarAnchor)
     of yamlAlias:
