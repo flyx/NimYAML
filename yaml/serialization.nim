@@ -780,6 +780,9 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
       for otherChild in tDesc[2].children:
         if otherChild == child:
           continue
+        if otherChild.kind != nnkSym:
+          error("Unexpected kind of field '" & $otherChild[0] &
+              "': " & $otherChild.kind)
         objConstr.add(newColonExpr(newIdentNode($otherChild), newDotExpr(o,
             newIdentNode($otherChild))))
       disOb.add(newStmtList(
