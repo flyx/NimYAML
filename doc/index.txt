@@ -8,7 +8,7 @@ Introduction
 **NimYAML** is a pure YAML implementation for Nim. It is able to read from and
 write to YAML character streams, and to serialize from and construct to native
 Nim types. It exclusively supports
-`YAML 1.2 <#http://www.yaml.org/spec/1.2/spec.html>`_.
+`YAML 1.2 <http://www.yaml.org/spec/1.2/spec.html>`_.
 
 Source code can be found on `GitHub <https://github.com/flyx/NimYAML>`_. You can
 install it with `Nimble <https://github.com/nim-lang/nimble>`_:
