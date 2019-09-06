@@ -1,3 +1,9 @@
+## 0.12.0
+
+Bugfixes:
+
+ * Made it work with Nim 0.20.2
+
 ### 0.11.0
 
 Bugfixes:
