@@ -67,7 +67,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
 
 proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
                         result: var ref O)
-    {.raises: [YamlStreamError].}
+    {.raises: [YamlConstructionError, YamlStreamError].}
   ## Constructs an arbitrary Nim value from a part of a YAML stream.
   ## The stream will advance until after the finishing token that was used
   ## for constructing the value. The object may be constructed from an alias
@@ -1248,9 +1248,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   else: internalError("Unexpected event kind: " & $e.kind)
   s.peek = e
   try: constructChild(s, c, result[])
-  except YamlConstructionError:
-    var e = newException(YamlStreamError, getCurrentExceptionMsg())
-    e.parent = getCurrentException()
+  except YamlConstructionError as e:
     raise e
   except YamlStreamError as e:
     raise e
