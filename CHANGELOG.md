@@ -1,3 +1,13 @@
+## 0.13.0
+
+Bugfixes:
+
+ * Fixed submodule link to yaml-test-suite.
+
+Features:
+
+ * Added support for `Option` type.
+
 ## 0.12.0
 
 Bugfixes:
