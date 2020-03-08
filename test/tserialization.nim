@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import "../yaml"
-import unittest, strutils, tables, times, math
+import unittest, strutils, tables, times, math, options
 
 type
   MyTuple = tuple
@@ -269,6 +269,19 @@ suite "Serialization":
     let input = [23'i32, 42'i32, 47'i32]
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & "\n- 23\n- 42\n- 47", output
+
+  test "Load Option":
+    let input = "- Some\n- !!null ~"
+    var result: array[0..1, Option[string]]
+    load(input, result)
+    assert result[0].isSome
+    assert result[0].get() == "Some"
+    assert not result[1].isSome
+  
+  test "Dump Option":
+    let input = [none(int32), some(42'i32), none(int32)]
+    let output = dump(input, tsNone, asTidy, blockOnly)
+    assertStringEqual yamlDirs & "\n- !!null ~\n- 42\n- !!null ~", output
 
   test "Load Table[int, string]":
     let input = "23: dreiundzwanzig\n42: zweiundvierzig"

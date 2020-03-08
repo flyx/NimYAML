@@ -358,14 +358,14 @@ template capitalize(s: string): string =
   when declared(strutils.capitalizeAscii): strutils.capitalizeAscii(s)
   else: strutils.capitalize(s)
 
-macro parserStates(names: varargs[untyped]): typed =
+macro parserStates(names: varargs[untyped]) =
   ## generates proc declaration for each state in list like this:
   ##
   ## proc name(s: YamlStream, e: var YamlStreamEvent):
   ##     bool {.raises: [YamlParserError].}
   result = newStmtList()
   for name in names:
-    let nameId = newIdentNode("state" & capitalize($name.ident))
+    let nameId = newIdentNode("state" & capitalize(name.strVal))
     result.add(newProc(nameId, [ident("bool"), newIdentDefs(ident("s"),
         ident("YamlStream")), newIdentDefs(ident("e"), newNimNode(nnkVarTy).add(
             ident("YamlStreamEvent")))], newEmptyNode()))
@@ -378,21 +378,21 @@ proc processStateAsgns(source, target: NimNode) {.compileTime.} =
   ## `state = [name]` with the appropriate code for changing states.
   for child in source.children:
     if child.kind == nnkAsgn and child[0].kind == nnkIdent:
-      if $child[0].ident == "state":
+      if child[0].strVal == "state":
         assert child[1].kind == nnkIdent
         var newNameId: NimNode
-        if child[1].kind == nnkIdent and $child[1].ident == "stored":
+        if child[1].kind == nnkIdent and child[1].strVal == "stored":
           newNameId = newDotExpr(ident("c"), ident("storedState"))
         else:
           newNameId =
-              newIdentNode("state" & capitalize($child[1].ident))
+              newIdentNode("state" & capitalize(child[1].strVal))
         target.add(newAssignment(newDotExpr(
             newIdentNode("s"), newIdentNode("nextImpl")), newNameId))
         continue
-      elif $child[0].ident == "stored":
+      elif child[0].strVal == "stored":
         assert child[1].kind == nnkIdent
         let newNameId =
-            newIdentNode("state" & capitalize($child[1].ident))
+            newIdentNode("state" & capitalize(child[1].strVal))
         target.add(newAssignment(newDotExpr(newIdentNode("c"),
             newIdentNode("storedState")), newNameId))
         continue
@@ -400,7 +400,7 @@ proc processStateAsgns(source, target: NimNode) {.compileTime.} =
     processStateAsgns(child, processed)
     target.add(processed)
 
-macro parserState(name: untyped, impl: untyped): typed =
+macro parserState(name: untyped, impl: untyped) =
   ## Creates a parser state. Every parser state is a proc with the signature
   ##
   ## proc(s: YamlStream, e: var YamlStreamEvent):
@@ -413,7 +413,7 @@ macro parserState(name: untyped, impl: untyped): typed =
   ## `c`. You can change the parser state by a assignment `state = [newState]`.
   ## The [newState] must have been declared with states(...) previously.
   let
-    nameStr = $name.ident
+    nameStr = name.strVal
     nameId = newIdentNode("state" & capitalize(nameStr))
   var procImpl = quote do:
     debug("state: " & `nameStr`)

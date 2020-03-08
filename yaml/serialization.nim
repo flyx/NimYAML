@@ -16,7 +16,7 @@
 ## type. Please consult the serialization guide on the NimYAML website for more
 ## information.
 
-import tables, typetraits, strutils, macros, streams, times, parseutils
+import tables, typetraits, strutils, macros, streams, times, parseutils, options
 import parser, taglib, presenter, stream, private/internal, hints
 export stream
   # *something* in here needs externally visible `==`(x,y: AnchorId),
@@ -708,7 +708,7 @@ proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
     ))
 
 macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
-                             matched: typed): typed =
+                             matched: typed) =
   let
     dbp = defaultBitvectorProc
     defaultValues = genSym(nskConst, "defaultValues")
@@ -751,7 +751,7 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
           [checkMissing(s, t, tName, child, field, matched, o, defaultValues)]))
     inc(field)
 
-macro fetchTransientIndex(t: typedesc, tIndex: untyped): typed =
+macro fetchTransientIndex(t: typedesc, tIndex: untyped) =
   quote do:
     when compiles(`transientBitvectorProc`(`t`)):
       const `tIndex` = `transientBitvectorProc`(`t`)
@@ -760,7 +760,7 @@ macro fetchTransientIndex(t: typedesc, tIndex: untyped): typed =
 
 macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
                           context: untyped, name: untyped, o: untyped,
-                          matched: untyped, failOnUnknown: bool): typed =
+                          matched: untyped, failOnUnknown: bool) =
   let
     tDecl = getType(t)
     tName = $tDecl[1]
@@ -855,14 +855,14 @@ proc isVariantObject(t: NimNode): bool {.compileTime.} =
     if child.kind == nnkRecCase: return true
   return false
 
-macro injectIgnoredKeyList(t: typedesc, ident: untyped): typed =
+macro injectIgnoredKeyList(t: typedesc, ident: untyped) =
   result = quote do:
     when compiles(`ignoredKeyListProc`(`t`)):
       const `ident` = ignoredKeyLists[`ignoredKeyListproc`(`t`)]
     else:
       const `ident` = newSeq[string]()
 
-macro injectFailOnUnknownKeys(t: typedesc, ident: untyped): typed =
+macro injectFailOnUnknownKeys(t: typedesc, ident: untyped) =
   result = quote do:
     when compiles(`ignoreUnknownKeysProc`(`t`)):
       const `ident` = false
@@ -948,7 +948,7 @@ proc constructObject*[O: object|tuple](
   ## Overridable default implementation for custom object and tuple types
   constructObjectDefault(s, c, result)
 
-macro genRepresentObject(t: typedesc, value, childTagStyle: typed): typed =
+macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
   result = newStmtList()
   let tSym = genSym(nskConst, ":tSym")
   result.add(quote do:
@@ -1068,7 +1068,7 @@ proc representObject*[O: enum](value: O, ts: TagStyle,
 proc yamlTag*[O](T: typedesc[ref O]): TagId {.inline, raises: [].} = yamlTag(O)
 
 macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
-                                     t: typedesc): typed =
+                                     t: typedesc) =
   let tDesc = getType(getType(t)[1])
   yAssert tDesc.kind == nnkObjectTy
   let recCase = tDesc[2][0]
@@ -1198,6 +1198,19 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
       raise s.constructionError("Anchor on non-ref type")
   constructObject(s, c, result)
 
+proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
+    result: var Option[T]) =
+  ## constructs an optional value. A value with a !!null tag will be loaded
+  ## an empty value.
+  let event = s.peek()
+  if event.kind == yamlScalar and event.scalarTag == yTagNull:
+    result = none(T)
+    discard s.next()
+  else:
+    var inner: T
+    constructChild(s, c, inner)
+    result = some(inner)
+
 when defined(JS):
   # in JS, Time is a ref type. Therefore, we need this specialization so that
   # it is not handled by the general ref-type handler.
@@ -1322,6 +1335,16 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
       c.put = origPut
       c.put(ex)
     representChild(value[], childTagStyle, c)
+
+proc representChild*[T](value: Option[T], ts: TagStyle,
+    c: SerializationContext) =
+  ## represents an optional value. If the value is missing, a !!null scalar
+  ## will be produced.
+  if value.isSome:
+    representChild(value.get(), ts, c)
+  else:
+    let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+    c.put(scalarEvent("~", yTagNull))
 
 proc representChild*[O](value: O, ts: TagStyle,
                         c: SerializationContext) =
@@ -1466,7 +1489,7 @@ macro setImplicitVariantObjectMarker(t: typedesc): untyped =
       {.fatal: "Cannot mark object with transient fields as implicit".}
     proc `implicitVariantObjectMarker`*(unused: `t`) = discard
 
-template markAsImplicit*(t: typedesc): typed =
+template markAsImplicit*(t: typedesc) =
   ## Mark a variant object type as implicit. This requires the type to consist
   ## of nothing but a case expression and each branch of the case expression
   ## containing exactly one field - with the exception that one branch may
@@ -1525,7 +1548,7 @@ proc fieldIdent(field: NimNode): NimNode {.compileTime.} =
     raise newException(Exception, "invalid node type (expected ident):" &
         $field.kind)
 
-macro markAsTransient*(t: typedesc, field: untyped): typed =
+macro markAsTransient*(t: typedesc, field: untyped) =
   ## Mark an object field as *transient*, meaning that this object field will
   ## not be serialized when an object instance is dumped as YAML, and also that
   ## the field is not expected to be given in YAML input that is loaded to an
@@ -1556,7 +1579,7 @@ macro markAsTransient*(t: typedesc, field: untyped): typed =
       transientVectors[`transientBitvectorProc`(`t`)].incl(
           getFieldIndex(`t`, `fieldName`))
 
-macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
+macro setDefaultValue*(t: typedesc, field: untyped, value: typed) =
   ## Set the default value of an object field. Fields with default values may
   ## be absent in YAML input when loading an instance of the object. If the
   ## field is absent in the YAML input, the default value is assigned to the
@@ -1590,7 +1613,7 @@ macro setDefaultValue*(t: typedesc, field: untyped, value: typed): typed =
       `defaultValueGetter`(`t`).`fieldName` = `value`
       defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `fieldName`))
 
-macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
+macro ignoreInputKey*(t: typedesc, name: string{lit}) =
   ## Tell NimYAML that when loading an object of type ``t``, any mapping key
   ## named ``name`` shall be ignored. Note that this even ignores the key if
   ## the value of that key is necessary to construct a value of type ``t``,
@@ -1613,7 +1636,7 @@ macro ignoreInputKey*(t: typedesc, name: string{lit}): typed =
     static:
       ignoredKeyLists[`ignoredKeyListProc`(`t`)].add(`name`)
 
-macro ignoreUnknownKeys*(t: typedesc): typed =
+macro ignoreUnknownKeys*(t: typedesc) =
   ## Tell NimYAML that when loading an object or tuple of type ``t``, any
   ## mapping key that does not map to an existing field inside the object or
   ## tuple shall be ignored.
