@@ -71,7 +71,7 @@ type
     ythAfterTimeSpace, ythAfterTimeZ, ythAfterTimePlusMinus, ythTzHour1,
     ythTzHour2, ythTzHourColon, ythTzMinute1, ythTzMinute2
 
-macro typeHintStateMachine(c: untyped, content: varargs[untyped]): typed =
+macro typeHintStateMachine(c: untyped, content: varargs[untyped]) =
   yAssert content.kind == nnkArgList
   result = newNimNode(nnkCaseStmt, content).add(copyNimNode(c))
   for branch in content.children:
@@ -86,7 +86,7 @@ macro typeHintStateMachine(c: untyped, content: varargs[untyped]): typed =
       inc(i)
     for rule in branch[i].children:
       yAssert rule.kind == nnkInfix
-      yAssert $rule[0].ident == "=>"
+      yAssert rule[0].strVal == "=>"
       var stateBranch = newNimNode(nnkOfBranch, rule)
       case rule[1].kind
       of nnkBracket:

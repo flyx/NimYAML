@@ -94,7 +94,7 @@ proc eqImpl(x, y: YamlNode, alreadyVisited: var HashSet[pointer]): bool =
       compare(xValue, matchingValue)
 
 proc `==`*(x, y: YamlNode): bool =
-  var alreadyVisited = initSet[pointer]()
+  var alreadyVisited = initHashSet[pointer]()
   result = eqImpl(x, y, alreadyVisited)
 
 proc `$`*(n: YamlNode): string =
@@ -134,7 +134,7 @@ proc initYamlDoc*(root: YamlNode): YamlDocument = result.root = root
 proc composeNode(s: var YamlStream, tagLib: TagLibrary,
                  c: ConstructionContext):
     YamlNode {.raises: [YamlStreamError, YamlConstructionError].} =
-  template addAnchor(c: ConstructionContext, target: AnchorId): typed =
+  template addAnchor(c: ConstructionContext, target: AnchorId) =
     if target != yAnchorNone:
       when defined(JS):
         {.emit: [c, """.refs.set(""", target, ", ", result, ");"].}
@@ -269,7 +269,7 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
       serializeNode(value, c, a, tagLib)
     c.put(endMapEvent())
 
-template processAnchoredEvent(target: untyped, c: SerializationContext): typed =
+template processAnchoredEvent(target: untyped, c: SerializationContext) =
   var anchorId: AnchorId
   when defined(JS):
     {.emit: [anchorId, " = ", c, ".refs.get(", target, ");"].}
