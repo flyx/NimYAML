@@ -3,7 +3,7 @@ task build, "Compile the YAML module into a library":
   --d:release
   setCommand "c", "yaml"
 
-task tests, "Run all tests":
+task test, "Run all tests":
   --r
   --verbosity:0
   setCommand "c", "test/tests"

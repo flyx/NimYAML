@@ -1,3 +1,9 @@
+## 0.13.1
+
+Bugfixes:
+
+ * Changed `nim tests` to `nim test` to make nim ci happy.
+
 ## 0.13.0
 
 Bugfixes:
