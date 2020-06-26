@@ -1,3 +1,15 @@
+## 0.14.0
+
+Features:
+
+ * **Breaking change**:
+   transient, defaultVal, ignore and implicit are now annotations.
+ * Added ``sparse`` annotation to treat all ``Option`` fields as optional.
+
+Bugfixes:
+
+ * can now use default values with ref objects (#66)
+
 ## 0.13.1
 
 Bugfixes:
