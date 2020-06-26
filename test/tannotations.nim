@@ -25,6 +25,10 @@ type
        strVal: string
      of ckInt:
        intVal: int
+  
+  Sparse {.sparse.} = ref object of RootObj
+     name*: Option[string]
+     description*: Option[string]
 
 suite "Serialization Annotations":
   test "load default value":
@@ -60,3 +64,10 @@ suite "Serialization Annotations":
     assert len(result) == 2
     assert result[0].kind == ckString
     assert result[1].kind == ckInt
+  
+  test "load sparse type":
+    let input = "{}"
+    var result: Sparse
+    load(input, result)
+    assert result.name.isNone
+    assert result.description.isNone

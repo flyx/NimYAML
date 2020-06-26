@@ -93,6 +93,15 @@ You can simply load it into a `seq[int]`. If your YAML file contains differently
 typed values in the same collection, you can use an implicit variant object, see
 below.
 
+A special case is ``Option[T]``: This type will either contain a value or not.
+NimYAML maps ``!!null`` YAML scalars to the option's ``none(T)`` value.
+This also works for ``ref`` types because ``Option`` for those types will use
+``nil`` as its ``none(T)`` value.
+
+By default, ``Option`` fields must be given even if they are ``none(T)``.
+You can circumvent this by putting the annotation ``{.sparse.}`` on the type
+containing the ``Option`` field.
+
 Reference Types
 ---------------
 

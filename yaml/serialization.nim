@@ -1,5 +1,5 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2016 Felix Krause
+#        (c) Copyright 2016 - 2020 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -18,7 +18,7 @@
 
 import tables, typetraits, strutils, macros, streams, times, parseutils, options
 import parser, taglib, presenter, stream, private/internal, hints, annotations
-export stream, macros, annotations
+export stream, macros, annotations, options
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.
 
@@ -656,15 +656,32 @@ proc addDefaultOr(tName: string, i: int, o: NimNode,
       `o`.`field` = `o`.`field`.getCustomPragmaVal(defaultVal)
     else: `elseBranch`
 
+proc hasSparse(t: typedesc): bool {.compileTime.} =
+  when compiles(t.hasCustomPragma(sparse)):
+    return t.hasCustomPragma(sparse)
+  else:
+    return false
+
+proc getOptionInner(fType: NimNode): NimNode {.compileTime.} =
+  if fType.kind == nnkBracketExpr and len(fType) == 2 and
+      fType[1].kind == nnkSym:
+    return newIdentNode($fType[1])
+  else: return nil
+
 proc checkMissing(s: NimNode, t: NimNode, tName: string, field: NimNode,
                   i: int, matched, o: NimNode):
     NimNode {.compileTime.} =
-  let fName = escape($field)
+  let
+    fType = getTypeInst(field)
+    fName = escape($field)
+    optionInner = getOptionInner(fType)
   result = quote do:
     when not `o`.`field`.hasCustomPragma(transient):
       if not `matched`[`i`]:
         when `o`.`field`.hasCustomPragma(defaultVal):
           `o`.`field` = `o`.`field`.getCustomPragmaVal(defaultVal)
+        elif hasSparse(`t`) and `o`.`field` is Option:
+          `o`.`field` = none(`optionInner`)
         else:
           raise constructionError(`s`, "While constructing " & `tName` &
               ": Missing field: " & `fName`)
@@ -700,7 +717,8 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
   var field = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
-      result.add(checkMissing(s, t, tName, child[0], field, matched, o))
+      result.add(checkMissing(
+          s, t, tName, child[0], field, matched, o))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         var
@@ -716,7 +734,8 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
         else: internalError("Unexpected child kind: " & $child[bIndex].kind)
         for item in child[bIndex][recListIndex].recListItems:
           inc(field)
-          discChecks.add(checkMissing(s, t, tName, item, field, matched, o))
+          discChecks.add(checkMissing(
+              s, t, tName, item, field, matched, o))
         result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
             "in", curValues), discChecks)))
     else:

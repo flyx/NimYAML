@@ -12,7 +12,7 @@
 ## (de)serialization behavior of those fields.
 
 template defaultVal*(value : typed) {.pragma.}
-  ## This annotation can be assigned to an object field. During deserialization,
+  ## This annotation can be put on an object field. During deserialization,
   ## if no value for this field is given, the ``value`` parameter of this
   ## annotation is used as value.
   ##
@@ -22,6 +22,19 @@ template defaultVal*(value : typed) {.pragma.}
   ##   type MyObject = object
   ##     a {.defaultVal: "foo".}: string
   ##     c {.defaultVal: (1,2).}: tuple[x, y: int]
+
+template sparse*() {.pragma.}
+  ## This annotation can be put on an object type. During deserialization,
+  ## the input may omit any field that has an ``Option[T]`` type (for any
+  ## concrete ``T``) and that field will be treated as if it had the annotation
+  ## ``{.defaultVal: none(T).}``.
+  ##
+  ## Example usage:
+  ##
+  ## .. code-block::
+  ##  type MyObject {.sparse.} = object
+  ##    a: Option[string]
+  ##    b: Option[int]
 
 template transient*() {.pragma.}
   ## This annotation can be put on an object field. Any object field
