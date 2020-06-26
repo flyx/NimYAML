@@ -17,8 +17,8 @@
 ## information.
 
 import tables, typetraits, strutils, macros, streams, times, parseutils, options
-import parser, taglib, presenter, stream, private/internal, hints
-export stream
+import parser, taglib, presenter, stream, private/internal, hints, annotations
+export stream, macros, annotations
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.
 
@@ -615,12 +615,13 @@ proc fieldCount(t: NimNode): int {.compiletime.} =
                var increment = 0
                case child[bIndex].kind
                of nnkOfBranch:
+                  let content = child[bIndex][len(child[bIndex])-1]
                   # We cannot assume that child[bIndex][1] is a RecList due to
                   # a one-liner like 'of akDog: barkometer' not resulting in a
                   # RecList but in an Ident node.
-                  case child[bIndex][1].kind
+                  case content.kind
                   of nnkRecList:
-                     increment = len(child[bIndex][1])
+                     increment = len(content)
                   else:
                      increment = 1
                of nnkElse:
@@ -648,75 +649,50 @@ proc checkDuplicate(s: NimNode, tName: string, name: string, i: int,
       newLit("While constructing " & tName & ": Duplicate field: " &
       escape(name))))))
 
-let
-  implicitVariantObjectMarker {.compileTime.} =
-      newIdentNode(":implicitVariantObject")
-  transientBitvectorProc {.compileTime.} =
-      newIdentNode(":transientObject")
-  defaultBitvectorProc {.compileTime.} =
-      newIdentNode(":defaultBitvector")
-  defaultValueGetter {.compileTime.} =
-      newIdentNode(":defaultValueGetter")
-  ignoredKeyListProc {.compileTime.} =
-      newIdentNode(":ignoredKeyList")
-  ignoreUnknownKeysProc {.compileTime.} =
-      newIdentNode(":ignoreUnknownKeys")
-
-var
-  transientVectors {.compileTime.} = newSeq[set[int16]]()
-  defaultVectors {.compileTime.} = newSeq[set[int16]]()
-  ignoredKeyLists {.compileTime.} = newSeq[seq[string]]()
-
 proc addDefaultOr(tName: string, i: int, o: NimNode,
-    field, elseBranch, defaultValues: NimNode): NimNode {.compileTime.} =
-  let
-    dbp = defaultBitvectorProc
-    t = newIdentNode(tName)
+    field, elseBranch: NimNode): NimNode {.compileTime.} =
   result = quote do:
-    when compiles(`dbp`(`t`)):
-      when `i` in defaultVectors[`dbp`(`t`)]:
-        `o`.`field` = `defaultValues`.`field`
-      else: `elseBranch`
+    when `o`.`field`.hasCustomPragma(defaultVal):
+      `o`.`field` = `o`.`field`.getCustomPragmaVal(defaultVal)
     else: `elseBranch`
 
 proc checkMissing(s: NimNode, t: NimNode, tName: string, field: NimNode,
-                  i: int, matched, o, defaultValues: NimNode):
+                  i: int, matched, o: NimNode):
     NimNode {.compileTime.} =
-  result = newIfStmt((newCall("not", newNimNode(nnkBracketExpr).add(matched,
-      newLit(i))), addDefaultOr(tName, i, o, field,
-      newNimNode(nnkRaiseStmt).add(newCall(
-      bindSym("constructionError"), s, newLit("While constructing " &
-      tName & ": Missing field: " & escape($field)))), defaultValues)))
+  let fName = escape($field)
+  result = quote do:
+    when not `o`.`field`.hasCustomPragma(transient):
+      if not `matched`[`i`]:
+        when `o`.`field`.hasCustomPragma(defaultVal):
+          `o`.`field` = `o`.`field`.getCustomPragmaVal(defaultVal)
+        else:
+          raise constructionError(`s`, "While constructing " & `tName` &
+              ": Missing field: " & `fName`)
 
 proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
   newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
       newLit(true))
 
-proc ifNotTransient(tSym: NimNode, fieldIndex: int, content: openarray[NimNode],
-    elseError: bool = false, s: NimNode = nil, tName, fName: string = ""):
+proc ifNotTransient(o, field: NimNode,
+    content: openarray[NimNode],
+    elseError: bool, s: NimNode, tName, fName: string = ""):
     NimNode {.compileTime.} =
   var stmts = newStmtList(content)
-  result = quote do:
-    when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
-      `stmts`
-  if result.kind == nnkStmtList and result.len == 1: result = result[0]
-  result = newStmtList(result)
   if elseError:
-    result[0].add(newNimNode(nnkElse).add(quote do:
-      raise constructionError(`s`, "While constructing " & `tName` &
-          ": Field \"" & `fName` & "\" is transient and may not occur in input")
-    ))
+    result = quote do:
+      when `o`.`field`.hasCustomPragma(transient):
+        raise constructionError(`s`, "While constructing " & `tName` &
+            ": Field \"" & `fName` & "\" is transient and may not occur in input")
+      else:
+        `stmts`
+  else:
+    result = quote do:
+      when not `o`.`field`.hasCustomPragma(transient):
+        `stmts`
 
-macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
+macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
                              matched: typed) =
-  let
-    dbp = defaultBitvectorProc
-    defaultValues = genSym(nskConst, "defaultValues")
-  result = quote do:
-    when compiles(`dbp`(`t`)):
-      const `defaultValues` = `defaultValueGetter`(`t`)
-  if result.kind == nnkStmtList and result.len == 1: result = result[0]
-  result = newStmtList(result)
+  result = newStmtList()
   let
     tDecl = getType(t)
     tName = $tDecl[1]
@@ -724,8 +700,7 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
   var field = 0
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
-      result.add(checkMissing(s, t, tName, child[0], field, matched, o,
-                              defaultValues))
+      result.add(checkMissing(s, t, tName, child[0], field, matched, o))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         var
@@ -741,24 +716,14 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, tIndex: int, o: typed,
         else: internalError("Unexpected child kind: " & $child[bIndex].kind)
         for item in child[bIndex][recListIndex].recListItems:
           inc(field)
-          discChecks.add(checkMissing(s, t, tName, item, field, matched, o,
-                                      defaultValues))
-        result.add(ifNotTransient(tIndex, field,
-            [newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
-            "in", curValues), discChecks))]))
+          discChecks.add(checkMissing(s, t, tName, item, field, matched, o))
+        result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
+            "in", curValues), discChecks)))
     else:
-      result.add(ifNotTransient(tIndex, field,
-          [checkMissing(s, t, tName, child, field, matched, o, defaultValues)]))
+      result.add(checkMissing(s, t, tName, child, field, matched, o))
     inc(field)
 
-macro fetchTransientIndex(t: typedesc, tIndex: untyped) =
-  quote do:
-    when compiles(`transientBitvectorProc`(`t`)):
-      const `tIndex` = `transientBitvectorProc`(`t`)
-    else:
-      const `tIndex` = -1
-
-macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
+macro constructFieldValue(t: typedesc, stream: untyped,
                           context: untyped, name: untyped, o: untyped,
                           matched: untyped, failOnUnknown: bool) =
   let
@@ -823,7 +788,7 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
               newCall(bindSym("constructionError"), stream,
               infix(newStrLitNode("Field " & $item & " not allowed for " &
               $child[0] & " == "), "&", prefix(discriminant, "$"))))))
-          ob.add(ifNotTransient(tIndex, fieldIndex,
+          ob.add(ifNotTransient(o, item,
               [checkDuplicate(stream, tName, $item, fieldIndex, matched),
               ifStmt, markAsFound(fieldIndex, matched)], true, stream, tName,
               $item))
@@ -832,7 +797,7 @@ macro constructFieldValue(t: typedesc, tIndex: int, stream: untyped,
       yAssert child.kind == nnkSym
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
       let field = newDotExpr(o, newIdentNode($child))
-      ob.add(ifNotTransient(tIndex, fieldIndex,
+      ob.add(ifNotTransient(o, child,
           [checkDuplicate(stream, tName, $child, fieldIndex, matched),
           newCall("constructChild", stream, context, field),
           markAsFound(fieldIndex, matched)], true, stream, tName, $child))
@@ -855,19 +820,11 @@ proc isVariantObject(t: NimNode): bool {.compileTime.} =
     if child.kind == nnkRecCase: return true
   return false
 
-macro injectIgnoredKeyList(t: typedesc, ident: untyped) =
-  result = quote do:
-    when compiles(`ignoredKeyListProc`(`t`)):
-      const `ident` = ignoredKeyLists[`ignoredKeyListproc`(`t`)]
-    else:
-      const `ident` = newSeq[string]()
-
-macro injectFailOnUnknownKeys(t: typedesc, ident: untyped) =
-  result = quote do:
-    when compiles(`ignoreUnknownKeysProc`(`t`)):
-      const `ident` = false
-    else:
-      const `ident` = true
+proc hasIgnore(t: typedesc): bool {.compileTime.} =
+  when compiles(t.hasCustomPragma(ignore)):
+    return t.hasCustomPragma(ignore)
+  else:
+    return false
 
 proc constructObjectDefault*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
@@ -882,12 +839,14 @@ proc constructObjectDefault*[O: object|tuple](
   const
     startKind = when isVariantObject(getType(O)): yamlStartSeq else: yamlStartMap
     endKind = when isVariantObject(getType(O)): yamlEndSeq else: yamlEndMap
-  fetchTransientIndex(O, tIndex)
   if e.kind != startKind:
     raise s.constructionError("While constructing " &
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
-  injectIgnoredKeyList(O, ignoredKeyList)
-  injectFailOnUnknownKeys(O, failOnUnknown)
+  when hasIgnore(O):
+    const ignoredKeyList = O.getCustomPragmaVal(ignore)
+    const failOnUnknown = len(ignoredKeyList) > 0
+  else:
+    const failOnUnknown = true
   while s.peek.kind != endKind:
     e = s.next()
     when isVariantObject(getType(O)):
@@ -915,18 +874,20 @@ proc constructObjectDefault*[O: object|tuple](
           raise s.constructionError("While constructing " &
               typetraits.name(O) & ": Unknown field: " & escape(name))
     else:
-      if name notin ignoredKeyList:
-        constructFieldValue(O, tIndex, s, c, name, result, matched,
-                            failOnUnknown)
+      when hasIgnore(O) and failOnUnknown:
+        if name notin ignoredKeyList:
+          constructFieldValue(O, s, c, name, result, matched, failOnUnknown)
+        else:
+          e = s.next()
+          var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
+          while depth > 0:
+            case s.next().kind
+            of yamlStartMap, yamlStartSeq: inc(depth)
+            of yamlEndMap, yamlEndSeq: dec(depth)
+            of yamlScalar: discard
+            else: internalError("Unexpected event kind.")
       else:
-        e = s.next()
-        var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
-        while depth > 0:
-          case s.next().kind
-          of yamlStartMap, yamlStartSeq: inc(depth)
-          of yamlEndMap, yamlEndSeq: dec(depth)
-          of yamlScalar: discard
-          else: internalError("Unexpected event kind.")
+        constructFieldValue(O, s, c, name, result, matched, failOnUnknown)
     when isVariantObject(getType(O)):
       e = s.next()
       if e.kind != yamlEndMap:
@@ -940,7 +901,7 @@ proc constructObjectDefault*[O: object|tuple](
         raise s.constructionError("While constructing " &
             typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
-  else: ensureAllFieldsPresent(s, O, tIndex, result, matched)
+  else: ensureAllFieldsPresent(s, O, result, matched)
 
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
@@ -950,13 +911,6 @@ proc constructObject*[O: object|tuple](
 
 macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
   result = newStmtList()
-  let tSym = genSym(nskConst, ":tSym")
-  result.add(quote do:
-    when compiles(`transientBitvectorProc`(`t`)):
-      const `tSym` = `transientBitvectorProc`(`t`)
-    else:
-      const `tSym` = -1
-  )
   let
     tDecl = getType(t)
     tDesc = getType(tDecl[1])
@@ -998,7 +952,7 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
               name = $item
               itemAccessor = newDotExpr(value, newIdentNode(name))
             curStmtList.add(quote do:
-              when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
+              when not `itemAccessor`.hasCustomPragma(transient):
                 c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
                 c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
                     yTagQuestionMark else: yTagNimField, yAnchorNone))
@@ -1015,7 +969,7 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
         name = $child
         childAccessor = newDotExpr(value, newIdentNode(name))
       result.add(quote do:
-        when `tSym` == -1 or `fieldIndex` notin transientVectors[`tSym`]:
+        when not `childAccessor`.hasCustomPragma(transient):
           when bool(`isVO`): c.put(startMapEvent(yTagQuestionMark, yAnchorNone))
           c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
               yTagQuestionMark else: yTagNimField, yAnchorNone))
@@ -1110,13 +1064,33 @@ macro constructImplicitVariantObject(s, c, r, possibleTagIds: untyped,
         newNimNode(nnkDiscardStmt).add(newEmptyNode())
   ))))
 
-macro isImplicitVariantObject(o: typed): untyped =
-  result = newCall("compiles", newCall(implicitVariantObjectMarker, o))
+proc isImplicitVariantObject(t: typedesc): bool {.compileTime.} =
+  when compiles(t.hasCustomPragma(implicit)):
+    return t.hasCustomPragma(implicit)
+  else:
+    return false
+
+proc canBeImplicit(t: typedesc): bool {.compileTime.} =
+  let tDesc = getType(t)
+  if tDesc.kind != nnkObjectTy: return false
+  if tDesc[2].len != 1: return false
+  if tDesc[2][0].kind != nnkRecCase: return false
+  var foundEmptyBranch = false
+  for i in 1.. tDesc[2][0].len - 1:
+    case tDesc[2][0][i][1].recListlen # branch contents
+    of 0:
+      if foundEmptyBranch: return false
+      else: foundEmptyBranch = true
+    of 1: discard
+    else: return false
+  return true
 
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var T) =
   let item = s.peek()
-  when isImplicitVariantObject(result):
+  when isImplicitVariantObject(T):
+    when not canBeImplicit(T):
+      {. fatal: "This type cannot be marked as implicit" .}
     var possibleTagIds = newSeq[TagId]()
     case item.kind
     of yamlScalar:
@@ -1348,7 +1322,7 @@ proc representChild*[T](value: Option[T], ts: TagStyle,
 
 proc representChild*[O](value: O, ts: TagStyle,
                         c: SerializationContext) =
-  when isImplicitVariantObject(value):
+  when isImplicitVariantObject(O):
     # todo: this would probably be nicer if constructed with a macro
     var count = 0
     for name, field in fieldPairs(value):
@@ -1467,185 +1441,3 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
   try: result = present(events, serializationTagLibrary, options)
   except YamlStreamError:
     internalError("Unexpected exception: " & $getCurrentException().name)
-
-proc canBeImplicit(t: typedesc): bool {.compileTime.} =
-  let tDesc = getType(t)
-  if tDesc.kind != nnkObjectTy: return false
-  if tDesc[2].len != 1: return false
-  if tDesc[2][0].kind != nnkRecCase: return false
-  var foundEmptyBranch = false
-  for i in 1.. tDesc[2][0].len - 1:
-    case tDesc[2][0][i][1].recListlen # branch contents
-    of 0:
-      if foundEmptyBranch: return false
-      else: foundEmptyBranch = true
-    of 1: discard
-    else: return false
-  return true
-
-macro setImplicitVariantObjectMarker(t: typedesc): untyped =
-  result = quote do:
-    when compiles(`transientBitvectorProc`(`t`)):
-      {.fatal: "Cannot mark object with transient fields as implicit".}
-    proc `implicitVariantObjectMarker`*(unused: `t`) = discard
-
-template markAsImplicit*(t: typedesc) =
-  ## Mark a variant object type as implicit. This requires the type to consist
-  ## of nothing but a case expression and each branch of the case expression
-  ## containing exactly one field - with the exception that one branch may
-  ## contain zero fields.
-  when canBeImplicit(t):
-    # this will be checked by means of compiles(implicitVariantObject(...))
-    setImplicitVariantObjectMarker(t)
-  else:
-    {. fatal: "This type cannot be marked as implicit" .}
-
-macro getFieldIndex(t: typedesc, field: untyped): untyped =
-  let
-    tDecl = getType(t)
-    tName = $tDecl[1]
-    tDesc = getType(tDecl[1])
-    fieldName = $field
-  var
-    fieldIndex = 0
-    found = false
-  block outer:
-    for child in tDesc[2].children:
-      if child.kind == nnkRecCase:
-        for bIndex in 1 .. len(child) - 1:
-          var bChildIndex = 0
-          case child[bIndex].kind
-          of nnkOfBranch:
-            while child[bIndex][bChildIndex].kind == nnkIntLit: inc(bChildIndex)
-          of nnkElse: discard
-          else:
-            internalError("Unexpected child kind: " &
-                $child[bIndex][bChildIndex].kind)
-          for item in child[bIndex][bChildIndex].recListItems:
-            inc(fieldIndex)
-            yAssert item.kind == nnkSym
-            if $item == fieldName:
-              found = true
-              break outer
-      else:
-        yAssert child.kind == nnkSym
-        if $child == fieldName:
-          found = true
-          break
-      inc(fieldIndex)
-  if not found:
-    let msg = "Type " & tName & " has no field " & fieldName & '!'
-    result = quote do: {.fatal: `msg`.}
-  else:
-    result = newNimNode(nnkInt16Lit)
-    result.intVal = fieldIndex
-
-proc fieldIdent(field: NimNode): NimNode {.compileTime.} =
-  case field.kind
-  of nnkIdent: result = field
-  of nnkAccQuoted: result = field[0]
-  else:
-    raise newException(Exception, "invalid node type (expected ident):" &
-        $field.kind)
-
-macro markAsTransient*(t: typedesc, field: untyped) =
-  ## Mark an object field as *transient*, meaning that this object field will
-  ## not be serialized when an object instance is dumped as YAML, and also that
-  ## the field is not expected to be given in YAML input that is loaded to an
-  ## object instance.
-  ##
-  ## Example usage:
-  ##
-  ## .. code-block::
-  ##   type MyObject = object
-  ##     a, b: string
-  ##     c: int
-  ##   markAsTransient(MyObject, a)
-  ##   markAsTransient(MyObject, c)
-  ##
-  ## This does not work if the object has been marked as implicit.
-  let
-    nextBitvectorIndex = transientVectors.len
-    fieldName = fieldIdent(field)
-  result = quote do:
-    when compiles(`implicitVariantObjectMarker`(`t`)):
-      {.fatal: "Cannot mark fields of implicit variant objects as transient." .}
-    when not compiles(`transientBitvectorProc`(`t`)):
-      proc `transientBitvectorProc`*(myType: typedesc[`t`]): int
-          {.compileTime.} =
-        `nextBitvectorIndex`
-      static: transientVectors.add({})
-    static:
-      transientVectors[`transientBitvectorProc`(`t`)].incl(
-          getFieldIndex(`t`, `fieldName`))
-
-macro setDefaultValue*(t: typedesc, field: untyped, value: typed) =
-  ## Set the default value of an object field. Fields with default values may
-  ## be absent in YAML input when loading an instance of the object. If the
-  ## field is absent in the YAML input, the default value is assigned to the
-  ## field.
-  ##
-  ## Example usage:
-  ##
-  ## .. code-block::
-  ##   type MyObject = object
-  ##     a, b: string
-  ##     c: tuple[x, y: int]
-  ##   setDefaultValue(MyObject, a, "foo")
-  ##   setDefaultValue(MyObject, c, (1, 2))
-  let
-    dSym = genSym(nskVar, ":default")
-    nextBitvectorIndex = defaultVectors.len
-    fieldName = fieldIdent(field)
-  result = quote do:
-    when compiles(`transientBitvectorProc`(`t`)):
-      {.fatal: "Cannot set default value of transient field".}
-    elif compiles(`implicitVariantObjectMarker`(`t`)):
-      {.fatal: "Cannot set default value of implicit variant objects.".}
-    when not compiles(`defaultValueGetter`(`t`)):
-      var `dSym` {.compileTime.}: `t`
-      template `defaultValueGetter`(t: typedesc[`t`]): auto =
-        `dSym`
-      proc `defaultBitvectorProc`*(myType: typedesc[`t`]): int
-          {.compileTime.} = `nextBitvectorIndex`
-      static: defaultVectors.add({})
-    static:
-      `defaultValueGetter`(`t`).`fieldName` = `value`
-      defaultVectors[`defaultBitvectorProc`(`t`)].incl(getFieldIndex(`t`, `fieldName`))
-
-macro ignoreInputKey*(t: typedesc, name: string{lit}) =
-  ## Tell NimYAML that when loading an object of type ``t``, any mapping key
-  ## named ``name`` shall be ignored. Note that this even ignores the key if
-  ## the value of that key is necessary to construct a value of type ``t``,
-  ## making deserialization fail.
-  ##
-  ## Example usage:
-  ##
-  ## .. code-block::
-  ##   type MyObject = object
-  ##     a, b: string
-  ##   ignoreInputKey(MyObject, "c")
-  let nextIgnoredKeyList = ignoredKeyLists.len
-  result = quote do:
-    when not compiles(`ignoredKeyListProc`(`t`)):
-      proc `ignoredKeyListProc`*(t: typedesc[`t`]): int {.compileTime.} =
-        `nextIgnoredKeyList`
-      static: ignoredKeyLists.add(@[])
-    when `name` in ignoredKeyLists[`ignoredKeyListProc`(`t`)]:
-      {.fatal: "Input key " & `name` & " is already ignored!".}
-    static:
-      ignoredKeyLists[`ignoredKeyListProc`(`t`)].add(`name`)
-
-macro ignoreUnknownKeys*(t: typedesc) =
-  ## Tell NimYAML that when loading an object or tuple of type ``t``, any
-  ## mapping key that does not map to an existing field inside the object or
-  ## tuple shall be ignored.
-  ##
-  ## Example usage:
-  ##
-  ## .. code-block::
-  ##   type MyObject = object
-  ##     a, b: string
-  ##   ignoreUnknownKeys(MyObject)
-  result = quote do:
-    proc `ignoreUnknownKeysProc`*(t: typedesc[`t`]): bool {.compileTime.} = true

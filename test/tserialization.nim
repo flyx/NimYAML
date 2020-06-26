@@ -38,38 +38,28 @@ type
     of akDog: barkometer: int
 
   DumbEnum = enum
-    deA, deB, deC, deD
+    deA, deB, deC
 
   NonVariantWithTransient = object
-    a, b, c, d: string
+    a {.transient.}, b, c {.transient.}, d: string
 
   VariantWithTransient = object
-    gStorable, gTemporary: string
+    gStorable: string
+    gTemporary {.transient.}: string
     case kind: DumbEnum
-    of deA, deB:
-      cStorable, cTemporary: string
-    of deC:
+    of deA:
+      cStorable: string
+      cTemporary {.transient.}: string
+    of deB:
       alwaysThere: int
-    of deD:
-      neverThere: int
+    of deC:
+      neverThere {.transient.}: int
 
   WithDefault = object
-    a, b, c, d: string
+    a, b {.defaultVal: "b".}, c, d {.defaultVal: "d".}: string
 
-  WithIgnoredField = object
+  WithIgnoredField {.ignore: ["z"].} = object
     x, y: int
-
-markAsTransient(NonVariantWithTransient, a)
-markAsTransient(NonVariantWithTransient, c)
-
-markAsTransient(VariantWithTransient, gTemporary)
-markAsTransient(VariantWithTransient, cTemporary)
-markAsTransient(VariantWithTransient, neverThere)
-
-setDefaultValue(WithDefault, b, "b")
-setDefaultValue(WithDefault, d, "d")
-
-ignoreInputKey(WithIgnoredField, "z")
 
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
@@ -277,7 +267,7 @@ suite "Serialization":
     assert result[0].isSome
     assert result[0].get() == "Some"
     assert not result[1].isSome
-  
+
   test "Dump Option":
     let input = [none(int32), some(42'i32), none(int32)]
     let output = dump(input, tsNone, asTidy, blockOnly)
@@ -531,26 +521,26 @@ suite "Serialization":
     assertStringEqual yamlDirs & "\nb: b\nd: d", output
 
   test "Load variant object with transient fields":
-    let input = "[[gStorable: gs, kind: deB, cStorable: cs], [gStorable: a, kind: deD]]"
+    let input = "[[gStorable: gs, kind: deA, cStorable: cs], [gStorable: a, kind: deC]]"
     var result: seq[VariantWithTransient]
     load(input, result)
     assert result.len == 2
-    assert result[0].kind == deB
+    assert result[0].kind == deA
     assert result[0].gStorable == "gs"
     assert result[0].cStorable == "cs"
-    assert result[1].kind == deD
+    assert result[1].kind == deC
     assert result[1].gStorable == "a"
 
-  test "Load variant object with transient fields":
-    let input = "[gStorable: gc, kind: deD, neverThere: foo]"
+  test "Load variant object with transient fields, error":
+    let input = "[gStorable: gc, kind: deC, neverThere: foo]"
     var result: VariantWithTransient
     expectConstructionError(1, 38, "While constructing VariantWithTransient: Field \"neverThere\" is transient and may not occur in input"):
       load(input, result)
 
   test "Dump variant object with transient fields":
-    let input = @[VariantWithTransient(kind: deB, gStorable: "gs",
+    let input = @[VariantWithTransient(kind: deA, gStorable: "gs",
         gTemporary: "gt", cStorable: "cs", cTemporary: "ct"),
-        VariantWithTransient(kind: deD, gStorable: "a", gTemporary: "b",
+        VariantWithTransient(kind: deC, gStorable: "a", gTemporary: "b",
         neverThere: 42)]
     let output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & """
@@ -559,14 +549,14 @@ suite "Serialization":
   - 
     gStorable: gs
   - 
-    kind: deB
+    kind: deA
   - 
     cStorable: cs
 - 
   - 
     gStorable: a
   - 
-    kind: deD""", output
+    kind: deC""", output
 
   test "Load object with ignored key":
     let input = "[{x: 1, y: 2}, {x: 3, z: 4, y: 5}, {z: [1, 2, 3], x: 4, y: 5}]"
@@ -608,9 +598,9 @@ next:
       let input = yamlDirs & """!n!system:seq(example.net:Node) 
   - &a 
     value: a
-    next: &b 
+    next: &b
       value: b
-      next: &c 
+      next: &c
         value: c
         next: *a
   - *b

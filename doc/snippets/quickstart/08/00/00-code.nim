@@ -6,7 +6,11 @@ type
   ContainerKind = enum
     ckString, ckInt, ckBool, ckPerson, ckNone
 
-  Container = object
+  # {.implicit.} tells NimYAML to use Container
+  # as implicit type.
+  # only possible with variant object types where
+  # each branch contains at most one object.
+  Container {.implicit.} = object
     case kind: ContainerKind
     of ckString:
       strVal: string
@@ -20,11 +24,6 @@ type
       discard
 
 setTagUri(Person, nimTag("demo:Person"))
-
-# tell NimYAML to use Container as implicit type.
-# only possible with variant object types where
-# each branch contains at most one object.
-markAsImplicit(Container)
 
 var list: seq[Container]
 
