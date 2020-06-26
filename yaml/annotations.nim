@@ -46,10 +46,8 @@ template transient*() {.pragma.}
   ##
   ## .. code-block::
   ##   type MyObject = object
-  ##     a, b: string
-  ##     c: int
-  ##   markAsTransient(MyObject, a)
-  ##   markAsTransient(MyObject, c)
+  ##     a {.transient.}, b: string
+  ##     c {.transient.}: int
 
 template ignore*(keys : openarray[string]) {.pragma.}
   ## This annotation can be put on an object type. All keys with the given
