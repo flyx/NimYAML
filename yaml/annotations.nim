@@ -13,7 +13,7 @@
 
 template defaultVal*(value : typed) {.pragma.}
   ## This annotation can be assigned to an object field. During deserialization,
-  ## if no value for this field is given, the `value` parameter of this
+  ## if no value for this field is given, the ``value`` parameter of this
   ## annotation is used as value.
   ##
   ## Example usage:
@@ -24,7 +24,7 @@ template defaultVal*(value : typed) {.pragma.}
   ##     c {.defaultVal: (1,2).}: tuple[x, y: int]
 
 template transient*() {.pragma.}
-  ## This annotation can be assigned to an object field. Any object field
+  ## This annotation can be put on an object field. Any object field
   ## carrying this annotation will not be serialized to YAML and cannot be given
   ## a value when deserializing. Giving a value for this field during
   ## deserialization is an error.
@@ -39,14 +39,17 @@ template transient*() {.pragma.}
   ##   markAsTransient(MyObject, c)
 
 template ignore*(keys : openarray[string]) {.pragma.}
-  ## This annotation can be assigned to an object type. All keys with the given
+  ## This annotation can be put on an object type. All keys with the given
   ## names in the input YAML mapping will be ignored when deserializing a value
   ## of this type. This can be used to ignore parts of the YAML structure.
+  ##
+  ## You may use it with an empty list (``{.ignore: [].}``) to ignore *all*
+  ## unknown keys.
   ##
   ## Example usage:
   ##
   ## .. code-block::
-  ##   type MyObject {.ignore("c").} = object
+  ##   type MyObject {.ignore: ["c"].} = object
   ##     a, b: string
 
 template implicit*() {.pragma.}

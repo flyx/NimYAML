@@ -72,28 +72,26 @@ supported.
 To support new scalar types, you must implement the ``constructObject()`` and
 ``representObject()`` procs on that type (see below).
 
-Collection Types
-----------------
+Container Types
+---------------
 
-NimYAML supports Nim's ``array``, ``set``, ``seq``, ``Table`` and
-``OrderedTable`` types out of the box. Unlike the native YAML types ``!!seq``
-and ``!!map``, Nim's collection types define the type of all their contained
-items (or keys and values). So YAML objects with heterogeneous types in them
-cannot be loaded to Nim collection types. For example, this sequence:
+NimYAML supports Nim's ``array``, ``set``, ``seq``, ``Table``, ``OrderedTable``
+and ``Option`` types out of the box. While YAML's standard types ``!!seq`` and
+``!!map`` allow arbitrarily typed content, in Nim the contained type must be
+known at compile time. Therefore, Nim cannot load ``!!seq`` and ``!!map``.
+
+However, it doesn't need to. For example, if you have a YAML file like this:
 
 .. code-block:: yaml
-
+    
     %YAML 1.2
-    --- !!seq
-    - !!int 1
-    - !!string foo
+    ---
+    - 1
+    - 2
 
-Cannot be loaded to a Nim ``seq``. For this reason, you cannot load YAML's
-native ``!!map`` and ``!!seq`` types directly into Nim types. However, you can
-use variant object types to process heterogeneous value lists, see below.
-
-Nim ``seq`` types may be ``nil``. This is handled by serializing them to an
-empty scalar with the tag ``!nim:nil:seq``.
+You can simply load it into a `seq[int]`. If your YAML file contains differently
+typed values in the same collection, you can use an implicit variant object, see
+below.
 
 Reference Types
 ---------------
@@ -182,7 +180,7 @@ list in order to load it:
   type
     ContainerKind = enum
       ckInt, ckString, ckNone
-    Container = object
+    Container {.implicit.} = object
       case kind: ContainerKind
       of ckInt:
         intVal: int
@@ -191,14 +189,12 @@ list in order to load it:
       of ckNone:
         discard
 
-  markAsImplicit(Container)
-
   var
     list: seq[Container]
     s = newFileStream("in.yaml")
   load(s, list)
 
-``markAsImplicit`` tells NimYAML that you want to use the type ``Container``
+``{.implicit.}`` tells NimYAML that you want to use the type ``Container``
 implicitly, i.e. its fields are not visible in YAML, and are set dependent on
 the value type that gets loaded into it. The type ``Container`` must fullfil the
 following requirements:
@@ -251,11 +247,8 @@ for example use it on a certain ``seq`` type:
 Customizing Field Handling
 ==========================
 
-NimYAML allows the user to specify special handling of certain object fields.
-This configuration will be applied at compile time when NimYAML generates the
-(de)serialization code for an object type. It is important that the
-configuration happens before any YAML operations (e.g. ``load`` or ``dump``) are
-executed on a variable of the object type.
+NimYAML allows the user to specify special handling of certain object fields via
+annotation pragmas.
 
 Transient Fields
 ----------------
@@ -271,27 +264,23 @@ Example:
 
   type MyObject: object
     storable: string
-    temporary: string
-
-  markAsTransient(MyObject, temporary)
+    temporary {.transient.}: string
 
 Default Values
 --------------
 
-When you load YAML that has been written by a human, you might want to allow the
-user to omit certain fields, which should then be filled with a default value.
-You can do that like this:
+When you load YAML, you might want to allow for the omission certain fields,
+which should then be filled with a default value. You can do that like this:
 
 .. code-block:: nim
 
   type MyObject: object
     required: string
-    optional: string
+    optional {.defaultVal: "default value".}: string
 
-  setDefaultValue(MyObject, optional, "default value")
-
-Whenever ``MyObject`` now is loaded and the input stream does not contain the
-field ``optional``, that field will be set to the value ``"default value"``.
+Whenever a value of type ``MyObject`` now is loaded and the input stream does
+not contain the field ``optional``, that field will be set to the value
+``"default value"``.
 
 Customize Serialization
 =======================

@@ -17,11 +17,11 @@
 ## available as source files for automatic testing. This way, we can make sure
 ## that the code in the docs actually works.
 
-import parseopt2, streams, tables, strutils, os
+import parseopt2, streams, tables, strutils, os, options
 
 var
   infile = ""
-  path: string = nil
+  path = none(string)
 for kind, key, val in getopt():
   case kind
   of cmdArgument:
@@ -36,7 +36,7 @@ for kind, key, val in getopt():
   of cmdLongOption, cmdShortOption:
     case key
     of "out", "o":
-      if isNil(path): path = val
+      if path.isNone: path = some(val)
       else:
         echo "Duplicate output path!"
         quit 1
@@ -49,15 +49,15 @@ if infile == "":
   echo "Missing input file!"
   quit 1
 
-if isNil(path):
+if path.isNone:
   for i in countdown(infile.len - 1, 0):
     if infile[i] == '.':
-      if infile[i..^1] == ".rst": path = infile & ".rst"
-      else: path = infile[0..i] & "rst"
+      if infile[i..^1] == ".rst": path = some(infile & ".rst")
+      else: path = some(infile[0..i] & "rst")
       break
-  if isNil(path): path = infile & ".rst"
+  if path.isNone: path = some(infile & ".rst")
 
-var tmpOut = newFileStream(path, fmWrite)
+var tmpOut = newFileStream(path.get(), fmWrite)
 
 proc append(s: string) =
   tmpOut.writeLine(s)
@@ -118,17 +118,17 @@ var lineNum = 0
 for line in infile.lines():
   if line.len > 0 and line[0] == '%':
     var
-      srcPath: string = nil
+      srcPath = none(string)
       level = 0
     for i in 1..<line.len:
       if line[i] == '%':
-        srcPath = line[1 .. i - 1]
+        srcPath = some(line[1 .. i - 1])
         level = parseInt(line[i + 1 .. ^1])
         break
-    if isNil(srcPath):
+    if srcPath.isNone:
       echo "Second % missing in line " & $lineNum & "! content:\n"
       echo line
       quit 1
-    outputExamples("snippets" / srcPath, level)
+    outputExamples("snippets" / srcPath.get(), level)
   else:
     append(line)
