@@ -17,7 +17,7 @@ import private/internal, taglib
 
 when defined(nimNoNil):
     {.experimental: "notnil".}
-    
+
 when defined(yamlScalarRepInd):
   type ScalarRepresentationIndicator* = enum
     srPlain, srSingleQuoted, srDoubleQuoted, srLiteral, srFolded

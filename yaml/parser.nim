@@ -16,7 +16,7 @@ import taglib, stream, private/lex, private/internal
 
 when defined(nimNoNil):
     {.experimental: "notnil".}
-    
+
 type
   WarningCallback* = proc(line, column: int, lineContent: string,
                           message: string)
@@ -946,8 +946,10 @@ parserState flow:
     result = true
     state = objectEnd
     stored = flowAfterObject
+  of ltEmptyLine:
+    c.advance()
   else:
-    raise c.generateError("Unexpected toked: " & $c.lex.cur)
+    raise c.generateError("Unexpected token: " & $c.lex.cur)
 
 parserState leaveFlowMap:
   case c.level.kind
