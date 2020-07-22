@@ -404,7 +404,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
 
 proc representObject*(value: Time, ts: TagStyle, c: SerializationContext,
                       tag: TagId) {.raises: [ValueError].} =
-  let tmp = value.getGMTime()
+  let tmp = value.utc()
   c.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
 
 proc yamlTag*[I](T: typedesc[seq[I]]): TagId {.inline, raises: [].} =
