@@ -73,9 +73,9 @@ macro genTests(): untyped =
   echo "[tparser] Generating tests from " & absolutePath
   discard staticExec("git submodule init && git submodule update --remote")
 
-  let errorTests = toSet(staticExec("cd " & (absolutePath / "tags" / "error") &
+  let errorTests = toHashSet(staticExec("cd " & (absolutePath / "tags" / "error") &
                          " && ls -1d *").splitLines())
-  let ignored = toSet(["3MYT", "JDH8", "2EBW", "9KAX", "AB8U", "B63P", "FBC9",
+  let ignored = toHashSet(["3MYT", "JDH8", "2EBW", "9KAX", "AB8U", "B63P", "FBC9",
                        "Q5MG", "S98Z", ".git", "name", "tags", "meta"])
 
   result = newStmtList()
