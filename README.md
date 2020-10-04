@@ -29,7 +29,7 @@ PRs for bugs are welcome. If you want to add a feature, you are free to; but be 
 ## Developers
 
 ```bash
-nim tests # runs all tests
+nim test # runs all tests
 nim lexerTests # run lexer tests
 nim parserTests # run parser tests (git-clones yaml-dev-kit)
 nim serializationTests # runs serialization tests
