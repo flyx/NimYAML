@@ -13,20 +13,9 @@
 ## the serialization API.
 
 import tables, macros, hashes, strutils
+import data
 
 type
-  TagId* = distinct int ## \
-    ## A ``TagId`` identifies a tag URI, like for example
-    ## ``"tag:yaml.org,2002:str"``. The URI corresponding to a ``TagId`` can
-    ## be queried from the `TagLibrary <#TagLibrary>`_ which was
-    ## used to create this ``TagId``; e.g. when you parse a YAML character
-    ## stream, the ``TagLibrary`` of the parser is the one which generates
-    ## the resulting ``TagId`` s.
-    ##
-    ## URI strings are mapped to ``TagId`` s for efficiency  reasons (you
-    ## do not need to compare strings every time) and to be able to
-    ## discover unknown tag URIs early in the parsing process.
-
   TagLibrary* = ref object
     ## A ``TagLibrary`` maps tag URIs to ``TagId`` s.
     ##
@@ -42,87 +31,6 @@ type
     tags*: Table[string, TagId]
     nextCustomTagId*: TagId
     tagHandles: Table[string, string]
-
-const
-  # failsafe schema
-
-  yTagExclamationMark*: TagId = 0.TagId ## ``!`` non-specific tag
-  yTagQuestionMark*   : TagId = 1.TagId ## ``?`` non-specific tag
-  yTagString*         : TagId = 2.TagId ## \
-    ## `!!str <http://yaml.org/type/str.html >`_ tag
-  yTagSequence*       : TagId = 3.TagId ## \
-    ## `!!seq <http://yaml.org/type/seq.html>`_ tag
-  yTagMapping*        : TagId = 4.TagId ## \
-    ## `!!map <http://yaml.org/type/map.html>`_ tag
-
-  # json & core schema
-
-  yTagNull*    : TagId = 5.TagId ## \
-    ## `!!null <http://yaml.org/type/null.html>`_ tag
-  yTagBoolean* : TagId = 6.TagId ## \
-    ## `!!bool <http://yaml.org/type/bool.html>`_ tag
-  yTagInteger* : TagId = 7.TagId ## \
-    ## `!!int <http://yaml.org/type/int.html>`_ tag
-  yTagFloat*   : TagId = 8.TagId ## \
-    ## `!!float <http://yaml.org/type/float.html>`_ tag
-
-  # other language-independent YAML types (from http://yaml.org/type/ )
-
-  yTagOrderedMap* : TagId = 9.TagId  ## \
-    ## `!!omap <http://yaml.org/type/omap.html>`_ tag
-  yTagPairs*      : TagId = 10.TagId ## \
-    ## `!!pairs <http://yaml.org/type/pairs.html>`_ tag
-  yTagSet*        : TagId = 11.TagId ## \
-    ## `!!set <http://yaml.org/type/set.html>`_ tag
-  yTagBinary*     : TagId = 12.TagId ## \
-    ## `!!binary <http://yaml.org/type/binary.html>`_ tag
-  yTagMerge*      : TagId = 13.TagId ## \
-    ## `!!merge <http://yaml.org/type/merge.html>`_ tag
-  yTagTimestamp*  : TagId = 14.TagId ## \
-    ## `!!timestamp <http://yaml.org/type/timestamp.html>`_ tag
-  yTagValue*      : TagId = 15.TagId ## \
-    ## `!!value <http://yaml.org/type/value.html>`_ tag
-  yTagYaml*       : TagId = 16.TagId ## \
-    ## `!!yaml <http://yaml.org/type/yaml.html>`_ tag
-
-  yTagNimField*   : TagId = 100.TagId ## \
-    ## This tag is used in serialization for the name of a field of an
-    ## object. It may contain any string scalar that is a valid Nim symbol.
-
-  yFirstStaticTagId* : TagId = 1000.TagId ## \
-    ## The first ``TagId`` assigned by the ``setTagId`` templates.
-
-  yFirstCustomTagId* : TagId = 10000.TagId ## \
-    ## The first ``TagId`` which should be assigned to an URI that does not
-    ## exist in the ``YamlTagLibrary`` which is used for parsing.
-
-  yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
-  nimyamlTagRepositoryPrefix* = "tag:nimyaml.org,2016:"
-
-proc `==`*(left, right: TagId): bool {.borrow.}
-proc hash*(id: TagId): Hash {.borrow.}
-
-proc `$`*(id: TagId): string {.raises: [].} =
-  case id
-  of yTagQuestionMark: "?"
-  of yTagExclamationMark: "!"
-  of yTagString: "!!str"
-  of yTagSequence: "!!seq"
-  of yTagMapping: "!!map"
-  of yTagNull: "!!null"
-  of yTagBoolean: "!!bool"
-  of yTagInteger: "!!int"
-  of yTagFloat: "!!float"
-  of yTagOrderedMap: "!!omap"
-  of yTagPairs: "!!pairs"
-  of yTagSet: "!!set"
-  of yTagBinary: "!!binary"
-  of yTagMerge: "!!merge"
-  of yTagTimestamp: "!!timestamp"
-  of yTagValue: "!!value"
-  of yTagYaml: "!!yaml"
-  of yTagNimField: "!nim:field"
-  else: "<" & $int(id) & ">"
 
 proc initTagLibrary*(): TagLibrary {.raises: [].} =
   ## initializes the ``tags`` table and sets ``nextCustomTagId`` to
@@ -300,6 +208,12 @@ proc searchHandle*(tagLib: TagLibrary, tag: string):
       if tag.startsWith(key):
         result.len = key.len
         result.handle = value
+
+proc resolve*(tagLib: TagLibrary, handle: string): string {.raises: [].} =
+  ## try to resolve the given tag handle.
+  ## return the registered URI if the tag handle is found.
+  ## if the handle is unknown, return the empty string.
+  return tagLib.tagHandles.getOrDefault(handle, "")
 
 iterator handles*(tagLib: TagLibrary): tuple[prefix, handle: string] =
   ## iterate over registered tag handles that may be used as shortcuts

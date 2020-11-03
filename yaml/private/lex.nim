@@ -5,69 +5,60 @@
 #    distribution, for details about the copyright.
 
 import lexbase, streams, strutils, unicode
+import ../data
 when defined(yamlDebug):
   import terminal
   export terminal
 
-when defined(yamlScalarRepInd):
-  type ScalarKind* = enum
-    skSingleQuoted, skDoubleQuoted, skLiteral, skFolded
-
 type
-  YamlLexerObj* = object
-    cur*: LexerToken
-    curStartPos*, curEndPos*: tuple[line, column: int]
+  Lexer* = object
+    cur*: Token
+    curStartPos*, curEndPos*: Mark
     # recently read scalar or URI, if any
-    buf*: string
+    evaluated*: string
     # ltIndentation
     indentation*: int
-    when defined(yamlScalarRepInd):
-      # ltQuotedScalar, ltBlockScalarHeader
-      scalarKind*: ScalarKind
 
     # internals
     source: BaseLexer
     tokenStart: int
     flowDepth: int
-    state, lineStartState, jsonEnablingState: LexerState
+    state, lineStartState, jsonEnablingState: State
     c: char
     seenMultiline: bool
     # indentation of recently started set of node properties.
     # necessary for implicit keys with properties.
     propertyIndentation: int
 
-  YamlLexer* = ref YamlLexerObj
-
-  YamlLexerError* = object of ValueError
+  LexerError* = object of ValueError
     line*, column*: int
     lineContent*: string
 
-  # temporarily missing .raises: [YamlLexerError]
+  # temporarily missing .raises: [LexerError]
   # due to https://github.com/nim-lang/Nim/issues/13905
-  LexerState = proc(lex: YamlLexer): bool {.locks: 0, gcSafe.}
+  State = proc(lex: var Lexer): bool {.locks: 0, gcSafe, nimcall.}
 
-  LexerToken* = enum
-    ltYamlDirective,    # `%YAML`
-    ltTagDirective,     # `%TAG`
-    ltUnknownDirective, # any directive but `%YAML` and `%TAG`
-    ltDirectiveParam,   # parameters of %YAML and unknown directives
-    ltEmptyLine,        # for line folding in multiline plain scalars
-    ltDirectivesEnd,    # explicit `---`
-    ltDocumentEnd,      # explicit `...`
-    ltStreamEnd,        # end of input
-    ltIndentation,      # beginning of non-empty line
-    ltPlainScalar, ltSingleQuotedScalar, ltDoubleQuotedScalar,
-    ltLiteralScalar, ltFoldedScalar,
-    ltSeqItemInd,       # block sequence item indicator `- `
-    ltMapKeyInd,        # block mapping key indicator `? `
-    ltMapValueInd       # block mapping value indicator `: `
-    ltMapStart, ltMapEnd, ltSeqStart, ltSeqEnd, ltSeqSep # {}[],
-    ltTagHandle,        # a handle of a tag, e.g. `!!` of `!!str`
-    ltSuffix,           # suffix of a tag shorthand, e.g. `str` of `!!str`.
+  Token* {.pure.} = enum
+    YamlDirective,    # `%YAML`
+    TagDirective,     # `%TAG`
+    UnknownDirective, # any directive but `%YAML` and `%TAG`
+    DirectiveParam,   # parameters of %YAML and unknown directives
+    EmptyLine,        # for line folding in multiline plain scalars
+    DirectivesEnd,    # explicit `---`
+    DocumentEnd,      # explicit `...`
+    StreamEnd,        # end of input
+    Indentation,      # beginning of non-empty line
+    Plain, SingleQuoted, DoubleQuoted, Literal, Folded,
+    SeqItemInd,       # block sequence item indicator `- `
+    MapKeyInd,        # block mapping key indicator `? `
+    MapValueInd       # block mapping value indicator `: `
+    MapStart, MapEnd, SeqStart, SeqEnd, SeqSep # {}[],
+    TagHandle,        # a handle of a tag, e.g. `!!` of `!!str`
+    Suffix,           # suffix of a tag shorthand, e.g. `str` of `!!str`.
                         # also used for the URI of the %TAG directive
-    ltVerbatimTag,      # a verbatim tag, e.g. `!<tag:yaml.org,2002:str>`
-    ltAnchor,           # anchor property of a node, e.g. `&anchor`
-    ltAlias             # alias node, e.g. `*alias`
+    VerbatimTag,      # a verbatim tag, e.g. `!<tag:yaml.org,2002:str>`
+    Anchor,           # anchor property of a node, e.g. `&anchor`
+    Alias             # alias node, e.g. `*alias`
 
   ChompType* = enum
     ctKeep, ctClip, ctStrip
@@ -91,7 +82,9 @@ const
   tagShorthandChars = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '-'}
   suffixChars = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', '@',
                  '&', '=', '+', '$', '_', '.', '!', '~', '*', '\'', '-'}
-  nodePropertyKind = {ltTagHandle, ltVerbatimTag, ltAnchor}
+  nodePropertyKind* = {Token.TagHandle, Token.VerbatimTag, Token.Anchor}
+  scalarTokenKind* = {Token.Plain, Token.SingleQuoted, Token.DoubleQuoted,
+                     Token.Literal, Token.Folded}
 
   UTF8NextLine           = toUTF8(0x85.Rune)
   UTF8NonBreakingSpace   = toUTF8(0xA0.Rune)
@@ -102,11 +95,11 @@ const
 
 # lexer source handling
 
-proc advance(lex: YamlLexer, step: int = 1) {.inline.} =
+proc advance(lex: var Lexer, step: int = 1) {.inline.} =
   lex.source.bufpos.inc(step)
   lex.c = lex.source.buf[lex.source.bufpos]
 
-template lexCR(lex: YamlLexer) =
+template lexCR(lex: var Lexer) =
   try: lex.source.bufpos = lex.source.handleCR(lex.source.bufpos)
   except:
     var e = lex.generateError("Encountered stream error: " &
@@ -115,7 +108,7 @@ template lexCR(lex: YamlLexer) =
     raise e
   lex.c = lex.source.buf[lex.source.bufpos]
 
-template lexLF(lex: YamlLexer) =
+template lexLF(lex: var Lexer) =
   try: lex.source.bufpos = lex.source.handleLF(lex.source.bufpos)
   except:
     var e = generateError(lex, "Encountered stream error: " &
@@ -124,22 +117,22 @@ template lexLF(lex: YamlLexer) =
     raise e
   lex.c = lex.source.buf[lex.source.bufpos]
 
-template lineNumber(lex: YamlLexer): int =
+template lineNumber(lex: Lexer): Positive =
   lex.source.lineNumber
 
-template columnNumber(lex: YamlLexer): int =
+template columnNumber(lex: Lexer): Positive =
   lex.source.getColNumber(lex.source.bufpos) + 1
 
-template currentLine(lex: YamlLexer): string =
+template currentLine(lex: Lexer): string =
   lex.source.getCurrentLine(true)
 
-proc Safe(lex: YamlLexer): bool {.inline.} =
+proc isPlainSafe(lex: Lexer): bool {.inline.} =
   case lex.source.buf[lex.source.bufpos + 1]
   of spaceOrLineEnd: result = false
   of flowIndicators: result = lex.flowDepth == 0
   else: result = true
 
-proc lineWithMarker(lex: YamlLexer, pos: tuple[line, column: int],
+proc lineWithMarker(lex: Lexer, pos: tuple[line, column: int],
                     marker: bool): string =
   if pos.line == lex.source.lineNumber:
     result = lex.source.getCurrentLine(false)
@@ -150,25 +143,25 @@ proc lineWithMarker(lex: YamlLexer, pos: tuple[line, column: int],
 
 {.push gcSafe, locks: 0.}
 # `raises` cannot be pushed.
-proc outsideDoc(lex: YamlLexer): bool {.raises: [].}
-proc yamlVersion(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc tagShorthand(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc tagUri(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc unknownDirParams(lex: YamlLexer): bool {.raises: [].}
-proc expectLineEnd(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc lineStart(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc flowLineStart(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc flowLineIndentation(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc insideLine(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc indentationSettingToken(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc afterToken(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc beforeIndentationSettingToken(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc afterJsonEnablingToken(lex: YamlLexer): bool {.raises: YamlLexerError.}
-proc lineIndentation(lex: YamlLexer): bool {.raises: [].}
-proc lineDirEnd(lex: YamlLexer): bool {.raises: [].}
-proc lineDocEnd(lex: YamlLexer): bool {.raises: [].}
-proc atSuffix(lex: YamlLexer): bool {.raises: [].}
-proc streamEnd(lex: YamlLexer): bool {.raises: [].}
+proc outsideDoc(lex: var Lexer): bool {.raises: [].}
+proc yamlVersion(lex: var Lexer): bool {.raises: LexerError.}
+proc tagShorthand(lex: var Lexer): bool {.raises: LexerError.}
+proc tagUri(lex: var Lexer): bool {.raises: LexerError.}
+proc unknownDirParams(lex: var Lexer): bool {.raises: [].}
+proc expectLineEnd(lex: var Lexer): bool {.raises: LexerError.}
+proc lineStart(lex: var Lexer): bool {.raises: LexerError.}
+proc flowLineStart(lex: var Lexer): bool {.raises: LexerError.}
+proc flowLineIndentation(lex: var Lexer): bool {.raises: LexerError.}
+proc insideLine(lex: var Lexer): bool {.raises: LexerError.}
+proc indentationSettingToken(lex: var Lexer): bool {.raises: LexerError.}
+proc afterToken(lex: var Lexer): bool {.raises: LexerError.}
+proc beforeIndentationSettingToken(lex: var Lexer): bool {.raises: LexerError.}
+proc afterJsonEnablingToken(lex: var Lexer): bool {.raises: LexerError.}
+proc lineIndentation(lex: var Lexer): bool {.raises: [].}
+proc lineDirEnd(lex: var Lexer): bool {.raises: [].}
+proc lineDocEnd(lex: var Lexer): bool {.raises: [].}
+proc atSuffix(lex: var Lexer): bool {.raises: [].}
+proc streamEnd(lex: var Lexer): bool {.raises: [].}
 {.pop.}
 
 # helpers
@@ -178,28 +171,28 @@ template debug(message: string) {.dirty.} =
     try: styledWriteLine(stdout, fgBlue, message)
     except IOError: discard
 
-proc generateError(lex: YamlLexer, message: string):
-    ref YamlLexerError {.raises: [].} =
-  result = newException(YamlLexerError, message)
+proc generateError(lex: Lexer, message: string):
+    ref LexerError {.raises: [].} =
+  result = newException(LexerError, message)
   result.line = lex.lineNumber()
   result.column = lex.columnNumber()
   result.lineContent = lex.currentLine()
 
-proc startToken(lex: YamlLexer) {.inline.} =
-  lex.curStartPos = (lex.lineNumber(), lex.columnNumber())
+proc startToken(lex: var Lexer) {.inline.} =
+  lex.curStartPos = (line: lex.lineNumber(), column: lex.columnNumber())
   lex.tokenStart = lex.source.bufpos
 
-proc endToken(lex: YamlLexer) {.inline.} =
-  lex.curEndPos = (lex.lineNumber(), lex.columnNumber())
+proc endToken(lex: var Lexer) {.inline.} =
+  lex.curEndPos = (line: lex.lineNumber(), column: lex.columnNumber())
 
-proc readNumericSubtoken(lex: YamlLexer) {.inline.} =
+proc readNumericSubtoken(lex: var Lexer) {.inline.} =
   if lex.c notin digits:
     raise lex.generateError("Illegal character in YAML version string: " & escape("" & lex.c))
   while true:
     lex.advance()
     if lex.c notin digits: break
 
-proc isDirectivesEnd(lex: YamlLexer): bool =
+proc isDirectivesEnd(lex: var Lexer): bool =
   var peek = lex.source.bufpos
   if lex.source.buf[peek] == '-':
     peek += 1
@@ -211,7 +204,7 @@ proc isDirectivesEnd(lex: YamlLexer): bool =
         return true
   return false
 
-proc isDocumentEnd(lex: YamlLexer): bool =
+proc isDocumentEnd(lex: var Lexer): bool =
   var peek = lex.source.bufpos
   if lex.source.buf[peek] == '.':
     peek += 1
@@ -223,7 +216,7 @@ proc isDocumentEnd(lex: YamlLexer): bool =
         return true
   return false
 
-proc readHexSequence(lex: YamlLexer, len: int) =
+proc readHexSequence(lex: var Lexer, len: int) =
   var charPos = 0
   let startPos = lex.source.bufpos
   for i in countup(0, len-1):
@@ -244,10 +237,10 @@ proc readHexSequence(lex: YamlLexer, len: int) =
       charPos += coeff * (int(lex.c) - int('A') + 10)
     else: discard # cannot happen, we checked
     coeff = coeff div 16
-  lex.buf.add($Rune(charPos))
+  lex.evaluated.add($Rune(charPos))
 
-proc readURI(lex: YamlLexer) =
-  lex.buf.setLen(0)
+proc readURI(lex: var Lexer) =
+  lex.evaluated.setLen(0)
   let endWithSpace = lex.c != '<'
   let restricted = lex.flowDepth > 0
   var literalStart: int
@@ -262,17 +255,17 @@ proc readURI(lex: YamlLexer) =
     case lex.c
     of spaceOrLineEnd:
       if endWithSpace:
-        lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+        lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
         break
       raise lex.generateError("Unclosed verbatim tag")
     of '%':
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.readHexSequence(2)
       literalStart = lex.source.bufpos
     of uriChars: discard
     of '[', ']', ',':
       if restricted:
-        lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+        lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
         break
     of '!':
       if restricted:
@@ -280,14 +273,14 @@ proc readURI(lex: YamlLexer) =
     of '>':
       if endWithSpace:
         raise lex.generateError("Illegal character in URI: `>`")
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.advance()
       break
     else:
       raise lex.generateError("Illegal character in URI: " & escape("" & lex.c))
     lex.advance()
 
-proc endLine(lex: YamlLexer) =
+proc endLine(lex: var Lexer) =
   while true:
     case lex.c
     of '\l':
@@ -307,7 +300,7 @@ proc endLine(lex: YamlLexer) =
         if lex.c in lineEnd: break
     else: discard
 
-proc startLine(lex: YamlLexer): LineStartType =
+proc startLine(lex: var Lexer): LineStartType =
   case lex.c
   of '-':
     return if lex.isDirectivesEnd(): lsDirectivesEndMarker
@@ -323,8 +316,8 @@ proc startLine(lex: YamlLexer): LineStartType =
     of EndOfFile: lsStreamEnd
     else: lsContent
 
-proc readPlainScalar(lex: YamlLexer) =
-  lex.buf.setLen(0)
+proc readPlainScalar(lex: var Lexer) =
+  lex.evaluated.setLen(0)
   let afterNewlineState = if lex.flowDepth == 0: lineIndentation
                           else: flowLineIndentation
   var lineStartPos: int
@@ -333,7 +326,7 @@ proc readPlainScalar(lex: YamlLexer) =
   if lex.propertyIndentation != -1:
     lex.indentation = lex.propertyIndentation
     lex.propertyIndentation = -1
-  lex.cur = ltPlainScalar
+  lex.cur = Token.Plain
   block multilineLoop:
     while true:
       lineStartPos = lex.source.bufpos - 1
@@ -348,48 +341,48 @@ proc readPlainScalar(lex: YamlLexer) =
               lex.advance()
               case lex.c
               of '\l', '\c':
-                lex.buf.add(lex.source.buf[lineStartPos..contentEnd])
+                lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
                 break inlineLoop
               of EndOfFile:
-                lex.buf.add(lex.source.buf[lineStartPos..contentEnd])
+                lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
                 lex.state = streamEnd
                 break multilineLoop
               of '#':
-                lex.buf.add(lex.source.buf[lineStartPos..contentEnd])
+                lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
                 lex.state = expectLineEnd
                 break multilineLoop
               of ':':
-                if not lex.Safe():
-                  lex.buf.add(lex.source.buf[lineStartPos..contentEnd])
+                if not lex.isPlainSafe():
+                  lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
                   lex.state = insideLine
                   break multilineLoop
                 break spaceLoop
               of flowIndicators:
                 if lex.flowDepth > 0:
-                  lex.buf.add(lex.source.buf[lineStartPos..contentEnd])
+                  lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
                   lex.state = insideLine
                   break multilineLoop
                 break spaceLoop
               of ' ': discard
               else: break spaceLoop
           of ':':
-            if not lex.Safe():
-              lex.buf.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
+            if not lex.isPlainSafe():
+              lex.evaluated.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
               lex.endToken()
               lex.state = insideLine
               break multilineLoop
           of flowIndicators:
             if lex.flowDepth > 0:
-              lex.buf.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
+              lex.evaluated.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
               lex.endToken()
               lex.state = insideLine
               break multilineLoop
           of '\l', '\c':
-            lex.buf.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
+            lex.evaluated.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
             lex.endToken()
             break inlineLoop
           of EndOfFile:
-            lex.buf.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
+            lex.evaluated.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
             if lex.columnNumber() > 0:
               lex.endToken()
             lex.state = streamEnd
@@ -419,31 +412,31 @@ proc readPlainScalar(lex: YamlLexer) =
             break multilineLoop
           of lsNewline: lex.endLine()
           newlines += 1
-      if (lex.c == ':' and not lex.Safe()) or
+      if (lex.c == ':' and not lex.isPlainSafe()) or
          lex.c == '#' or (lex.c in flowIndicators and
          lex.flowDepth > 0):
         lex.state = afterNewlineState
         break multilineLoop
       lex.seenMultiline = true
-      if newlines == 1: lex.buf.add(' ')
+      if newlines == 1: lex.evaluated.add(' ')
       else:
-        for i in countup(2, newlines): lex.buf.add('\l')
+        for i in countup(2, newlines): lex.evaluated.add('\l')
 
-proc streamEndAfterBlock(lex: YamlLexer) =
+proc streamEndAfterBlock(lex: var Lexer) =
   if lex.columnNumber() != 0:
     lex.endToken()
     lex.curEndPos.column -= 1
 
 
-proc readBlockScalar(lex: YamlLexer) =
+proc readBlockScalar(lex: var Lexer) =
   var
     chomp = ctClip
     indent = 0
     separationLines = 0
     contentStart: int
   lex.startToken()
-  lex.cur = if lex.c == '>': ltFoldedScalar else: ltLiteralScalar
-  lex.buf.setLen(0)
+  lex.cur = if lex.c == '>': Token.Folded else: Token.Literal
+  lex.evaluated.setLen(0)
 
   # header
   while true:
@@ -506,12 +499,12 @@ proc readBlockScalar(lex: YamlLexer) =
         elif lex.columnNumber < indent: break body
         break
     for i in countup(0, separationLines - 1):
-      lex.buf.add('\l')
+      lex.evaluated.add('\l')
 
     block content:
       contentStart = lex.source.bufpos - 1
       while lex.c notin lineEnd: lex.advance()
-      lex.buf.add(lex.buf[contentStart .. lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[contentStart .. lex.source.bufpos - 2])
       separationLines = 0
       if lex.c == EndOfFile:
         lex.state = streamEnd
@@ -540,14 +533,14 @@ proc readBlockScalar(lex: YamlLexer) =
           else: break
 
       # line folding
-      if lex.cur == ltLiteralScalar:
+      if lex.cur == Token.Literal:
         for i in countup(0, separationLines - 1):
-          lex.buf.add('\l')
+          lex.evaluated.add('\l')
       elif separationLines == 1:
-        lex.buf.add(' ')
+        lex.evaluated.add(' ')
       else:
         for i in countup(0, separationLines - 2):
-          lex.buf.add('\l')
+          lex.evaluated.add('\l')
 
     if lex.columnNumber() > max(0, lex.indentation):
       if lex.c == '#':
@@ -564,13 +557,13 @@ proc readBlockScalar(lex: YamlLexer) =
   case chomp
   of ctStrip: discard
   of ctClip:
-    if len(lex.buf) > 0:
-      lex.buf.add('\l')
+    if len(lex.evaluated) > 0:
+      lex.evaluated.add('\l')
   of ctKeep:
     for i in countup(0, separationLines - 1):
-      lex.buf.add('\l')
+      lex.evaluated.add('\l')
 
-proc processQuotedWhitespace(lex: YamlLexer, initial: int) =
+proc processQuotedWhitespace(lex: var Lexer, initial: int) =
   var newlines = initial
   let firstSpace = lex.source.bufpos - 1
   while true:
@@ -583,7 +576,7 @@ proc processQuotedWhitespace(lex: YamlLexer, initial: int) =
       lex.lexCR()
       break
     else:
-      lex.buf.add(lex.source.buf[firstSpace..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[firstSpace..lex.source.bufpos - 2])
       return
     lex.advance()
   lex.seenMultiline = true
@@ -599,14 +592,14 @@ proc processQuotedWhitespace(lex: YamlLexer, initial: int) =
       raise lex.generateError("Unclosed quoted string")
     newlines += 1
   if newlines == 0: discard
-  elif newlines == 1: lex.buf.add(' ')
+  elif newlines == 1: lex.evaluated.add(' ')
   else:
-    for i in countup(2, newlines): lex.buf.add('\l')
+    for i in countup(2, newlines): lex.evaluated.add('\l')
 
-proc readSingleQuotedScalar(lex: YamlLexer) =
+proc readSingleQuotedScalar(lex: var Lexer) =
   lex.seenMultiline = false
   lex.startToken()
-  lex.buf.setLen(0)
+  lex.evaluated.setLen(0)
   if lex.propertyIndentation != -1:
     lex.indentation = lex.propertyIndentation
     lex.propertyIndentation = -1
@@ -617,26 +610,26 @@ proc readSingleQuotedScalar(lex: YamlLexer) =
     of EndOfFile:
       raise lex.generateError("Unclosed quoted string")
     of '\'':
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.advance()
       if lex.c == '\'':
-        lex.buf.add('\'')
+        lex.evaluated.add('\'')
         literalStart = lex.source.bufpos
         lex.advance()
       else: break
     of ' ', '\l', '\c':
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.processQuotedWhitespace(1)
       literalStart = lex.source.bufpos - 1
     else:
       lex.advance()
   lex.endToken()
-  lex.cur = ltSingleQuotedScalar
+  lex.cur = Token.SingleQuoted
 
-proc readDoubleQuotedScalar(lex: YamlLexer) =
+proc readDoubleQuotedScalar(lex: var Lexer) =
   lex.seenMultiline = false
   lex.startToken()
-  lex.buf.setLen(0)
+  lex.evaluated.setLen(0)
   if lex.propertyIndentation != -1:
     lex.indentation = lex.propertyIndentation
     lex.propertyIndentation = -1
@@ -647,27 +640,27 @@ proc readDoubleQuotedScalar(lex: YamlLexer) =
     of EndOfFile:
       raise lex.generateError("Unclosed quoted string")
     of '\\':
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.advance()
       literalStart = lex.source.bufpos
       case lex.c
-      of '0': lex.buf.add('\0')
-      of 'a': lex.buf.add('\a')
-      of 'b': lex.buf.add('\b')
-      of 't', '\t': lex.buf.add('\t')
-      of 'n': lex.buf.add('\l')
-      of 'v': lex.buf.add('\v')
-      of 'f': lex.buf.add('\f')
-      of 'r': lex.buf.add('\c')
-      of 'e': lex.buf.add('\e')
-      of ' ': lex.buf.add(' ')
-      of '"': lex.buf.add('"')
-      of '/': lex.buf.add('/')
-      of '\\':lex.buf.add('\\')
-      of 'N': lex.buf.add(UTF8NextLine)
-      of '_': lex.buf.add(UTF8NonBreakingSpace)
-      of 'L': lex.buf.add(UTF8LineSeparator)
-      of 'P': lex.buf.add(UTF8ParagraphSeparator)
+      of '0': lex.evaluated.add('\0')
+      of 'a': lex.evaluated.add('\a')
+      of 'b': lex.evaluated.add('\b')
+      of 't', '\t': lex.evaluated.add('\t')
+      of 'n': lex.evaluated.add('\l')
+      of 'v': lex.evaluated.add('\v')
+      of 'f': lex.evaluated.add('\f')
+      of 'r': lex.evaluated.add('\c')
+      of 'e': lex.evaluated.add('\e')
+      of ' ': lex.evaluated.add(' ')
+      of '"': lex.evaluated.add('"')
+      of '/': lex.evaluated.add('/')
+      of '\\':lex.evaluated.add('\\')
+      of 'N': lex.evaluated.add(UTF8NextLine)
+      of '_': lex.evaluated.add(UTF8NonBreakingSpace)
+      of 'L': lex.evaluated.add(UTF8LineSeparator)
+      of 'P': lex.evaluated.add(UTF8ParagraphSeparator)
       of 'x':
         lex.readHexSequence(2)
         literalStart = lex.source.bufpos
@@ -684,10 +677,10 @@ proc readDoubleQuotedScalar(lex: YamlLexer) =
       else:
         raise lex.generateError("Illegal character in escape sequence: " & escape("" & lex.c))
     of '"':
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       break
     of ' ', '\l', '\c':
-      lex.buf.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
+      lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.processQuotedWhitespace(1)
       literalStart = lex.source.bufpos - 1
       continue
@@ -695,46 +688,49 @@ proc readDoubleQuotedScalar(lex: YamlLexer) =
     lex.advance()
   lex.advance()
   lex.endToken()
-  lex.cur = ltDoubleQuotedScalar
+  lex.cur = Token.DoubleQuoted
 
-proc basicInit(lex: YamlLexer) =
+proc basicInit(lex: var Lexer) =
   lex.state = outsideDoc
   lex.flowDepth = 0
   lex.lineStartState = outsideDoc
   lex.jsonEnablingState = afterToken
   lex.propertyIndentation = -1
-  lex.buf = ""
+  lex.evaluated = ""
   lex.advance()
 
 # interface
 
-proc shortLexeme*(lex: YamlLexer): string =
+proc lastScalarWasMultiline*(lex: Lexer): bool =
+  result = lex.seenMultiline
+
+proc shortLexeme*(lex: Lexer): string =
   return lex.source.buf[lex.tokenStart..lex.source.bufpos-2]
 
-proc fullLexeme*(lex: YamlLexer): string =
+proc fullLexeme*(lex: Lexer): string =
   return lex.source.buf[lex.tokenStart - 1..lex.source.bufpos-2]
 
-proc next*(lex: YamlLexer) =
+proc currentLine*(lex: Lexer): string =
+  return lex.source.getCurrentLine(false)
+
+proc next*(lex: var Lexer) =
   while not lex.state(lex): discard
   debug("lexer -> " & $lex.cur)
 
-proc newYamlLexer*(source: Stream): YamlLexer {.raises: [IOError, OSError].} =
-  result = new(YamlLexerObj)
-  result.source.open(source)
-  result.basicInit()
+proc init*(lex: var Lexer, source: Stream) {.raises: [IOError, OSError].} =
+  lex.source.open(source)
+  lex.basicInit()
 
-proc newYamlLexer*(source: string): YamlLexer
-    {.raises: [].} =
-  result = new(YamlLexerObj)
+proc init*(lex: var Lexer, source: string) {.raises: [].} =
   try:
-    result.source.open(newStringStream(source))
+    lex.source.open(newStringStream(source))
   except:
     discard # can never happen with StringStream
-  result.basicInit()
+  lex.basicInit()
 
 # states
 
-proc outsideDoc(lex: YamlLexer): bool =
+proc outsideDoc(lex: var Lexer): bool =
   case lex.c
   of '%':
     lex.startToken()
@@ -746,23 +742,23 @@ proc outsideDoc(lex: YamlLexer): bool =
     case name
     of "YAML":
       lex.state = yamlVersion
-      lex.cur = ltYamlDirective
+      lex.cur = Token.YamlDirective
     of "TAG":
       lex.state = tagShorthand
-      lex.cur = ltTagDirective
+      lex.cur = Token.TagDirective
     else:
       lex.state = unknownDirParams
-      lex.cur = ltUnknownDirective
-      lex.buf.setLen(0)
-      lex.buf.add(name)
+      lex.cur = Token.UnknownDirective
+      lex.evaluated.setLen(0)
+      lex.evaluated.add(name)
   of '-':
     lex.startToken()
     if lex.isDirectivesEnd():
       lex.state = expectLineEnd
-      lex.cur = ltDocumentEnd
+      lex.cur = Token.DocumentEnd
     else:
       lex.state = indentationSettingToken
-      lex.cur = ltIndentation
+      lex.cur = Token.Indentation
     lex.lineStartState = lineStart
     lex.indentation = -1
     lex.endToken()
@@ -770,12 +766,12 @@ proc outsideDoc(lex: YamlLexer): bool =
     lex.startToken()
     if lex.isDocumentEnd():
       lex.state = expectLineEnd
-      lex.cur = ltDocumentEnd
+      lex.cur = Token.DocumentEnd
     else:
       lex.state = indentationSettingToken
       lex.lineStartState = lineStart
       lex.indentation = -1
-      lex.cur = ltIndentation
+      lex.cur = Token.Indentation
     lex.endToken()
   else:
     lex.startToken()
@@ -784,12 +780,12 @@ proc outsideDoc(lex: YamlLexer): bool =
       lex.state = expectLineEnd
       return false
     lex.endToken()
-    lex.cur = ltIndentation
+    lex.cur = Token.Indentation
     lex.state = indentationSettingToken
     lex.lineStartState = lineStart
   return true
 
-proc yamlVersion(lex: YamlLexer): bool =
+proc yamlVersion(lex: var Lexer): bool =
   debug("lex: yamlVersion")
   while lex.c in space: lex.advance()
   lex.startToken()
@@ -800,11 +796,11 @@ proc yamlVersion(lex: YamlLexer): bool =
   lex.readNumericSubtoken()
   if lex.c notin spaceOrLineEnd:
     raise lex.generateError("Illegal character in YAML version string: " & escape("" & lex.c))
-  lex.cur = ltDirectiveParam
+  lex.cur = Token.DirectiveParam
   lex.endToken()
   lex.state = expectLineEnd
 
-proc tagShorthand(lex: YamlLexer): bool =
+proc tagShorthand(lex: var Lexer): bool =
   debug("lex: tagShorthand")
   while lex.c in space: lex.advance()
   if lex.c != '!':
@@ -823,23 +819,23 @@ proc tagShorthand(lex: YamlLexer): bool =
     lex.advance()
     if lex.c notin spaceOrLineEnd:
       raise lex.generateError("Missing space after tag shorthand")
-  lex.cur = ltTagHandle
+  lex.cur = Token.TagHandle
   lex.endToken()
   lex.state = tagUri
 
-proc tagUri(lex: YamlLexer): bool =
+proc tagUri(lex: var Lexer): bool =
   debug("lex: tagUri")
   while lex.c in space: lex.advance()
   lex.startToken()
   if lex.c == '<':
     raise lex.generateError("Illegal character in tag URI: " & escape("" & lex.c))
   lex.readUri()
-  lex.cur = ltSuffix
+  lex.cur = Token.Suffix
   lex.endToken()
   lex.state = expectLineEnd
   return true
 
-proc unknownDirParams(lex: YamlLexer): bool =
+proc unknownDirParams(lex: var Lexer): bool =
   debug("lex: unknownDirParams")
   while lex.c in space: lex.advance()
   if lex.c in lineEnd + {'#'}:
@@ -849,10 +845,10 @@ proc unknownDirParams(lex: YamlLexer): bool =
   while true:
     lex.advance()
     if lex.c in lineEnd + {'#'}: break
-  lex.cur = ltDirectiveParam
+  lex.cur = Token.DirectiveParam
   return true
 
-proc expectLineEnd(lex: YamlLexer): bool =
+proc expectLineEnd(lex: var Lexer): bool =
   debug("lex: expectLineEnd")
   while lex.c in space: lex.advance()
   if lex.c notin commentOrLineEnd:
@@ -860,7 +856,7 @@ proc expectLineEnd(lex: YamlLexer): bool =
   lex.endLine()
   return false
 
-proc lineStart(lex: YamlLexer): bool =
+proc lineStart(lex: var Lexer): bool =
   debug("lex: lineStart")
   return case lex.startLine()
   of lsDirectivesEndMarker: lex.lineDirEnd()
@@ -869,7 +865,7 @@ proc lineStart(lex: YamlLexer): bool =
   of lsStreamEnd: lex.state = streamEnd; false
   of lsContent: lex.lineIndentation()
 
-proc flowLineStart(lex: YamlLexer): bool =
+proc flowLineStart(lex: var Lexer): bool =
   var indent: int
   case lex.c
   of '-':
@@ -889,14 +885,14 @@ proc flowLineStart(lex: YamlLexer): bool =
   lex.state = insideLine
   return false
 
-proc flowLineIndentation(lex: YamlLexer): bool =
+proc flowLineIndentation(lex: var Lexer): bool =
   if lex.columnNumber() < lex.indentation:
     raise lex.generateError("Too few indentation spaces (must surpass surrounding block level)")
   lex.state = insideLine
   return false
 
-proc checkIndicatorChar(lex: YamlLexer, kind: LexerToken) =
-  if lex.Safe():
+proc checkIndicatorChar(lex: var Lexer, kind: Token) =
+  if lex.isPlainSafe():
     lex.readPlainScalar()
   else:
     lex.startToken()
@@ -905,7 +901,7 @@ proc checkIndicatorChar(lex: YamlLexer, kind: LexerToken) =
     lex.cur = kind
     lex.state = beforeIndentationSettingToken
 
-proc enterFlowCollection(lex: YamlLexer, kind: LexerToken) =
+proc enterFlowCollection(lex: var Lexer, kind: Token) =
   lex.startToken()
   if lex.flowDepth == 0:
     lex.jsonEnablingState = afterJsonEnablingToken
@@ -917,7 +913,7 @@ proc enterFlowCollection(lex: YamlLexer, kind: LexerToken) =
   lex.endToken()
   lex.cur = kind
 
-proc leaveFlowCollection(lex: YamlLexer, kind: LexerToken) =
+proc leaveFlowCollection(lex: var Lexer, kind: Token) =
   lex.startToken()
   if lex.flowDepth == 0:
     raise lex.generateError("No flow collection to leave!")
@@ -930,13 +926,13 @@ proc leaveFlowCollection(lex: YamlLexer, kind: LexerToken) =
   lex.endToken()
   lex.cur = kind
 
-proc readNamespace(lex: YamlLexer) =
+proc readNamespace(lex: var Lexer) =
   lex.startToken()
   lex.advance()
   if lex.c == '<':
     lex.readURI()
     lex.endToken()
-    lex.cur = ltVerbatimTag
+    lex.cur = Token.VerbatimTag
   else:
     var handleEnd = lex.tokenStart
     while true:
@@ -956,10 +952,10 @@ proc readNamespace(lex: YamlLexer) =
         raise lex.generateError("Illegal character in tag handle: " & escape("" & lex.c))
     lex.advance()
     lex.endToken()
-    lex.cur = ltTagHandle
+    lex.cur = Token.TagHandle
     lex.state = atSuffix
 
-proc readAnchorName(lex: YamlLexer) =
+proc readAnchorName(lex: var Lexer) =
   lex.startToken()
   while true:
     lex.advance()
@@ -970,17 +966,17 @@ proc readAnchorName(lex: YamlLexer) =
     raise lex.generateError("Anchor name must not be empty")
   lex.state = afterToken
 
-proc insideLine(lex: YamlLexer): bool =
+proc insideLine(lex: var Lexer): bool =
   case lex.c
   of ':':
-    lex.checkIndicatorChar(ltMapValueInd)
-    if lex.cur == ltMapValueInd and lex.propertyIndentation != -1:
+    lex.checkIndicatorChar(Token.MapValueInd)
+    if lex.cur == Token.MapValueInd and lex.propertyIndentation != -1:
       lex.indentation = lex.propertyIndentation
       lex.propertyIndentation = -1
   of '?':
-    lex.checkIndicatorChar(ltMapKeyInd)
+    lex.checkIndicatorChar(Token.MapKeyInd)
   of '-':
-    lex.checkIndicatorChar(ltSeqItemInd)
+    lex.checkIndicatorChar(Token.SeqItemInd)
   of commentOrLineEnd:
     lex.endLine()
     return false
@@ -996,36 +992,36 @@ proc insideLine(lex: YamlLexer): bool =
     else:
       lex.readBlockScalar()
   of '{':
-    lex.enterFlowCollection(ltMapStart)
+    lex.enterFlowCollection(Token.MapStart)
   of '}':
-    lex.leaveFlowCollection(ltMapEnd)
+    lex.leaveFlowCollection(Token.MapEnd)
   of '[':
-    lex.enterFlowCollection(ltSeqStart)
+    lex.enterFlowCollection(Token.SeqStart)
   of ']':
-    lex.leaveFlowCollection(ltSeqEnd)
+    lex.leaveFlowCollection(Token.SeqEnd)
   of ',':
     lex.startToken()
     lex.advance()
     lex.endToken()
-    lex.cur = ltSeqSep
+    lex.cur = Token.SeqSep
     lex.state = afterToken
   of '!':
     lex.readNamespace()
   of '&':
     lex.readAnchorName()
     lex.endToken()
-    lex.cur = ltAnchor
+    lex.cur = Token.Anchor
   of '*':
     lex.readAnchorName()
     lex.endToken()
-    lex.cur = ltAlias
+    lex.cur = Token.Alias
   of '@', '`':
     raise lex.generateError("Reserved character may not start any token")
   else:
     lex.readPlainScalar()
   return true
 
-proc indentationSettingToken(lex: YamlLexer): bool =
+proc indentationSettingToken(lex: var Lexer): bool =
   let cachedIntentation = lex.columnNumber()
   result = lex.insideLine()
   if result and lex.flowDepth > 0:
@@ -1034,7 +1030,7 @@ proc indentationSettingToken(lex: YamlLexer): bool =
     else:
       lex.indentation = cachedIntentation
 
-proc afterToken(lex: YamlLexer): bool =
+proc afterToken(lex: var Lexer): bool =
   while lex.c == ' ': lex.advance()
   if lex.c in commentOrLineEnd:
     lex.endLine()
@@ -1042,13 +1038,13 @@ proc afterToken(lex: YamlLexer): bool =
     lex.state = insideLine
   return false
 
-proc beforeIndentationSettingToken(lex: YamlLexer): bool =
+proc beforeIndentationSettingToken(lex: var Lexer): bool =
   discard lex.afterToken()
   if lex.state == insideLine:
     lex.state = indentationSettingToken
   return false
 
-proc afterJsonEnablingToken(lex: YamlLexer): bool =
+proc afterJsonEnablingToken(lex: var Lexer): bool =
   while lex.c == ' ': lex.advance()
   while true:
     case lex.c
@@ -1056,7 +1052,7 @@ proc afterJsonEnablingToken(lex: YamlLexer): bool =
       lex.startToken()
       lex.advance()
       lex.endToken()
-      lex.cur = ltMapValueInd
+      lex.cur = Token.MapValueInd
       lex.state = afterToken
     of '#', '\l', '\c':
       lex.endLine()
@@ -1068,43 +1064,43 @@ proc afterJsonEnablingToken(lex: YamlLexer): bool =
       lex.state = insideLine
       return false
 
-proc lineIndentation(lex: YamlLexer): bool =
+proc lineIndentation(lex: var Lexer): bool =
   lex.curStartPos.line = lex.source.lineNumber
   lex.curStartPos.column = 1
   lex.endToken()
-  lex.cur = ltIndentation
+  lex.cur = Token.Indentation
   lex.state = indentationSettingToken
   return true
 
-proc lineDirEnd(lex: YamlLexer): bool =
+proc lineDirEnd(lex: var Lexer): bool =
   lex.curStartPos.line = lex.source.lineNumber
   lex.curStartPos.column = 1
   lex.endToken()
-  lex.cur = ltDirectivesEnd
+  lex.cur = Token.DirectivesEnd
   lex.indentation = -1
   lex.propertyIndentation = -1
   return true
 
-proc lineDocEnd(lex: YamlLexer): bool =
+proc lineDocEnd(lex: var Lexer): bool =
   lex.curStartPos.line = lex.source.lineNumber
   lex.curStartPos.column = 1
   lex.endToken()
-  lex.cur = ltDocumentEnd
+  lex.cur = Token.DocumentEnd
   lex.state = expectLineEnd
   lex.lineStartState = outsideDoc
   return true
 
-proc atSuffix(lex: YamlLexer): bool =
+proc atSuffix(lex: var Lexer): bool =
   lex.startToken()
   while lex.c in suffixChars: lex.advance()
-  lex.buf = lex.fullLexeme()
+  lex.evaluated = lex.fullLexeme()
   lex.endToken()
-  lex.cur = ltSuffix
+  lex.cur = Token.Suffix
   lex.state = afterToken
   return true
 
-proc streamEnd(lex: YamlLexer): bool =
+proc streamEnd(lex: var Lexer): bool =
   lex.startToken()
   lex.endToken()
-  lex.cur = ltStreamEnd
+  lex.cur = Token.StreamEnd
   return true

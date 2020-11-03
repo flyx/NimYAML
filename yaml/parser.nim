@@ -11,22 +11,13 @@
 ## This is the low-level parser API. A ``YamlParser`` enables you to parse any
 ## non-nil string or Stream object as YAML character stream.
 
-import tables, strutils, macros, streams
-import taglib, stream, private/lex, private/internal
+import tables, strutils, macros
+import taglib, stream, private/lex, private/internal, data
 
 when defined(nimNoNil):
     {.experimental: "notnil".}
 
 type
-  WarningCallback* = proc(line, column: int, lineContent: string,
-                          message: string)
-    ## Callback for parser warnings. Currently, this callback may be called
-    ## on two occasions while parsing a YAML document stream:
-    ##
-    ## - If the version number in the ``%YAML`` directive does not match
-    ##   ``1.2``.
-    ## - If there is an unknown directive encountered.
-
   YamlParser* = ref object
     ## A parser object. Retains its ``TagLibrary`` across calls to
     ## `parse <#parse,YamlParser,Stream>`_. Can be used
@@ -34,41 +25,28 @@ type
     ## only until the document goes out of scope (i.e. until
     ## ``yamlEndDocument`` is yielded).
     tagLib: TagLibrary
-    callback: WarningCallback
-    anchors: Table[string, AnchorId]
+    issueWarnings: bool
+    anchors: Table[string, Anchor]
 
-  FastParseLevelKind = enum
-    fplUnknown, fplSequence, fplMapKey, fplMapValue, fplSinglePairKey,
-    fplSinglePairValue, fplDocument
+  State = proc(c: Context, e: var Event): bool
 
-  FastParseLevel = object
-    kind: FastParseLevelKind
+  Level = object
+    state: State
     indentation: int
 
-  ParserContext = ref object of YamlStream
+  Context = ref object of YamlStream
     p: YamlParser
-    lex: YamlLexer
-    storedState: proc(s: YamlStream, e: var YamlStreamEvent): bool
-    atSequenceItem: bool
-    flowdepth: int
-    ancestry: seq[FastParseLevel]
-    level: FastParseLevel
-    tag: TagId
-    anchor: AnchorId
-    shorthands: Table[string, string]
-    nextAnchorId: AnchorId
-    newlines: int
-    explicitFlowKey: bool
-    plainScalarStart: tuple[line, column: int]
+    lex: Lexer
+    levels: seq[Level]
 
-  LevelEndResult = enum
-    lerNothing, lerOne, lerAdditionalMapEnd
+    headerProps, inlineProps: Properties
+    headerStart, inlineStart: Mark
+    blockIndentation: int
 
-  YamlLoadingError* = object of Exception
+  YamlLoadingError* = object of ValueError
     ## Base class for all exceptions that may be raised during the process
     ## of loading a YAML character stream.
-    line*: int ## line number (1-based) where the error was encountered
-    column*: int ## column number (1-based) where the error was encountered
+    mark*: Mark ## position at which the error has occurred.
     lineContent*: string ## \
       ## content of the line where the error was encountered. Includes a
       ## second line with a marker ``^`` at the position where the error
@@ -105,1020 +83,860 @@ type
     ## Some elements in this list are vague. For a detailed description of a
     ## valid YAML character stream, see the YAML specification.
 
+# interface
+
 proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
-                    callback: WarningCallback = nil): YamlParser =
+                    issueWarnings: bool = false): YamlParser =
   ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
   ## whenever the parser yields a warning.
   new(result)
   result.tagLib = tagLib
-  result.callback = callback
+  result.issueWarnings = issueWarnings
+
+# implementation
 
 template debug(message: string) {.dirty.} =
   when defined(yamlDebug):
     try: styledWriteLine(stdout, fgBlue, message)
     except IOError: discard
 
-proc generateError(c: ParserContext, message: string):
-    ref YamlParserError {.raises: [].} =
-  result = newException(YamlParserError, message)
-  (result.line, result.column) = c.lex.curStartPos
-  result.lineContent = c.lex.getTokenLine()
+const defaultProperties = (yAnchorNone, yTagQuestionMark)
 
-proc illegalToken(c: ParserContext, expected: string = ""):
-    ref YamlParserError {.raises: [].} =
-  var msg = "Illegal token"
-  if expected.len > 0: msg.add(" (expected " & expected & ")")
-  msg.add(": " & $c.lex.cur)
-  result = c.generateError(msg)
+proc isEmpty(props: Properties): bool =
+  result = props.anchor == yAnchorNone and
+           props.tag == yTagQuestionMark
 
-proc callCallback(c: ParserContext, msg: string) {.raises: [YamlParserError].} =
+{.push gcSafe, locks: 0.}
+proc atStreamStart(c: Context, e: var Event): bool
+proc atStreamEnd(c: Context, e : var Event): bool
+proc beforeDoc(c: Context, e: var Event): bool
+proc beforeDocEnd(c: Context, e: var Event): bool
+proc afterDirectivesEnd(c: Context, e: var Event): bool
+proc beforeImplicitRoot(c: Context, e: var Event): bool
+proc atBlockIndentation(c: Context, e: var Event): bool
+proc beforeBlockIndentation(c: Context, e: var Event): bool
+proc beforeNodeProperties(c: Context, e: var Event): bool
+proc requireImplicitMapStart(c: Context, e: var Event): bool
+proc afterCompactParent(c: Context, e: var Event): bool
+proc afterCompactParentProps(c: Context, e: var Event): bool
+proc requireInlineBlockItem(c: Context, e: var Event): bool
+proc beforeFlowItemProps(c: Context, e: var Event): bool
+proc inBlockSeq(c: Context, e: var Event): bool
+proc beforeBlockMapValue(c: Context, e: var Event): bool
+proc atBlockIndentationProps(c: Context, e: var Event): bool
+proc afterFlowSeqSep(c: Context, e: var Event): bool
+proc afterFlowMapSep(c: Context, e: var Event): bool
+proc atBlockMapKeyProps(c: Context, e: var Event): bool
+proc afterImplicitKey(c: Context, e: var Event): bool
+proc afterBlockParent(c: Context, e: var Event): bool
+proc afterBlockParentProps(c: Context, e: var Event): bool
+proc afterImplicitPairStart(c: Context, e: var Event): bool
+proc beforePairValue(c: Context, e: var Event): bool
+proc atEmptyPairKey(c: Context, e: var Event): bool
+proc afterFlowMapValue(c: Context, e: var Event): bool
+proc afterFlowSeqSepProps(c: Context, e: var Event): bool
+proc afterFlowSeqItem(c: Context, e: var Event): bool
+proc afterPairValue(c: Context, e: var Event): bool
+{.pop.}
+
+proc init[T](pc: Context, source: T) {.inline.} =
+  pc.levels.add(Level(state: atStreamStart, indentation: -2))
+  pc.headerProps = defaultProperties
+  pc.inlineProps = defaultProperties
+  pc.lex.init(source)
+
+proc generateError(c: Context, message: string):
+    ref YamlParserError {.raises: [].} =
+  result = (ref YamlParserError)(
+    msg: message, parent: nil, mark: c.lex.curStartPos,
+    lineContent: c.lex.currentLine())
+
+proc parseTag(c: Context): TagId =
+  let handle = c.lex.fullLexeme()
+  var uri = c.p.tagLib.resolve(handle)
+  if uri == "":
+    raise c.generateError("unknown handle: " & escape(handle))
+  c.lex.next()
+  if c.lex.cur != Token.Suffix:
+    raise c.generateError("unexpected token (expected tag suffix): " & $c.lex.cur)
+  uri.add(c.lex.evaluated)
   try:
-    if not isNil(c.p.callback):
-      c.p.callback(c.lex.curStartPos.line, c.lex.curStartPos.column,
-          c.lex.getTokenLine(), msg)
-  except:
-    var e = newException(YamlParserError,
-        "Warning callback raised exception: " & getCurrentExceptionMsg())
-    e.parent = getCurrentException()
-    raise e
+    return c.p.tagLib.tags[uri]
+  except KeyError:
+    return c.p.tagLib.registerUri(uri)
 
-proc initLevel(k: FastParseLevelKind): FastParseLevel {.raises: [], inline.} =
-  FastParseLevel(kind: k, indentation: UnknownIndentation)
+proc toStyle(t: Token): ScalarStyle =
+  return (case t
+    of Plain: ssPlain
+    of SingleQuoted: ssSingleQuoted
+    of DoubleQuoted: ssDoubleQuoted
+    of Literal: ssLiteral
+    of Folded: ssFolded
+    else: ssAny)
 
-proc emptyScalar(c: ParserContext): YamlStreamEvent {.raises: [], inline.} =
-  when defined(yamlScalarRepInd):
-    result = scalarEvent("", c.tag, c.anchor, srPlain)
-  else:
-    result = scalarEvent("", c.tag, c.anchor)
-  c.tag = yTagQuestionMark
-  c.anchor = yAnchorNone
+proc atStreamStart(c: Context, e: var Event): bool =
+  c.levels[0] = Level(state: atStreamEnd, indentation: -2)
+  c.levels.add(Level(state: beforeDoc, indentation: -1))
+  e = Event(startPos: c.lex.curStartPos, endPos: c.lex.curStartPos, kind: yamlStartStream)
+  return true
 
-proc currentScalar(c: ParserContext, e: var YamlStreamEvent)
-    {.raises: [], inline.} =
-  e = YamlStreamEvent(kind: yamlScalar, scalarTag: c.tag,
-                      scalarAnchor: c.anchor)
-  shallowCopy(e.scalarContent, c.lex.buf)
-  c.lex.buf = newStringOfCap(256)
-  c.tag = yTagQuestionMark
-  c.anchor = yAnchorNone
+proc atStreamEnd(c: Context, e : var Event): bool =
+  e = Event(startPos: c.lex.curStartPos,
+            endPos: c.lex.curStartPos, kind: yamlEndStream)
+  return true
 
-proc objectStart(c: ParserContext, k: static[YamlStreamEventKind],
-                 single: bool = false): YamlStreamEvent {.raises: [].} =
-  yAssert(c.level.kind == fplUnknown)
-  when k == yamlStartMap:
-    result = startMapEvent(c.tag, c.anchor)
-    if single:
-      debug("started single-pair map at " &
-          (if c.level.indentation == UnknownIndentation:
-              $c.lex.indentation else: $c.level.indentation))
-      c.level.kind = fplSinglePairKey
+proc beforeDoc(c: Context, e: var Event): bool =
+  var version = ""
+  var seenDirectives = false
+  while true:
+    case c.lex.cur
+    of DocumentEnd:
+      if seenDirectives:
+        raise c.generateError("Missing `---` after directives")
+      c.lex.next()
+    of DirectivesEnd:
+      c.lex.next()
+      c.levels[1].state = beforeDocEnd
+      c.levels.add(Level(state: afterDirectivesEnd, indentation: -1))
+      return true
+    of StreamEnd:
+      discard c.levels.pop()
+      return false
+    of Indentation:
+      e = Event(kind: yamlStartDoc, explicitDirectivesEnd: false, version: version)
+      c.levels[^1].state = beforeDocEnd
+      c.levels.add(Level(state: beforeImplicitRoot, indentation: -1))
+      return true
+    of YamlDirective:
+      seenDirectives = true
+      c.lex.next()
+      if c.lex.cur != Token.DirectiveParam:
+        raise c.generateError("Invalid token (expected YAML version string): " & $c.lex.cur)
+      elif version != "":
+        raise c.generateError("Duplicate %YAML")
+      version = c.lex.fullLexeme()
+      if version != "1.2" and c.p.issueWarnings:
+        discard # TODO
+      c.lex.next()
+    of TagDirective:
+      seenDirectives = true
+      c.lex.next()
+      if c.lex.cur != Token.TagHandle:
+        raise c.generateError("Invalid token (expected tag handle): " & $c.lex.cur)
+      let tagHandle = c.lex.fullLexeme()
+      c.lex.next()
+      if c.lex.cur != Token.Suffix:
+        raise c.generateError("Invalid token (expected tag URI): " & $c.lex.cur)
+      c.p.tagLib.registerHandle(tagHandle, c.lex.fullLexeme())
+      c.lex.next()
+    of UnknownDirective:
+      seenDirectives = true
+      # TODO: issue warning
+      while true:
+        c.lex.next()
+        if c.lex.cur != Token.DirectiveParam: break
     else:
-      debug("started map at " &
-          (if c.level.indentation == UnknownIndentation:
-              $c.lex.indentation else: $c.level.indentation))
-      c.level.kind = fplMapKey
-  else:
-    result = startSeqEvent(c.tag, c.anchor)
-    debug("started sequence at " &
-        (if c.level.indentation == UnknownIndentation: $c.lex.indentation else:
-         $c.level.indentation))
-    c.level.kind = fplSequence
-  c.tag = yTagQuestionMark
-  c.anchor = yAnchorNone
-  if c.level.indentation == UnknownIndentation:
-    c.level.indentation = c.lex.indentation
-  c.ancestry.add(c.level)
-  c.level = initLevel(fplUnknown)
+      raise c.generateError("Unexpected token (expected directive or document start): " & $c.lex.cur)
 
-proc initDocValues(c: ParserContext) {.raises: [].} =
-  c.shorthands = initTable[string, string]()
-  c.p.anchors = initTable[string, AnchorId]()
-  c.shorthands["!"] = "!"
-  c.shorthands["!!"] = "tag:yaml.org,2002:"
-  c.nextAnchorId = 0.AnchorId
-  c.level = initLevel(fplUnknown)
-  c.tag = yTagQuestionMark
-  c.anchor = yAnchorNone
-  c.ancestry.add(FastParseLevel(kind: fplDocument, indentation: -1))
-
-proc advance(c: ParserContext) {.inline, raises: [YamlParserError].} =
-  try: c.lex.next()
-  except YamlLexerError:
-    let e = (ref YamlLexerError)(getCurrentException())
-    let pe = newException(YamlParserError, e.msg)
-    pe.line = e.line
-    pe.column = e.column
-    pe.lineContent = e.lineContent
-    raise pe
-
-proc handleAnchor(c: ParserContext) {.raises: [YamlParserError].} =
-  if c.level.kind != fplUnknown: raise c.generateError("Unexpected token")
-  if c.anchor != yAnchorNone:
-    raise c.generateError("Only one anchor is allowed per node")
-  c.anchor = c.nextAnchorId
-  c.p.anchors[c.lex.buf] = c.anchor
-  c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
-  c.lex.buf.setLen(0)
-  c.advance()
-
-proc handleTagHandle(c: ParserContext) {.raises: [YamlParserError].} =
-  if c.level.kind != fplUnknown: raise c.generateError("Unexpected tag handle")
-  if c.tag != yTagQuestionMark:
-    raise c.generateError("Only one tag handle is allowed per node")
-  if c.lex.cur == ltTagHandle:
-    var tagUri = ""
-    try:
-      tagUri.add(c.shorthands[c.lex.buf[0..c.lex.shorthandEnd]])
-      tagUri.add(c.lex.buf[c.lex.shorthandEnd + 1 .. ^1])
-    except KeyError:
-      raise c.generateError(
-          "Undefined tag shorthand: " & c.lex.buf[0..c.lex.shorthandEnd])
-    try: c.tag = c.p.tagLib.tags[tagUri]
-    except KeyError: c.tag = c.p.tagLib.registerUri(tagUri)
-  else:
-    try: c.tag = c.p.tagLib.tags[c.lex.buf]
-    except KeyError: c.tag = c.p.tagLib.registerUri(c.lex.buf)
-  c.lex.buf.setLen(0)
-  c.advance()
-
-proc handlePossibleMapStart(c: ParserContext, e: var YamlStreamEvent,
-    flow: bool = false, single: bool = false): bool =
-  result = false
-  if c.level.indentation == UnknownIndentation:
-    if c.lex.isImplicitKeyStart():
-      e = c.objectStart(yamlStartMap, single)
-      result = true
-    c.level.indentation = c.lex.indentation
-
-template implicitScalar(): YamlStreamEvent =
-  when defined(yamlScalarRepInd):
-    scalarEvent("", yTagQuestionMark, yAnchorNone, srPlain)
-  else:
-    scalarEvent("", yTagQuestionMark, yAnchorNone)
-
-proc handleMapKeyIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
-  result = false
-  case c.level.kind
-  of fplUnknown:
-    e = c.objectStart(yamlStartMap)
-    result = true
-  of fplMapValue:
-    if c.level.indentation != c.lex.indentation:
-      raise c.generateError("Invalid p.indentation of map key indicator " &
-          "(expected" & $c.level.indentation & ", got " & $c.lex.indentation &
-          ")")
-    e = implicitScalar()
-    result = true
-    c.level.kind = fplMapKey
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-  of fplMapKey:
-    if c.level.indentation != c.lex.indentation:
-      raise c.generateError("Invalid p.indentation of map key indicator")
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-  of fplSequence:
-    raise c.generateError("Unexpected map key indicator (expected '- ')")
-  of fplSinglePairKey, fplSinglePairValue, fplDocument:
-    internalError("Unexpected level kind: " & $c.level.kind)
-  c.advance()
-  if c.lex.cur != ltIndentation:
-    # this enables the parser to properly parse compact structures, like
-    # ? - a
-    #   - b
-    # and such. At the first `-`, the indentation must equal its level to be
-    # parsed properly.
-    c.lex.indentation = c.lex.curStartPos.column - 1
-
-proc handleBlockSequenceIndicator(c: ParserContext, e: var YamlStreamEvent):
-    bool =
-  result = false
-  case c.level.kind
-  of fplUnknown:
-    e = c.objectStart(yamlStartSeq)
-    result = true
-  of fplSequence:
-    if c.level.indentation != c.lex.indentation:
-      raise c.generateError(
-          "Invalid p.indentation of block sequence indicator (expected " &
-          $c.level.indentation & ", got " & $c.lex.indentation & ")")
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-  else: raise c.generateError("Illegal sequence item in map")
-  c.advance()
-  if c.lex.cur != ltIndentation:
-    # see comment in previous proc, this time with structures like
-    # - - a
-    #   - b
-    c.lex.indentation = c.lex.curStartPos.column - 1
-
-proc handleBlockItemStart(c: ParserContext, e: var YamlStreamEvent): bool =
-  result = false
-  case c.level.kind
-  of fplUnknown:
-    result = c.handlePossibleMapStart(e)
-  of fplSequence:
-    raise c.generateError(
-        "Unexpected token (expected block sequence indicator)")
-  of fplMapKey:
-    c.ancestry.add(c.level)
-    c.level = FastParseLevel(kind: fplUnknown, indentation: c.lex.indentation)
-  of fplMapValue:
-    e = emptyScalar(c)
-    result = true
-    c.level.kind = fplMapKey
-    c.ancestry.add(c.level)
-    c.level = FastParseLevel(kind: fplUnknown, indentation: c.lex.indentation)
-  of fplSinglePairKey, fplSinglePairValue, fplDocument:
-    internalError("Unexpected level kind: " & $c.level.kind)
-
-proc handleFlowItemStart(c: ParserContext, e: var YamlStreamEvent): bool =
-  if c.level.kind == fplUnknown and
-      c.ancestry[c.ancestry.high].kind == fplSequence:
-    result = c.handlePossibleMapStart(e, true, true)
-  else: result = false
-
-proc handleFlowPlainScalar(c: ParserContext) =
-  while c.lex.cur in {ltScalarPart, ltEmptyLine}:
-    c.lex.newlines.inc()
-    c.advance()
-  c.lex.newlines = 0
-
-proc lastTokenContext(s: YamlStream, line, column: var int,
-    lineContent: var string): bool =
-  let c = ParserContext(s)
-  line = c.lex.curStartPos.line
-  column = c.lex.curStartPos.column
-  lineContent = c.lex.getTokenLine(true)
-  result = true
-
-# --- macros for defining parser states ---
-
-template capitalize(s: string): string =
-  when declared(strutils.capitalizeAscii): strutils.capitalizeAscii(s)
-  else: strutils.capitalize(s)
-
-macro parserStates(names: varargs[untyped]) =
-  ## generates proc declaration for each state in list like this:
-  ##
-  ## proc name(s: YamlStream, e: var YamlStreamEvent):
-  ##     bool {.raises: [YamlParserError].}
-  result = newStmtList()
-  for name in names:
-    let nameId = newIdentNode("state" & capitalize(name.strVal))
-    result.add(newProc(nameId, [ident("bool"), newIdentDefs(ident("s"),
-        ident("YamlStream")), newIdentDefs(ident("e"), newNimNode(nnkVarTy).add(
-            ident("YamlStreamEvent")))], newEmptyNode()))
-    result[0][4] = newNimNode(nnkPragma).add(newNimNode(nnkExprColonExpr).add(
-        ident("raises"), newNimNode(nnkBracket).add(ident("YamlParserError"),
-        ident("YamlLexerError"))))
-
-proc processStateAsgns(source, target: NimNode) {.compileTime.} =
-  ## copies children of source to target and replaces all assignments
-  ## `state = [name]` with the appropriate code for changing states.
-  for child in source.children:
-    if child.kind == nnkAsgn and child[0].kind == nnkIdent:
-      if child[0].strVal == "state":
-        assert child[1].kind == nnkIdent
-        var newNameId: NimNode
-        if child[1].kind == nnkIdent and child[1].strVal == "stored":
-          newNameId = newDotExpr(ident("c"), ident("storedState"))
-        else:
-          newNameId =
-              newIdentNode("state" & capitalize(child[1].strVal))
-        target.add(newAssignment(newDotExpr(
-            newIdentNode("s"), newIdentNode("nextImpl")), newNameId))
-        continue
-      elif child[0].strVal == "stored":
-        assert child[1].kind == nnkIdent
-        let newNameId =
-            newIdentNode("state" & capitalize(child[1].strVal))
-        target.add(newAssignment(newDotExpr(newIdentNode("c"),
-            newIdentNode("storedState")), newNameId))
-        continue
-    var processed = copyNimNode(child)
-    processStateAsgns(child, processed)
-    target.add(processed)
-
-macro parserState(name: untyped, impl: untyped) =
-  ## Creates a parser state. Every parser state is a proc with the signature
-  ##
-  ## proc(s: YamlStream, e: var YamlStreamEvent):
-  ##     bool {.raises: [YamlParserError].}
-  ##
-  ## The proc name will be prefixed with "state" and the original name will be
-  ## capitalized, so a state "foo" will yield a proc named "stateFoo".
-  ##
-  ## Inside the proc, you have access to the ParserContext with the let variable
-  ## `c`. You can change the parser state by a assignment `state = [newState]`.
-  ## The [newState] must have been declared with states(...) previously.
-  let
-    nameStr = name.strVal
-    nameId = newIdentNode("state" & capitalize(nameStr))
-  var procImpl = quote do:
-    debug("state: " & `nameStr`)
-  if procImpl.kind == nnkStmtList and procImpl.len == 1: procImpl = procImpl[0]
-  procImpl = newStmtList(procImpl)
-  procImpl.add(newLetStmt(ident("c"), newCall("ParserContext", ident("s"))))
-  procImpl.add(newAssignment(newIdentNode("result"), newLit(false)))
-  assert impl.kind == nnkStmtList
-  processStateAsgns(impl, procImpl)
-  result = newProc(nameId, [ident("bool"),
-      newIdentDefs(ident("s"), ident("YamlStream")), newIdentDefs(ident("e"),
-      newNimNode(nnkVarTy).add(ident("YamlStreamEvent")))], procImpl)
-
-# --- parser states ---
-
-parserStates(initial, blockLineStart, blockObjectStart, blockAfterObject,
-             scalarEnd, plainScalarEnd, objectEnd, expectDocEnd, startDoc,
-             afterDocument, closeMoreIndentedLevels, afterPlainScalarYield,
-             emitEmptyScalar, tagHandle, anchor, alias, flow, leaveFlowMap,
-             leaveFlowSeq, flowAfterObject, leaveFlowSinglePairMap)
-
-proc closeEverything(c: ParserContext) =
-  c.lex.indentation = -1
-  c.nextImpl = stateCloseMoreIndentedLevels
-
-proc endLevel(c: ParserContext, e: var YamlStreamEvent):
-    LevelEndResult =
-  result = lerOne
-  case c.level.kind
-  of fplSequence: e = endSeqEvent()
-  of fplMapKey: e = endMapEvent()
-  of fplMapValue, fplSinglePairValue:
-    e = emptyScalar(c)
-    c.level.kind = fplMapKey
-    result = lerAdditionalMapEnd
-  of fplUnknown: e = emptyScalar(c)
-  of fplDocument:
-    when defined(yamlScalarRepInd):
-      e = endDocEvent(c.lex.cur == ltDocumentEnd)
-    else: e = endDocEvent()
-    if c.lex.cur == ltDocumentEnd: c.advance()
-  of fplSinglePairKey:
-    internalError("Unexpected level kind: " & $c.level.kind)
-
-proc handleMapValueIndicator(c: ParserContext, e: var YamlStreamEvent): bool =
-  result = false
-  case c.level.kind
-  of fplUnknown:
-    if c.level.indentation == UnknownIndentation:
-      e = c.objectStart(yamlStartMap)
-      result = true
-      c.storedState = c.nextImpl
-      c.nextImpl = stateEmitEmptyScalar
-    else:
-      e = emptyScalar(c)
-      result = true
-    c.ancestry[c.ancestry.high].kind = fplMapValue
-  of fplMapKey:
-    if c.level.indentation != c.lex.indentation:
-      raise c.generateError("Invalid p.indentation of map key indicator")
-    e = implicitScalar()
-    result = true
-    c.level.kind = fplMapValue
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-  of fplMapValue:
-    if c.level.indentation != c.lex.indentation:
-      raise c.generateError("Invalid p.indentation of map key indicator")
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-  of fplSequence:
-    raise c.generateError("Unexpected map value indicator (expected '- ')")
-  of fplSinglePairKey, fplSinglePairValue, fplDocument:
-    internalError("Unexpected level kind: " & $c.level.kind)
-  c.advance()
-  if c.lex.cur != ltIndentation:
-    # see comment in handleMapKeyIndicator, this time with structures like
-    # a: - a
-    #    - b
-    c.lex.indentation = c.lex.curStartPos.column - 1
-
-template handleObjectEnd(c: ParserContext, mayHaveEmptyValue: bool = false):
-    bool =
-  var result = false
-  c.level = c.ancestry.pop()
-  when mayHaveEmptyValue:
-    if c.level.kind == fplSinglePairValue:
-      result = true
-      c.level = c.ancestry.pop()
-  case c.level.kind
-  of fplMapKey: c.level.kind = fplMapValue
-  of fplSinglePairKey: c.level.kind = fplSinglePairValue
-  of fplMapValue: c.level.kind = fplMapKey
-  of fplSequence, fplDocument: discard
-  of fplUnknown, fplSinglePairValue:
-    internalError("Unexpected level kind: " & $c.level.kind)
-  result
-
-proc leaveFlowLevel(c: ParserContext, e: var YamlStreamEvent): bool =
-  c.flowdepth.dec()
-  result = (c.endLevel(e) == lerOne) # lerAdditionalMapEnd cannot happen
-  if c.flowdepth == 0:
-    c.lex.setFlow(false)
-    c.storedState = stateBlockAfterObject
-  else:
-    c.storedState = stateFlowAfterObject
-  c.nextImpl = stateObjectEnd
-  c.advance()
-
-parserState initial:
+proc afterDirectivesEnd(c: Context, e: var Event): bool =
   case c.lex.cur
-  of ltYamlDirective:
-    c.advance()
-    assert c.lex.cur == ltYamlVersion, $c.lex.cur
-    if c.lex.buf != "1.2":
-      c.callCallback("Version is not 1.2, but " & c.lex.buf)
-    c.lex.buf.setLen(0)
-    c.advance()
-  of ltTagDirective:
-    c.advance()
-    assert c.lex.cur == ltTagShorthand
-    var tagShorthand: string
-    shallowCopy(tagShorthand, c.lex.buf)
-    c.lex.buf = ""
-    c.advance()
-    assert c.lex.cur == ltTagUri
-    c.shorthands[tagShorthand] = c.lex.buf
-    c.lex.buf.setLen(0)
-    c.advance()
-  of ltUnknownDirective:
-    c.callCallback("Unknown directive: " & c.lex.buf)
-    c.lex.buf.setLen(0)
-    c.advance()
-    if c.lex.cur == ltUnknownDirectiveParams:
-      c.lex.buf.setLen(0)
-      c.advance()
-  of ltIndentation:
-    e = startDocEvent()
-    result = true
-    state = blockObjectStart
-  of ltStreamEnd: c.isFinished = true
-  of ltDirectivesEnd:
-    when defined(yamlScalarRepInd): e = startDocEvent(true)
-    else: e = startDocEvent()
-    result = true
-    c.advance()
-    state = blockObjectStart
-  of ltDocumentEnd:
-    c.advance()
-    state = afterDocument
-  else: internalError("Unexpected lexer token: " & $c.lex.cur)
-
-parserState blockLineStart:
-  case c.lex.cur
-  of ltIndentation: c.advance()
-  of ltEmptyLine: c.advance()
-  of ltStreamEnd:
-    c.closeEverything()
-    stored = afterDocument
+  of TagHandle, VerbatimTag, Token.Anchor:
+    c.inlineStart = c.lex.curStartPos
+    c.levels.add(Level(state: beforeNodeProperties, indentation: 0))
+  of Indentation:
+    c.headerStart = c.inlineStart
+    c.levels[^1].state = atBlockIndentation
+    c.levels.add(Level(state: beforeBlockIndentation, indentation: 0))
+  of DocumentEnd:
+    e = scalarEvent("", c.inlineProps, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
+  of Folded, Literal:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps,
+                    if c.lex.cur == Token.Folded: ssFolded else: ssLiteral,
+                    c.lex.curStartPos, c.lex.curEndPos)
   else:
-    if c.lex.indentation <= c.ancestry[^1].indentation:
-      state = closeMoreIndentedLevels
-      stored = blockObjectStart
-    else:
-      state = blockObjectStart
+    raise c.generateError("Illegal content at `---`: " & $c.lex.cur)
 
-parserState blockObjectStart:
+proc beforeImplicitRoot(c: Context, e: var Event): bool =
+  if c.lex.cur != Token.Indentation:
+    raise c.generateError("Unexpected token (expected line start): " & $c.lex.cur)
+  c.inlineStart = c.lex.curEndPos
+  c.levels[^1].indentation = c.lex.indentation
+  c.lex.next()
   case c.lex.cur
-  of ltEmptyLine: c.advance()
-  of ltIndentation:
-    c.advance()
-    c.level.indentation = UnknownIndentation
-    state = blockLineStart
-  of ltDirectivesEnd:
-    c.closeEverything()
-    stored = startDoc
-  of ltDocumentEnd:
-    c.closeEverything()
-    stored = afterDocument
-  of ltMapKeyInd:
-    result = c.handleMapKeyIndicator(e)
-  of ltMapValInd:
-    result = c.handleMapValueIndicator(e)
-  of ltQuotedScalar:
-    result = c.handleBlockItemStart(e)
-    c.advance()
-    state = scalarEnd
-  of ltBlockScalarHeader:
-    c.lex.indentation = c.ancestry[^1].indentation
-    c.advance()
-    assert c.lex.cur in  {ltBlockScalar, ltStreamEnd}
-    if c.level.indentation == UnknownIndentation:
-      c.level.indentation = c.lex.indentation
-    c.advance()
-    state = scalarEnd
-  of ltScalarPart:
-    let needsValueIndicator = c.level.kind == fplMapKey
-    result = c.handleBlockItemStart(e)
-    c.plainScalarStart = c.lex.curStartPos
-    while true:
-      c.advance()
-      case c.lex.cur
-      of ltIndentation:
-        if c.lex.indentation <= c.ancestry[^1].indentation:
-          if needsValueIndicator and
-              c.lex.indentation == c.ancestry[^1].indentation:
-            raise c.generateError("Illegal multiline implicit key")
-          break
-        c.lex.newlines.inc()
-      of ltScalarPart: discard
-      of ltEmptyLine: c.lex.newlines.inc()
-      else: break
-    if needsValueIndicator and c.lex.cur != ltMapValInd:
-      raise c.generateError("Missing mapping value indicator (`:`)")
-    c.lex.newlines = 0
-    state = plainScalarEnd
-    stored = blockAfterObject
-  of ltSeqItemInd:
-    result = c.handleBlockSequenceIndicator(e)
-  of ltTagHandle, ltLiteralTag:
-    result = c.handleBlockItemStart(e)
-    state = tagHandle
-    stored = blockObjectStart
-  of ltAnchor:
-    result = c.handleBlockItemStart(e)
-    state = anchor
-    stored = blockObjectStart
-  of ltAlias:
-    result = c.handleBlockItemStart(e)
-    state = alias
-    stored = blockAfterObject
-  of ltBraceOpen, ltBracketOpen:
-    result = c.handleBlockItemStart(e)
-    c.lex.setFlow(true)
-    state = flow
-  of ltStreamEnd:
-    c.closeEverything()
-    stored = afterDocument
-  else:
-    raise c.generateError("Unexpected token: " & $c.lex.cur)
-
-parserState scalarEnd:
-  if c.tag == yTagQuestionMark: c.tag = yTagExclamationMark
-  c.currentScalar(e)
-  when defined(yamlScalarRepInd):
-    case c.lex.scalarKind
-    of skSingleQuoted: e.scalarRep = srSingleQuoted
-    of skDoubleQuoted: e.scalarRep = srDoubleQuoted
-    of skLiteral: e.scalarRep = srLiteral
-    of skFolded: e.scalarRep = srFolded
-  result = true
-  state = objectEnd
-  stored = blockAfterObject
-
-parserState plainScalarEnd:
-  c.currentScalar(e)
-  result = true
-  c.lastTokenContextImpl = proc(s: YamlStream, line, column: var int,
-      lineContent: var string): bool {.raises: [].} =
-    let c = ParserContext(s)
-    (line, column) = c.plainScalarStart
-    lineContent = c.lex.getTokenLine(c.plainScalarStart, true)
-    result = true
-  state = afterPlainScalarYield
-  stored = blockAfterObject
-
-parserState afterPlainScalarYield:
-  c.lastTokenContextImpl = lastTokenContext
-  state = objectEnd
-
-parserState blockAfterObject:
-  case c.lex.cur
-  of ltIndentation, ltEmptyLine:
-    c.advance()
-    state = blockLineStart
-  of ltMapValInd:
-    case c.level.kind
-    of fplUnknown:
-      e = c.objectStart(yamlStartMap)
-      result = true
-    of fplMapKey:
-      e = implicitScalar()
-      result = true
-      c.level.kind = fplMapValue
-      c.ancestry.add(c.level)
-      c.level = initLevel(fplUnknown)
-    of fplMapValue:
-      c.level.kind = fplMapValue
-      c.ancestry.add(c.level)
-      c.level = initLevel(fplUnknown)
-    of fplSequence: raise c.illegalToken("sequence item")
-    of fplSinglePairKey, fplSinglePairValue, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    c.advance()
-    state = blockObjectStart
-  of ltDirectivesEnd:
-    c.closeEverything()
-    stored = startDoc
-  of ltStreamEnd:
-    c.closeEverything()
-    stored = afterDocument
-  else: raise c.illegalToken("':', comment or line end")
-
-parserState objectEnd:
-  if c.handleObjectEnd(true):
-    e = endMapEvent()
-    result = true
-  if c.level.kind == fplDocument: state = expectDocEnd
-  else: state = stored
-
-parserState expectDocEnd:
-  case c.lex.cur
-  of ltIndentation, ltEmptyLine: c.advance()
-  of ltDirectivesEnd:
-    e = endDocEvent()
-    result = true
-    state = startDoc
-    c.ancestry.setLen(0)
-  of ltDocumentEnd:
-    when defined(yamlScalarRepInd): e = endDocEvent(true)
-    else: e = endDocEvent()
-    result = true
-    state = afterDocument
-    c.advance()
-  of ltStreamEnd:
-    e = endDocEvent()
-    result = true
-    c.isFinished = true
-  else:
-    raise c.generateError("Unexpected token (expected document end): " &
-        $c.lex.cur)
-
-parserState startDoc:
-  c.initDocValues()
-  when defined(yamlScalarRepInd):
-    e = startDocEvent(c.lex.cur == ltDirectivesEnd)
-  else: e = startDocEvent()
-  result = true
-  c.advance()
-  state = blockObjectStart
-
-parserState afterDocument:
-  case c.lex.cur
-  of ltStreamEnd: c.isFinished = true
-  of ltEmptyLine: c.advance()
-  else:
-    c.initDocValues()
-    state = initial
-
-parserState closeMoreIndentedLevels:
-  if c.ancestry.len > 0:
-    let parent = c.ancestry[c.ancestry.high]
-    if parent.indentation >= c.lex.indentation:
-      if c.lex.cur == ltSeqItemInd:
-        if (c.lex.indentation == c.level.indentation and
-            c.level.kind == fplSequence) or
-           (c.lex.indentation == parent.indentation and
-            c.level.kind == fplUnknown and parent.kind != fplSequence):
-          state = stored
-          debug("Not closing because sequence indicator")
-          return false
-      debug("Closing because parent.indentation (" & $parent.indentation &
-            ") >= indentation(" & $c.lex.indentation & ")")
-      case c.endLevel(e)
-      of lerNothing: discard
-      of lerOne: result = true
-      of lerAdditionalMapEnd: return true
-      discard c.handleObjectEnd(false)
-      return result
-    debug("Not closing level because parent.indentation (" &
-        $parent.indentation & ") < indentation(" & $c.lex.indentation &
-        ")")
-    if c.level.kind == fplDocument: state = expectDocEnd
-    else: state = stored
-  elif c.lex.indentation == c.level.indentation:
-    debug("Closing document")
-    let res = c.endLevel(e)
-    yAssert(res == lerOne)
-    result = true
-    state = stored
-  else:
-    state = stored
-
-parserState emitEmptyScalar:
-  e = implicitScalar()
-  result = true
-  state = stored
-
-parserState tagHandle:
-  c.handleTagHandle()
-  state = stored
-
-parserState anchor:
-  c.handleAnchor()
-  state = stored
-
-parserState alias:
-  if c.level.kind != fplUnknown: raise c.generateError("Unexpected token")
-  if c.anchor != yAnchorNone or c.tag != yTagQuestionMark:
-    raise c.generateError("Alias may not have anchor or tag")
-  var id: AnchorId
-  try: id = c.p.anchors[c.lex.buf]
-  except KeyError: raise c.generateError("Unknown anchor")
-  c.lex.buf.setLen(0)
-  e = aliasEvent(id)
-  c.advance()
-  result = true
-  state = objectEnd
-
-parserState flow:
-  case c.lex.cur
-  of ltBraceOpen:
-    if c.handleFlowItemStart(e): return true
-    e = c.objectStart(yamlStartMap)
-    result = true
-    c.flowdepth.inc()
-    c.explicitFlowKey = false
-    c.advance()
-  of ltBracketOpen:
-    if c.handleFlowItemStart(e): return true
-    e = c.objectStart(yamlStartSeq)
-    result = true
-    c.flowdepth.inc()
-    c.advance()
-  of ltBraceClose:
-    yAssert(c.level.kind == fplUnknown)
-    c.level = c.ancestry.pop()
-    state = leaveFlowMap
-  of ltBracketClose:
-    yAssert(c.level.kind == fplUnknown)
-    c.level = c.ancestry.pop()
-    state = leaveFlowSeq
-  of ltComma:
-    yAssert(c.level.kind == fplUnknown)
-    c.level = c.ancestry.pop()
-    case c.level.kind
-    of fplSequence:
-      e = c.emptyScalar()
-      result = true
-    of fplMapValue:
-      e = c.emptyScalar()
-      result = true
-      c.level.kind = fplMapKey
-      c.explicitFlowKey = false
-    of fplMapKey:
-      e = c.emptyScalar()
-      c.level.kind = fplMapValue
-      return true
-    of fplSinglePairValue:
-      e = c.emptyScalar()
-      result = true
-      c.level = c.ancestry.pop()
-      state = leaveFlowSinglePairMap
-      stored = flow
-    of fplUnknown, fplSinglePairKey, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-    c.advance()
-  of ltMapValInd:
-    c.level = c.ancestry.pop()
-    case c.level.kind
-    of fplSequence:
-      e = startMapEvent(c.tag, c.anchor)
-      result = true
-      debug("started single-pair map at " &
-          (if c.level.indentation == UnknownIndentation:
-           $c.lex.indentation else: $c.level.indentation))
-      c.tag = yTagQuestionMark
-      c.anchor = yAnchorNone
-      if c.level.indentation == UnknownIndentation:
-        c.level.indentation = c.lex.indentation
-      c.ancestry.add(c.level)
-      c.level = initLevel(fplSinglePairKey)
-    of fplMapValue, fplSinglePairValue:
-      raise c.generateError("Unexpected token (expected ',')")
-    of fplMapKey:
-      e = c.emptyScalar()
-      result = true
-      c.level.kind = fplMapValue
-    of fplSinglePairKey:
-      e = c.emptyScalar()
-      result = true
-      c.level.kind = fplSinglePairValue
-    of fplUnknown, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    if c.level.kind != fplSinglePairKey: c.advance()
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-  of ltQuotedScalar:
-    if c.handleFlowItemStart(e): return true
-    if c.tag == yTagQuestionMark: c.tag = yTagExclamationMark
-    c.currentScalar(e)
-    when defined(yamlScalarRepInd):
-      case c.lex.scalarKind
-      of skSingleQuoted: e.scalarRep = srSingleQuoted
-      of skDoubleQuoted: e.scalarRep = srDoubleQuoted
-      of skLiteral: e.scalarRep = srLiteral
-      of skFolded: e.scalarRep = srFolded
-    result = true
-    state = objectEnd
-    stored = flowAfterObject
-    c.advance()
-  of ltTagHandle, ltLiteralTag:
-    if c.handleFlowItemStart(e): return true
-    c.handleTagHandle()
-  of ltAnchor:
-    if c.handleFlowItemStart(e): return true
-    c.handleAnchor()
-  of ltAlias:
-    state = alias
-    stored = flowAfterObject
-  of ltMapKeyInd:
-    if c.explicitFlowKey:
-      raise c.generateError("Duplicate '?' in flow mapping")
-    elif c.level.kind == fplUnknown:
-      case c.ancestry[c.ancestry.high].kind
-      of fplMapKey, fplMapValue, fplDocument: discard
-      of fplSequence:
-        e = c.objectStart(yamlStartMap, true)
-        result = true
-      else:
-        raise c.generateError("Unexpected token")
-    c.explicitFlowKey = true
-    c.advance()
-  of ltScalarPart:
-    if c.handleFlowItemStart(e): return true
-    c.handleFlowPlainScalar()
-    c.currentScalar(e)
-    result = true
-    state = objectEnd
-    stored = flowAfterObject
-  of ltEmptyLine:
-    c.advance()
-  else:
-    raise c.generateError("Unexpected token: " & $c.lex.cur)
-
-parserState leaveFlowMap:
-  case c.level.kind
-  of fplMapValue:
-    e = c.emptyScalar()
-    c.level.kind = fplMapKey
-    return true
-  of fplMapKey:
-    if c.tag != yTagQuestionMark or c.anchor != yAnchorNone or
-        c.explicitFlowKey:
-      e = c.emptyScalar()
-      c.level.kind = fplMapValue
-      c.explicitFlowKey = false
-      return true
-  of fplSequence:
-    raise c.generateError("Unexpected token (expected ']')")
-  of fplSinglePairValue:
-    raise c.generateError("Unexpected token (expected ']')")
-  of fplUnknown, fplSinglePairKey, fplDocument:
-    internalError("Unexpected level kind: " & $c.level.kind)
-  result = c.leaveFlowLevel(e)
-
-parserState leaveFlowSeq:
-  case c.level.kind
-  of fplSequence:
-    if c.tag != yTagQuestionMark or c.anchor != yAnchorNone:
-      e = c.emptyScalar()
-      return true
-  of fplSinglePairValue:
-    e = c.emptyScalar()
-    c.level = c.ancestry.pop()
-    state = leaveFlowSinglePairMap
-    stored = leaveFlowSeq
-    return true
-  of fplMapKey, fplMapValue:
-    raise c.generateError("Unexpected token (expected '}')")
-  of fplUnknown, fplSinglePairKey, fplDocument:
-    internalError("Unexpected level kind: " & $c.level.kind)
-  result = c.leaveFlowLevel(e)
-
-parserState leaveFlowSinglePairMap:
-  e = endMapEvent()
-  result = true
-  state = stored
-
-parserState flowAfterObject:
-  case c.lex.cur
-  of ltBracketClose:
-    case c.level.kind
-    of fplSequence: discard
-    of fplMapKey, fplMapValue:
-      raise c.generateError("Unexpected token (expected '}')")
-    of fplSinglePairValue:
-      c.level = c.ancestry.pop()
-      yAssert(c.level.kind == fplSequence)
-      e = endMapEvent()
-      return true
-    of fplUnknown, fplSinglePairKey, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    result = c.leaveFlowLevel(e)
-  of ltBraceClose:
-    case c.level.kind
-    of fplMapKey, fplMapValue: discard
-    of fplSequence, fplSinglePairValue:
-      raise c.generateError("Unexpected token (expected ']')")
-    of fplUnknown, fplSinglePairKey, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    # we need the extra state for possibly emitting an additional empty value.
-    state = leaveFlowMap
+  of SeqItemInd, MapKeyInd, MapValueInd:
+    c.levels[^1].state = afterCompactParent
     return false
-  of ltComma:
-    case c.level.kind
-    of fplSequence: discard
-    of fplMapValue:
-      e = implicitScalar()
-      result = true
-      c.level.kind = fplMapKey
-      c.explicitFlowKey = false
-    of fplSinglePairValue:
-      c.level = c.ancestry.pop()
-      yAssert(c.level.kind == fplSequence)
-      e = endMapEvent()
-      result = true
-    of fplMapKey: c.explicitFlowKey = false
-    of fplUnknown, fplSinglePairKey, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-    state = flow
-    c.advance()
-  of ltMapValInd:
-    c.explicitFlowKey = false
-    case c.level.kind
-    of fplSequence, fplMapKey:
-      raise c.generateError("Unexpected token (expected ',')")
-    of fplMapValue, fplSinglePairValue: discard
-    of fplUnknown, fplSinglePairKey, fplDocument:
-      internalError("Unexpected level kind: " & $c.level.kind)
-    c.ancestry.add(c.level)
-    c.level = initLevel(fplUnknown)
-    state = flow
-    c.advance()
-  of ltStreamEnd:
-    raise c.generateError("Unclosed flow content")
+  of scalarTokenKind:
+    c.levels[^1].state = requireImplicitMapStart
+    return false
+  of nodePropertyKind:
+    c.levels[^1].state = requireImplicitMapStart
+    c.levels.add(Level(state: beforeNodeProperties, indentation: 0))
+  of MapStart, SeqStart:
+    c.levels[^1].state = afterCompactParentProps
+    return false
   else:
-    raise c.generateError("Unexpected content (expected flow indicator)")
+    raise c.generateError("Unexpected token (expected collection start): " & $c.lex.cur)
 
-# --- parser initialization ---
-
-proc init(c: ParserContext, p: YamlParser) {.raises: [YamlParserError].} =
-  # this try/except should not be necessary because basicInit cannot raise
-  # anything. however, compiling to JS does not work without it.
-  try: c.basicInit(lastTokenContext)
-  except: discard
-  c.p = p
-  c.ancestry = newSeq[FastParseLevel]()
-  c.initDocValues()
-  c.flowdepth = 0
-  c.nextImpl = stateInitial
-  c.explicitFlowKey = false
-  c.advance()
-
-when not defined(JS):
-  proc parse*(p: YamlParser, s: Stream): YamlStream
-      {.raises: [YamlParserError].} =
-    ## Parse the given stream as YAML character stream.
-    let c = new(ParserContext)
-    try: c.lex = newYamlLexer(s)
-    except:
-      let e = newException(YamlParserError,
-          "Error while opening stream: " & getCurrentExceptionMsg())
-      e.parent = getCurrentException()
-      e.line = 1
-      e.column = 1
-      e.lineContent = ""
-      raise e
-    c.init(p)
-    result = c
-
-proc parse*(p: YamlParser, str: string): YamlStream
-    {.raises: [YamlParserError].} =
-  ## Parse the given string as YAML character stream.
-  let c = new(ParserContext)
-  c.lex = newYamlLexer(str)
-  c.init(p)
-  result = c
-
-proc anchorName*(p: YamlParser, anchor: AnchorId): string {.raises: [].} =
-  ## Retrieve the textual representation of the given anchor as it occurred in
-  ## the input (without the leading `&`). Returns the empty string for unknown
-  ## anchors.
-  for representation, value in p.anchors:
-    if value == anchor: return representation
-  return ""
-
-proc renderAttrs(p: YamlParser, tag: TagId, anchor: AnchorId,
-                 isPlain: bool): string =
-  result = ""
-  if anchor != yAnchorNone: result &= " &" & p.anchorName(anchor)
-  case tag
-  of yTagQuestionmark: discard
-  of yTagExclamationmark:
-    when defined(yamlScalarRepInd):
-      if isPlain: result &= " <!>"
+proc requireImplicitMapStart(c: Context, e: var Event): bool =
+  c.levels[^1].indentation = c.lex.indentation
+  case c.lex.cur
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+    let headerEnd = c.lex.curStartPos
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      c.peek = e
+      e = startMapEvent(csBlock, c.headerProps, c.headerStart, headerEnd)
+      c.headerProps = defaultProperties
+      c.levels[^1].state = afterImplicitKey
+    else:
+      if not isEmpty(c.headerProps):
+        raise c.generateError("Alias may not have properties")
+      discard c.levels.pop()
+    return true
+  of Plain, SingleQuoted, DoubleQuoted:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur),
+                    c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    let headerEnd = c.lex.curStartPos
+    c.lex.next()
+    case c.lex.cur
+    of Token.MapValueInd:
+      if c.lex.lastScalarWasMultiline():
+        raise c.generateError("Implicit mapping key may not be multiline")
+      c.peek = move(e)
+      e = startMapEvent(csBlock, c.headerProps,
+                        c.headerStart, headerEnd)
+      c.headerProps = defaultProperties
+      c.levels[^1].state = afterImplicitKey
+    of Indentation, DocumentEnd, DirectivesEnd, StreamEnd:
+      raise c.generateError("Scalar at root level requires `---`")
+    else: discard
+    return true
+  of MapStart, SeqStart:
+    c.levels[^1].state = beforeFlowItemProps
+    return false
+  of Indentation:
+    raise c.generateError("Standalone node properties not allowed on non-header line")
   else:
-    result &= " <" & p.taglib.uri(tag) & ">"
+    raise c.generateError("Unexpected token (expected implicit mapping key): " & $c.lex.cur)
 
-proc display*(p: YamlParser, event: YamlStreamEvent): string
-    {.raises: [KeyError].} =
+proc atBlockIndentation(c: Context, e: var Event): bool =
+  if c.blockIndentation == c.levels[^1].indentation and
+      (c.lex.cur != Token.SeqItemInd or
+       c.levels[^3].state == inBlockSeq):
+    e = scalarEvent(c.lex.evaluated, c.headerProps, ssPlain,
+                    c.headerStart, c.headerStart)
+    c.headerProps = defaultProperties
+    discard c.levels.pop()
+    discard c.levels.pop()
+    return true
+  c.inlineStart = c.lex.curStartPos
+  c.levels[^1].indentation = c.lex.indentation
+  case c.lex.cur
+  of nodePropertyKind:
+    if isEmpty(c.headerProps):
+      c.levels[^1].state = requireInlineBlockItem
+    else:
+      c.levels[^1].state = requireImplicitMapStart
+    c.levels.add(Level(state: beforeBlockIndentation, indentation: 0))
+    return false
+  of SeqItemInd:
+    e = startSeqEvent(csBlock, c.headerProps,
+                      c.headerStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1] = Level(state: inBlockSeq, indentation: c.lex.indentation)
+    c.levels.add(Level(state: beforeBlockIndentation, indentation: 0))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.lex.indentation))
+    c.lex.next()
+    return true
+  of MapKeyInd:
+    e = startMapEvent(csBlock, c.headerProps,
+                      c.headerStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1] = Level(state: beforeBlockMapValue, indentation: 0)
+    c.levels.add(Level(state: beforeBlockIndentation))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.lex.indentation))
+    c.lex.next()
+  of Plain, SingleQuoted, DoubleQuoted:
+    c.levels[^1].indentation = c.lex.indentation
+    e = scalarEvent(c.lex.evaluated, c.headerProps,
+                    toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    let headerEnd = c.lex.curStartPos
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      if c.lex.lastScalarWasMultiline():
+        raise c.generateError("Implicit mapping key may not be multiline")
+      let props = e.scalarProperties
+      e.scalarProperties = defaultProperties
+      c.peek = move(e)
+      e = startMapEvent(csBlock, props, c.headerStart, headerEnd)
+      c.levels[^1].state = afterImplicitKey
+    else:
+      discard c.levels.pop()
+    return true
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    let headerEnd = c.lex.curStartPos
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      c.peek = move(e)
+      e = startMapEvent(csBlock, c.headerProps, c.headerStart, headerEnd)
+      c.headerProps = defaultProperties
+      c.levels[^1].state = afterImplicitKey
+    elif not isEmpty(c.headerProps):
+      raise c.generateError("Alias may not have properties")
+    else:
+      discard c.levels.pop()
+    return true
+  else:
+    c.levels[^1].state = atBlockIndentationProps
+
+proc atBlockIndentationProps(c: Context, e: var Event): bool =
+  c.levels[^1].indentation = c.lex.indentation
+  case c.lex.cur
+  of MapValueInd:
+    c.peek = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    e = startMapEvent(csBlock, c.headerProps, c.lex.curStartPos, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1].state = afterImplicitKey
+    return true
+  of Plain, SingleQuoted, DoubleQuoted:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    let headerEnd = c.lex.curStartPos
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      if c.lex.lastScalarWasMultiline():
+        raise c.generateError("Implicit mapping key may not be multiline")
+      c.peek = move(e)
+      e = startMapEvent(csBlock, c.headerProps, c.headerStart, headerEnd)
+      c.headerProps = defaultProperties
+      c.levels[^1].state = afterImplicitKey
+    else:
+      discard c.levels.pop()
+    return true
+  of MapStart:
+    e = startMapEvent(csFlow, c.headerProps, c.headerStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1].state = afterFlowMapSep
+    c.lex.next()
+    return true
+  of SeqStart:
+    e = startSeqEvent(csFlow, c.headerProps, c.headerStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1].state = afterFlowSeqSep
+    c.lex.next()
+    return true
+  else:
+    raise c.generateError("Unexpected token (expected block content): " & $c.lex.cur)
+
+proc beforeNodeProperties(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of TagHandle:
+    if c.inlineProps.tag != yTagQuestionMark:
+      raise c.generateError("Only one tag allowed per node")
+    c.inlineProps.tag = c.parseTag()
+  of VerbatimTag:
+    if c.inlineProps.tag != yTagQuestionMark:
+      raise c.generateError("Only one tag allowed per node")
+    try:
+      c.inlineProps.tag = c.p.taglib.tags[c.lex.evaluated]
+    except KeyError:
+      c.inlineProps.tag = c.p.taglib.registerUri(c.lex.evaluated)
+  of Token.Anchor:
+    if c.inlineProps.anchor != yAnchorNone:
+      raise c.generateError("Only one anchor allowed per node")
+    c.inlineProps.anchor = c.lex.shortLexeme().Anchor
+  of Indentation:
+    c.headerProps = c.inlineProps
+    c.inlineProps = defaultProperties
+    discard c.levels.pop()
+    return false
+  of Alias:
+    raise c.generateError("Alias may not have node properties")
+  else:
+    discard c.levels.pop()
+    return false
+  c.lex.next()
+  return false
+
+proc afterCompactParent(c: Context, e: var Event): bool =
+  c.inlineStart = c.lex.curStartPos
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels[^1].state = afterCompactParentProps
+    c.levels.add(Level(state: beforeNodeProperties))
+  of SeqItemInd:
+    e = startSeqEvent(csBlock, c.headerProps, c.headerStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1] = Level(state: inBlockSeq, indentation: c.lex.indentation)
+    c.levels.add(Level(state: beforeBlockIndentation))
+    c.levels.add(Level(state: afterCompactParent))
+    c.lex.next()
+    return true
+  of MapKeyInd:
+    e = startMapEvent(csBlock, c.headerProps, c.headerStart, c.lex.curEndPos)
+    c.headerProps = defaultProperties
+    c.levels[^1] = Level(state: beforeBlockMapValue, indentation: c.lex.indentation)
+    c.levels.add(Level(state: beforeBlockIndentation))
+    c.levels.add(Level(state: afterCompactParent))
+    return true
+  else:
+    c.levels[^1].state = afterCompactParentProps
+    return false
+
+proc afterCompactParentProps(c: Context, e: var Event): bool =
+  c.levels[^1].indentation = c.lex.indentation
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels.add(Level(state: beforeNodeProperties))
+    return false
+  of Indentation:
+    c.headerStart = c.inlineStart
+    c.levels[^1] = Level(state: atBlockIndentation, indentation: c.levels[^3].indentation)
+    c.levels.add(Level(state: beforeBlockIndentation))
+    return false
+  of StreamEnd, DocumentEnd, DirectivesEnd:
+    e = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curStartPos)
+    c.inlineProps = defaultProperties
+    discard c.levels.pop()
+    return true
+  of MapValueInd:
+    c.peek = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curStartPos)
+    c.inlineProps = defaultProperties
+    e = startMapEvent(csBlock, defaultProperties, c.lex.curStartPos, c.lex.curStartPos)
+    c.levels[^1].state = afterImplicitKey
+    return true
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+    let headerEnd = c.lex.curStartPos
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      c.peek = move(e)
+      e = startMapEvent(csBlock, defaultProperties, headerEnd, headerEnd)
+      c.levels[^1].state = afterImplicitKey
+    else:
+      discard c.levels.pop()
+    return true
+  of scalarTokenKind:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur),
+                    c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    let headerEnd = c.lex.curStartPos
+    c.levels[^1].indentation = c.lex.indentation
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      if c.lex.lastScalarWasMultiline():
+        raise c.generateError("Implicit mapping key may not be multiline")
+      c.peek = move(e)
+      e = startMapEvent(csBlock, defaultProperties, headerEnd, headerEnd)
+      c.levels[^1].state = afterImplicitKey
+    else:
+      discard c.levels.pop()
+    return true
+  of MapStart:
+    e = startMapEvent(csFlow, c.inlineProps, c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    c.levels[^1].state = afterFlowMapSep
+    c.lex.next()
+    return true
+  of SeqStart:
+    e = startSeqEvent(csFlow, c.inlineProps, c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    c.levels[^1].state = afterFlowSeqSep
+    c.lex.next()
+    return true
+  else:
+    raise c.generateError("Unexpected token (expected newline or flow item start: " & $c.lex.cur)
+
+proc afterBlockParent(c: Context, e: var Event): bool =
+  c.inlineStart = c.lex.curStartPos
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels[^1].state = afterBlockParentProps
+    c.levels.add(Level(state: beforeNodeProperties))
+  of SeqItemInd, MapKeyInd:
+    raise c.generateError("Compact notation not allowed after implicit key")
+  else:
+    c.levels[^1].state = afterBlockParentProps
+  return false
+
+proc afterBlockParentProps(c: Context, e: var Event): bool =
+  c.levels[^1].indentation = c.lex.indentation
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels.add(Level(state: beforeNodeProperties))
+    return false
+  of MapValueInd:
+    raise c.generateError("Compact notation not allowed after implicit key")
+  of scalarTokenKind:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      raise c.generateError("Compact notation not allowed after implicit key")
+    discard c.levels.pop()
+    return true
+  else:
+    c.levels[^1].state = afterCompactParentProps
+    return false
+
+proc requireInlineBlockItem(c: Context, e: var Event): bool =
+  c.levels[^1].indentation = c.lex.indentation
+  case c.lex.cur
+  of Indentation:
+    raise c.generateError("Node properties may not stand alone on a line")
+  else:
+    c.levels[^1].state = afterCompactParentProps
+    return false
+
+proc beforeDocEnd(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of DocumentEnd:
+    e = endDocEvent(false, c.lex.curStartPos, c.lex.curEndPos)
+    c.levels[^1].state = beforeDoc
+    c.lex.next()
+  of StreamEnd:
+    e = endDocEvent(true, c.lex.curStartPos, c.lex.curEndPos)
+    discard c.levels.pop()
+  of DirectivesEnd:
+    e = endDocEvent(true, c.lex.curStartPos, c.lex.curStartPos)
+    c.levels[^1].state = beforeDoc
+  else:
+    raise c.generateError("Unexpected token (expected document end): " & $c.lex.cur)
+  return true
+
+proc inBlockSeq(c: Context, e: var Event): bool =
+  if c.blockIndentation > c.levels[^1].indentation:
+    raise c.generateError("Invalid indentation: got " & $c.blockIndentation & ", expected " & $c.levels[^1].indentation)
+  case c.lex.cur
+  of SeqItemInd:
+    c.lex.next()
+    c.levels.add(Level(state: beforeBlockIndentation))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.blockIndentation))
+    return false
+  else:
+    if c.levels[^3].indentation == c.levels[^1].indentation:
+      e = endSeqEvent(c.lex.curStartPos, c.lex.curEndPos)
+      discard c.levels.pop()
+      discard c.levels.pop()
+    else:
+      raise c.generateError("Illegal token (expected block sequence indicator): " & $c.lex.cur)
+
+proc beforeBlockMapKey(c: Context, e: var Event): bool =
+  if c.blockIndentation > c.levels[^1].indentation:
+    raise c.generateError("Invalid indentation: got " & $c.blockIndentation & ", expected " & $c.levels[^1].indentation)
+  case c.lex.cur
+  of MapKeyInd:
+    c.levels[^1].state = beforeBlockMapValue
+    c.levels.add(Level(state: beforeBlockIndentation))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.blockIndentation))
+    c.lex.next()
+    return false
+  of nodePropertyKind:
+    c.levels[^1].state = atBlockMapKeyProps
+    c.levels.add(Level(state: beforeNodeProperties))
+    return false
+  of Plain, SingleQuoted, DoubleQuoted:
+    c.levels[^1].state = atBlockMapKeyProps
+    return false
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+    c.lex.next()
+    c.levels[^1].state = afterImplicitKey
+    return true
+  of MapValueInd:
+    e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
+    c.levels[^1].state = beforeBlockMapValue
+    return true
+  else:
+    raise c.generateError("Unexpected token (expected mapping key): " & $c.lex.cur)
+
+proc atBlockMapKeyProps(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels.add(Level(state: beforeNodeProperties))
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+  of Plain, SingleQuoted, DoubleQuoted:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    if c.lex.lastScalarWasMultiline():
+      raise c.generateError("Implicit mapping key may not be multiline")
+  of MapValueInd:
+    e = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curStartPos)
+    c.inlineProps = defaultProperties
+    c.levels[^1].state = afterImplicitKey
+    return true
+  else:
+    raise c.generateError("Unexpected token (expected implicit mapping key): " & $c.lex.cur)
+  c.lex.next()
+  c.levels[^1].state = afterImplicitKey
+  return true
+
+proc afterImplicitKey(c: Context, e: var Event): bool =
+  if c.lex.cur != Token.MapValueInd:
+    raise c.generateError("Unexpected token (expected ':'): " & $c.lex.cur)
+  c.lex.next()
+  c.levels[^1].state = beforeBlockMapKey
+  c.levels.add(Level(state: beforeBlockIndentation))
+  c.levels.add(Level(state: afterBlockParent, indentation: c.blockIndentation))
+  return false
+
+proc beforeBlockMapValue(c: Context, e: var Event): bool =
+  if c.blockIndentation > c.levels[^1].indentation:
+    raise c.generateError("Invalid indentation")
+  case c.lex.cur
+  of MapValueInd:
+    c.levels[^1].state = beforeBlockMapKey
+    c.levels.add(Level(state: beforeBlockIndentation))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.blockIndentation))
+    c.lex.next()
+  of MapKeyInd, Plain, SingleQuoted, DoubleQuoted, nodePropertyKind:
+    # the value is allowed to be missing after an explicit key
+    e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
+    c.levels[^1].state = beforeBlockMapKey
+    return true
+  else:
+    raise c.generateError("Unexpected token (expected mapping value): " & $c.lex.cur)
+
+proc beforeBlockIndentation(c: Context, e: var Event): bool =
+  proc endBlockNode() =
+    if c.levels[^1].state == beforeBlockMapKey:
+      e = endMapEvent(c.lex.curStartPos, c.lex.curEndPos)
+    elif c.levels[^1].state == beforeBlockMapValue:
+      e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
+      c.levels[^1].state = beforeBlockMapKey
+      c.levels.add(Level(state: beforeBlockIndentation))
+      return
+    elif c.levels[^1].state == inBlockSeq:
+      e = endSeqEvent(c.lex.curStartPos, c.lex.curEndPos)
+    elif c.levels[^1].state == atBlockIndentation:
+      e = scalarEvent("", c.headerProps, ssPlain, c.headerStart, c.headerStart)
+      c.headerProps = defaultProperties
+    elif c.levels[^1].state == beforeBlockIndentation:
+      raise c.generateError("Unexpected double beforeBlockIndentation")
+    else:
+      raise c.generateError("Internal error (please report this bug)")
+    discard c.levels.pop()
+  discard c.levels.pop()
+  case c.lex.cur
+  of Indentation:
+    c.blockIndentation = c.lex.indentation
+    if c.blockIndentation < c.levels[^1].indentation:
+      endBlockNode()
+      return true
+    else:
+      c.lex.next()
+      return false
+  of StreamEnd, DocumentEnd, DirectivesEnd:
+    c.blockIndentation = 0
+    if c.levels[^1].state != beforeDocEnd:
+      endBlockNode()
+      return true
+    else:
+      return false
+  else:
+    raise c.generateError("Unexpected content after node in block context (expected newline): " & $c.lex.cur)
+
+proc beforeFlowItem(c: Context, e: var Event): bool =
+  c.inlineStart = c.lex.curStartPos
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels[^1].state = beforeFlowItemProps
+    c.levels.add(Level(state: beforeNodeProperties))
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+    c.lex.next()
+    discard c.levels.pop()
+    return true
+  else:
+    c.levels[^1].state = beforeFlowItemProps
+  return false
+
+proc beforeFlowItemProps(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of nodePropertyKind:
+    c.levels.add(Level(state: beforeNodeProperties))
+  of Alias:
+    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
+    c.lex.next()
+    discard c.levels.pop()
+  of scalarTokenKind:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+    c.lex.next()
+    discard c.levels.pop()
+  of MapStart:
+    e = startMapEvent(csFlow, c.inlineProps, c.inlineStart, c.lex.curEndPos)
+    c.levels[^1].state = afterFlowMapSep
+    c.lex.next()
+  of SeqStart:
+    e = startSeqEvent(csFlow, c.inlineProps, c.inlineStart, c.lex.curEndPos)
+    c.levels[^1].state = afterFlowSeqSep
+    c.lex.next()
+  of MapEnd, SeqEnd, SeqSep, MapValueInd:
+    e = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curEndPos)
+    discard c.levels.pop()
+  else:
+    raise c.generateError("Unexpected token (expected flow node): " & $c.lex.cur)
+  c.inlineProps = defaultProperties
+  return true
+
+proc afterFlowMapKey(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of MapValueInd:
+    c.levels[^1].state = afterFlowMapValue
+    c.levels.add(Level(state: beforeFlowItem))
+    c.lex.next()
+    return false
+  of SeqSep, MapEnd:
+    e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
+    c.levels[^1].state = afterFlowMapValue
+    return true
+  else:
+    raise c.generateError("Unexpected token (expected ':'): " & $c.lex.cur)
+
+proc afterFlowMapValue(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of SeqSep:
+    c.levels[^1].state = afterFlowMapSep
+    c.lex.next()
+    return false
+  of MapEnd:
+    e = endMapEvent(c.lex.curStartPos, c.lex.curEndPos)
+    c.lex.next()
+    discard c.levels.pop()
+    return true
+  of Plain, SingleQuoted, DoubleQuoted, MapKeyInd, Token.Anchor, Alias, MapStart, SeqStart:
+    raise c.generateError("Missing ','")
+  else:
+    raise c.generateError("Unexpected token (expected ',' or '}'): " & $c.lex.cur)
+
+proc afterFlowSeqItem(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of SeqSep:
+    c.levels[^1].state = afterFlowSeqSep
+    c.lex.next()
+    return false
+  of SeqEnd:
+    e = endSeqEvent(c.lex.curStartPos, c.lex.curEndPos)
+    c.lex.next()
+    discard c.levels.pop()
+    return true
+  of Plain, SingleQuoted, DoubleQuoted, MapKeyInd, Token.Anchor, Alias, MapStart, SeqStart:
+    raise c.generateError("Missing ','")
+  else:
+    raise c.generateError("Unexpected token (expected ',' or ']'): " & $c.lex.cur)
+
+proc afterFlowMapSep(c: Context, e: var Event): bool =
+  case c.lex.cur
+  of MapKeyInd:
+    c.lex.next()
+  of MapEnd:
+    e = endMapEvent(c.lex.curStartPos, c.lex.curEndPos)
+    c.lex.next()
+    discard c.levels.pop()
+    return true
+  else: discard
+  c.levels[^1].state = afterFlowMapKey
+  c.levels.add(Level(state: beforeFlowItem))
+  return false
+
+proc possibleNextSequenceItem(c: Context, e: var Event, endToken: Token, afterProps, afterItem: State): bool =
+  c.inlineStart = c.lex.curStartPos
+  case c.lex.cur
+  of SeqSep:
+    e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curStartPos)
+    c.lex.next()
+    return true
+  of nodePropertyKind:
+    c.levels[^1].state = afterProps
+    c.levels.add(Level(state: beforeNodeProperties))
+    return false
+  of Plain, SingleQuoted, DoubleQuoted:
+    c.levels[^1].state = afterProps
+    return false
+  of MapKeyInd:
+    c.levels[^1].state = afterItem
+    e = startMapEvent(csFlow, defaultProperties, c.lex.curStartPos, c.lex.curEndPos)
+    c.lex.next()
+    c.levels.add(Level(state: beforePairValue))
+    c.levels.add(Level(state: beforeFlowItem))
+    return true
+  of MapValueInd:
+    c.levels[^1].state = afterItem
+    e = startMapEvent(csFlow, defaultProperties, c.lex.curStartPos, c.lex.curEndPos)
+    c.levels.add(Level(state: atEmptyPairKey))
+    return true
+  else:
+    if c.lex.cur == endToken:
+      e = endSeqEvent(c.lex.curStartPos, c.lex.curEndPos)
+      c.lex.next()
+      discard c.levels.pop()
+      return true
+    else:
+      c.levels[^1].state = afterItem
+      c.levels.add(Level(state: beforeFlowItem))
+      return false
+
+proc afterFlowSeqSep(c: Context, e: var Event): bool =
+  return possibleNextSequenceItem(c, e, Token.SeqEnd, afterFlowSeqSepProps, afterFlowSeqItem)
+
+proc forcedNextSequenceItem(c: Context, e: var Event): bool =
+  if c.lex.cur in {Token.Plain, Token.SingleQuoted, Token.DoubleQuoted}:
+    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+    c.inlineProps = defaultProperties
+    c.lex.next()
+    if c.lex.cur == Token.MapValueInd:
+      c.peek = move(e)
+      e = startMapEvent(csFlow, defaultProperties, c.lex.curStartPos, c.lex.curStartPos)
+      c.levels.add(Level(state: afterImplicitPairStart))
+    return true
+  else:
+    c.levels.add(Level(state: beforeFlowItem))
+    return false
+
+proc afterFlowSeqSepProps(c: Context, e: var Event): bool =
+  c.levels[^1].state = afterFlowSeqItem
+  return forcedNextSequenceItem(c, e)
+
+proc atEmptyPairKey(c: Context, e: var Event): bool =
+  c.levels[^1].state = beforePairValue
+  e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curStartPos)
+  return true
+
+proc beforePairValue(c: Context, e: var Event): bool =
+  if c.lex.cur == Token.MapValueInd:
+    c.levels[^1].state = afterPairValue
+    c.levels.add(Level(state: beforeFlowItem))
+    c.lex.next()
+    return false
+  else:
+    # pair ends here without value
+    e = scalarEvent("", defaultProperties, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
+    discard c.levels.pop()
+    return true
+
+proc afterImplicitPairStart(c: Context, e: var Event): bool =
+  c.lex.next()
+  c.levels[^1].state = afterPairValue
+  c.levels.add(Level(state: beforeFLowItem))
+  return false
+
+proc afterPairValue(c: Context, e: var Event): bool =
+  e = endMapEvent(c.lex.curStartPos, c.lex.curEndPos)
+  discard c.levels.pop()
+  return true
+
+# TODO --------------
+
+
+proc display*(p: YamlParser, event: Event): string =
   ## Generate a representation of the given event with proper visualization of
   ## anchor and tag (if any). The generated representation is conformant to the
   ## format used in the yaml test suite.
@@ -1129,6 +947,8 @@ proc display*(p: YamlParser, event: YamlStreamEvent): string
   ## finishing the parsing of a document, the parser drops all information about
   ## anchor and tag names.
   case event.kind
+  of yamlStartStream: result = "+STR"
+  of yamlEndStream: result = "-STR"
   of yamlEndMap: result = "-MAP"
   of yamlEndSeq: result = "-SEQ"
   of yamlStartDoc:
@@ -1140,12 +960,12 @@ proc display*(p: YamlParser, event: YamlStreamEvent): string
     when defined(yamlScalarRepInd):
       if event.explicitDocumentEnd: result &= " ..."
   of yamlStartMap:
-    result = "+MAP" & p.renderAttrs(event.mapTag, event.mapAnchor, true)
+    result = "+MAP" & renderAttrs(event.mapProperties, true)
   of yamlStartSeq:
-    result = "+SEQ" & p.renderAttrs(event.seqTag, event.seqAnchor, true)
+    result = "+SEQ" & renderAttrs(event.seqProperties, true)
   of yamlScalar:
     when defined(yamlScalarRepInd):
-      result = "=VAL" & p.renderAttrs(event.scalarTag, event.scalarAnchor,
+      result = "=VAL" & renderAttrs(event.scalarProperties,
                                       event.scalarRep == srPlain)
       case event.scalarRep
       of srPlain: result &= " :"
@@ -1154,10 +974,9 @@ proc display*(p: YamlParser, event: YamlStreamEvent): string
       of srLiteral: result &= " |"
       of srFolded: result &= " >"
     else:
-      let isPlain = event.scalarTag == yTagExclamationmark
-      result = "=VAL" & p.renderAttrs(event.scalarTag, event.scalarAnchor,
-                                      isPlain)
+      let isPlain = event.scalarProperties.tag == yTagExclamationmark
+      result = "=VAL" & renderAttrs(event.scalarProperties, isPlain)
       if isPlain: result &= " :"
       else: result &= " \""
     result &= yamlTestSuiteEscape(event.scalarContent)
-  of yamlAlias: result = "=ALI *" & p.anchorName(event.aliasTarget)
+  of yamlAlias: result = "=ALI *" & $event.aliasTarget
