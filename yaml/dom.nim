@@ -20,9 +20,9 @@
 ## objects of Nim's `json module <http://nim-lang.org/docs/json.html>`_.
 
 import tables, streams, hashes, sets, strutils
-import stream, taglib, serialization, private/internal, parser,
+import data, stream, taglib, serialization, private/internal, parser,
        presenter
-       
+
 when defined(nimNoNil):
     {.experimental: "notnil".}
 type
@@ -129,12 +129,13 @@ proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
                   tag: string = "?"): YamlNode =
   YamlNode(kind: yMapping, fields: newTable(fields), tag: tag)
 
-proc initYamlDoc*(root: YamlNode): YamlDocument = result.root = root
+proc initYamlDoc*(root: YamlNode): YamlDocument =
+  result = YamlDocument(root: root)
 
 proc composeNode(s: var YamlStream, tagLib: TagLibrary,
                  c: ConstructionContext):
     YamlNode {.raises: [YamlStreamError, YamlConstructionError].} =
-  template addAnchor(c: ConstructionContext, target: AnchorId) =
+  template addAnchor(c: ConstructionContext, target: Anchor) =
     if target != yAnchorNone:
       when defined(JS):
         {.emit: [c, """.refs.set(""", target, ", ", result, ");"].}
@@ -142,13 +143,13 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
         yAssert(not c.refs.hasKey(target))
         c.refs[target] = cast[pointer](result)
 
-  var start: YamlStreamEvent
+  var start: Event
   shallowCopy(start, s.next())
   new(result)
   try:
     case start.kind
     of yamlStartMap:
-      result = YamlNode(tag: tagLib.uri(start.mapTag),
+      result = YamlNode(tag: tagLib.uri(start.mapProperties.tag),
                         kind: yMapping,
                         fields: newTable[YamlNode, YamlNode]())
       while s.peek().kind != yamlEndMap:
@@ -159,20 +160,20 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
           raise newException(YamlConstructionError,
               "Duplicate key: " & $key)
       discard s.next()
-      addAnchor(c, start.mapAnchor)
+      addAnchor(c, start.mapProperties.anchor)
     of yamlStartSeq:
-      result = YamlNode(tag: tagLib.uri(start.seqTag),
+      result = YamlNode(tag: tagLib.uri(start.seqProperties.tag),
                         kind: ySequence,
                         elems: newSeq[YamlNode]())
       while s.peek().kind != yamlEndSeq:
         result.elems.add(composeNode(s, tagLib, c))
-      addAnchor(c, start.seqAnchor)
+      addAnchor(c, start.seqProperties.anchor)
       discard s.next()
     of yamlScalar:
-      result = YamlNode(tag: tagLib.uri(start.scalarTag),
+      result = YamlNode(tag: tagLib.uri(start.scalarProperties.tag),
                         kind: yScalar)
       shallowCopy(result.content, start.scalarContent)
-      addAnchor(c, start.scalarAnchor)
+      addAnchor(c, start.scalarProperties.anchor)
     of yamlAlias:
       when defined(JS):
         {.emit: [result, " = ", c, ".refs.get(", start.aliasTarget, ");"].}
@@ -186,10 +187,10 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
 proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
     {.raises: [YamlStreamError, YamlConstructionError].} =
   var context = newConstructionContext()
-  var n: YamlStreamEvent
+  var n: Event
   shallowCopy(n, s.next())
   yAssert n.kind == yamlStartDoc
-  result.root = composeNode(s, tagLib, context)
+  result = YamlDocument(root: composeNode(s, tagLib, context))
   n = s.next()
   yAssert n.kind == yamlEndDoc
 
@@ -228,21 +229,21 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
     if a != asNone and c.refs.hasKey(p):
       val = c.refs.getOrDefault(p)
       if val == yAnchorNone:
-        val = c.nextAnchorId
+        val = c.nextAnchorId.Anchor
         c.refs[p] = val
-        c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+        nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
       c.put(aliasEvent(val))
       return
   var
     tagId: TagId
-    anchor: AnchorId
+    anchor: Anchor
   if a == asAlways:
-    val = c.nextAnchorId
+    val = c.nextAnchorId.Anchor
     when defined(JS):
       {.emit: [c, ".refs.set(", n, ", ", val, ");"].}
     else:
-      c.refs[p] = c.nextAnchorId
-    c.nextAnchorId = AnchorId(int(val) + 1)
+      c.refs[p] = c.nextAnchorId.Anchor
+    nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
   else:
     when defined(JS):
       {.emit: [c, ".refs.set(", n, ", ", yAnchorNone, ");"].}
@@ -252,37 +253,37 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
           tagLib.registerUri(n.tag)
   case a
   of asNone: anchor = yAnchorNone
-  of asTidy: anchor = cast[AnchorId](n)
+  of asTidy: anchor = cast[Anchor](n)
   of asAlways: anchor = val
 
   case n.kind
   of yScalar: c.put(scalarEvent(n.content, tagId, anchor))
   of ySequence:
-    c.put(startSeqEvent(tagId, anchor))
+    c.put(startSeqEvent(csBlock, (anchor, tagId)))
     for item in n.elems:
       serializeNode(item, c, a, tagLib)
     c.put(endSeqEvent())
   of yMapping:
-    c.put(startMapEvent(tagId, anchor))
+    c.put(startMapEvent(csBlock, (anchor, tagId)))
     for key, value in n.fields.pairs:
       serializeNode(key, c, a, tagLib)
       serializeNode(value, c, a, tagLib)
     c.put(endMapEvent())
 
 template processAnchoredEvent(target: untyped, c: SerializationContext) =
-  var anchorId: AnchorId
+  var anchorId: Anchor
   when defined(JS):
     {.emit: [anchorId, " = ", c, ".refs.get(", target, ");"].}
   else:
-    anchorId = c.refs.getOrDefault(cast[pointer](target))
-  if anchorId != yAnchorNone: target = anchorId
-  else: target = yAnchorNone
+    anchorId = c.refs.getOrDefault(cast[pointer](target.anchor))
+  if anchorId != yAnchorNone: target.anchor = anchorId
+  else: target.anchor = yAnchorNone
 
 proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
     YamlStream {.raises: [].} =
   var
     bys = newBufferYamlStream()
-    c = newSerializationContext(a, proc(e: YamlStreamEvent) {.raises: [].} =
+    c = newSerializationContext(a, proc(e: Event) {.raises: [].} =
       bys.put(e)
     )
   c.put(startDocEvent())
@@ -291,9 +292,9 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
   if a == asTidy:
     for event in bys.mitems():
       case event.kind
-      of yamlScalar: processAnchoredEvent(event.scalarAnchor, c)
-      of yamlStartMap: processAnchoredEvent(event.mapAnchor, c)
-      of yamlStartSeq: processAnchoredEvent(event.seqAnchor, c)
+      of yamlScalar: processAnchoredEvent(event.scalarProperties, c)
+      of yamlStartMap: processAnchoredEvent(event.mapProperties, c)
+      of yamlStartSeq: processAnchoredEvent(event.seqProperties, c)
       else: discard
   result = bys
 

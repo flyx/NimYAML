@@ -51,3 +51,14 @@ proc yamlTestSuiteEscape*(s: string): string =
     of '\b': result.add("\\b")
     of '\t': result.add("\\t")
     else: result.add(c)
+
+proc nextAnchor*(s: var string, i: int) =
+  if s[i] == 'z':
+    s[i] = 'a'
+    if i == 0:
+      s.add('a')
+    else:
+      s[i] = 'a'
+      nextAnchor(s, i - 1)
+  else:
+    inc(s[i])

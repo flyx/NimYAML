@@ -11,7 +11,7 @@
 ## This is the presenter API, used for generating YAML character streams.
 
 import streams, deques, strutils
-import taglib, stream, private/internal, hints, parser, stream
+import data, taglib, stream, private/internal, hints, parser, stream
 
 type
   PresentationStyle* = enum
@@ -86,7 +86,7 @@ type
     newlines*: NewLineStyle
     outputVersion*: OutputYamlVersion
 
-  YamlPresenterJsonError* = object of Exception
+  YamlPresenterJsonError* = object of ValueError
     ## Exception that may be raised by the YAML presenter when it is
     ## instructed to output JSON, but is unable to do so. This may occur if:
     ##
@@ -94,7 +94,7 @@ type
     ##   non-scalar type as key.
     ## - Any float scalar bears a ``NaN`` or positive/negative infinity value
 
-  YamlPresenterOutputError* = object of Exception
+  YamlPresenterOutputError* = object of ValueError
     ## Exception that may be raised by the YAML presenter. This occurs if
     ## writing character data to the output stream raises any exception.
     ## The error that has occurred is available from ``parent``.
@@ -398,21 +398,11 @@ proc startItem(target: PresenterTarget, style: PresentationStyle,
     e.parent = getCurrentException()
     raise e
 
-proc anchorName(a: AnchorId): string {.raises: [].} =
-  result = ""
-  var i = int(a)
-  while i >= 0:
-    let j = i mod 36
-    if j < 26: result.add(char(j + ord('a')))
-    else: result.add(char(j + ord('0') - 26))
-    i -= 36
-
-proc writeTagAndAnchor(target: PresenterTarget, tag: TagId,
-                       tagLib: TagLibrary,
-                       anchor: AnchorId) {.raises: [YamlPresenterOutputError].} =
+proc writeTagAndAnchor(target: PresenterTarget, props: Properties,
+                       tagLib: TagLibrary) {.raises: [YamlPresenterOutputError].} =
   try:
-    if tag notin [yTagQuestionMark, yTagExclamationMark]:
-      let tagUri = tagLib.uri(tag)
+    if props.tag notin [yTagQuestionMark, yTagExclamationMark]:
+      let tagUri = tagLib.uri(props.tag)
       let (handle, length) = tagLib.searchHandle(tagUri)
       if length > 0:
         target.append(handle)
@@ -422,9 +412,9 @@ proc writeTagAndAnchor(target: PresenterTarget, tag: TagId,
         target.append("!<")
         target.append(tagUri)
         target.append("> ")
-    if anchor != yAnchorNone:
+    if props.anchor != yAnchorNone:
       target.append("&")
-      target.append(anchorName(anchor))
+      target.append($props.anchor)
       target.append(' ')
   except:
     var e = newException(YamlPresenterOutputError, "")
@@ -432,10 +422,10 @@ proc writeTagAndAnchor(target: PresenterTarget, tag: TagId,
     raise e
 
 proc nextItem(c: var Deque, s: var YamlStream):
-    YamlStreamEvent {.raises: [YamlStreamError].} =
+    Event {.raises: [YamlStreamError].} =
   if c.len > 0:
     try: result = c.popFirst
-    except IndexError: internalError("Unexpected IndexError")
+    except IndexDefect: internalError("Unexpected IndexError")
   else:
     result = s.next()
 
@@ -445,13 +435,22 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
   var
     indentation = 0
     levels = newSeq[DumperState]()
-    cached = initDeQue[YamlStreamEvent]()
+    cached = initDeQue[Event]()
   let newline = if options.newlines == nlLF: "\l"
     elif options.newlines == nlCRLF: "\c\l" else: "\n"
-  while cached.len > 0 or not s.finished():
+  var firstDoc = true
+  while true:
     let item = nextItem(cached, s)
     case item.kind
+    of yamlStartStream: discard
+    of yamlEndStream: break
     of yamlStartDoc:
+      if not firstDoc:
+        if options.style == psJson:
+          raise newException(YamlPresenterJsonError,
+              "Cannot output more than one document in JSON style")
+        target.safeWrite("..." & newline)
+
       if options.style != psJson:
         try:
           case options.outputVersion
@@ -479,26 +478,27 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         startItem(target, options.style, indentation,
                   levels[levels.high], false, newline)
       if options.style != psJson:
-        writeTagAndAnchor(target, item.scalarTag, tagLib, item.scalarAnchor)
+        writeTagAndAnchor(target, item.scalarProperties, taglib)
 
       if options.style == psJson:
         let hint = guessType(item.scalarContent)
-        if item.scalarTag in [yTagQuestionMark, yTagBoolean] and
+        let tag = item.scalarProperties.tag
+        if tag in [yTagQuestionMark, yTagBoolean] and
               hint in {yTypeBoolTrue, yTypeBoolFalse}:
           target.safeWrite(if hint == yTypeBoolTrue: "true" else: "false")
-        elif item.scalarTag in [yTagQuestionMark, yTagNull] and
+        elif tag in [yTagQuestionMark, yTagNull] and
             hint == yTypeNull:
           target.safeWrite("null")
-        elif item.scalarTag in [yTagQuestionMark, yTagInteger,
+        elif tag in [yTagQuestionMark, yTagInteger,
             yTagNimInt8, yTagNimInt16, yTagNimInt32, yTagNimInt64,
             yTagNimUInt8, yTagNimUInt16, yTagNimUInt32, yTagNimUInt64] and
             hint == yTypeInteger:
           target.safeWrite(item.scalarContent)
-        elif item.scalarTag in [yTagQuestionMark, yTagFloat, yTagNimFloat32,
+        elif tag in [yTagQuestionMark, yTagFloat, yTagNimFloat32,
             yTagNimFloat64] and hint in {yTypeFloatInf, yTypeFloatNaN}:
           raise newException(YamlPresenterJsonError,
               "Infinity and not-a-number values cannot be presented as JSON!")
-        elif item.scalarTag in [yTagQuestionMark, yTagFloat] and
+        elif tag in [yTagQuestionMark, yTagFloat] and
             hint == yTypeFloat:
           target.safeWrite(item.scalarContent)
         else: writeDoubleQuotedJson(item.scalarContent, target)
@@ -525,7 +525,7 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
                 false, newline)
       try:
         target.append('*')
-        target.append(char(byte('a') + byte(item.aliasTarget)))
+        target.append($item.aliasTarget)
       except:
         var e = newException(YamlPresenterOutputError, "")
         e.parent = getCurrentException()
@@ -536,7 +536,6 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
       of psDefault:
         var length = 0
         while true:
-          yAssert(not s.finished())
           let next = s.next()
           cached.addLast(next)
           case next.kind
@@ -554,7 +553,6 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         nextState = dFlowSequenceStart
       of psMinimal, psCanonical: nextState = dFlowSequenceStart
       of psBlockOnly:
-        yAssert(not s.finished())
         let next = s.peek()
         if next.kind == yamlEndSeq: nextState = dFlowSequenceStart
         else: nextState = dBlockSequenceItem
@@ -563,18 +561,18 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         case nextState
         of dBlockSequenceItem:
           if options.style != psJson:
-            writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
+            writeTagAndAnchor(target, item.seqProperties, tagLib)
         of dFlowSequenceStart:
           target.safeWrite(newline)
           if options.style != psJson:
-            writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
+            writeTagAndAnchor(target, item.seqProperties, tagLib)
           indentation += options.indentationStep
         else: internalError("Invalid nextState: " & $nextState)
       else:
         startItem(target, options.style, indentation,
                   levels[levels.high], true, newline)
         if options.style != psJson:
-          writeTagAndAnchor(target, item.seqTag, tagLib, item.seqAnchor)
+          writeTagAndAnchor(target, item.seqProperties, tagLib)
         indentation += options.indentationStep
 
       if nextState == dFlowSequenceStart: target.safeWrite('[')
@@ -609,7 +607,6 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
                              "Cannot have map as map key in JSON output!")
         nextState = dFlowMapStart
       of psBlockOnly:
-        yAssert(not s.finished())
         let next = s.peek()
         if next.kind == yamlEndMap: nextState = dFlowMapStart
         else: nextState = dBlockMapValue
@@ -617,16 +614,16 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         case nextState
         of dBlockMapValue:
           if options.style != psJson:
-            writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
+            writeTagAndAnchor(target, item.mapProperties, tagLib)
           else:
             if options.style != psJson:
               target.safeWrite(newline)
-              writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
+              writeTagAndAnchor(target, item.mapProperties, tagLib)
             indentation += options.indentationStep
         of dFlowMapStart:
           target.safeWrite(newline)
           if options.style != psJson:
-            writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
+            writeTagAndAnchor(target, item.mapProperties, tagLib)
           indentation += options.indentationStep
         of dBlockInlineMap: discard
         else: internalError("Invalid nextState: " & $nextState)
@@ -635,12 +632,12 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
           startItem(target, options.style, indentation,
                     levels[levels.high], true, newline)
           if options.style != psJson:
-            writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
+            writeTagAndAnchor(target, item.mapProperties, tagLib)
         else:
           startItem(target, options.style, indentation,
                     levels[levels.high], true, newline)
           if options.style != psJson:
-            writeTagAndAnchor(target, item.mapTag, tagLib, item.mapAnchor)
+            writeTagAndAnchor(target, item.mapProperties, tagLib)
         indentation += options.indentationStep
 
       if nextState == dFlowMapStart: target.safeWrite('{')
@@ -711,11 +708,7 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
       else: internalError("Invalid level: " & $level)
       indentation -= options.indentationStep
     of yamlEndDoc:
-      if finished(s): break
-      if options.style == psJson:
-        raise newException(YamlPresenterJsonError,
-            "Cannot output more than one document in JSON style")
-      target.safeWrite("..." & newline)
+      firstDoc = false
 
 proc present*(s: var YamlStream, target: Stream,
               tagLib: TagLibrary,

@@ -170,7 +170,7 @@ proc endDocEvent*(explicit: bool = false, startPos, endPos: Mark = defaultMark):
                  kind: yamlEndDoc, explicitDocumentEnd: explicit)
 
 proc startMapEvent*(style: CollectionStyle, props: Properties,
-                    startPos, endPos: Mark): Event {.inline, raises: [].} =
+                    startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML mapping
   result = Event(startPos: startPos, endPos: endPos,
                  kind: yamlStartMap, mapProperties: props,

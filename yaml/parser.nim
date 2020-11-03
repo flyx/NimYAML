@@ -28,7 +28,7 @@ type
     issueWarnings: bool
     anchors: Table[string, Anchor]
 
-  State = proc(c: Context, e: var Event): bool
+  State = proc(c: Context, e: var Event): bool {.locks: 0, gcSafe.}
 
   Level = object
     state: State

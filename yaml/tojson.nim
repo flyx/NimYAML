@@ -12,7 +12,7 @@
 ## structures provided by Nim's stdlib.
 
 import json, streams, strutils, tables
-import taglib, hints, serialization, stream, private/internal, parser
+import data, taglib, hints, serialization, stream, private/internal, parser
 
 # represents a single YAML level. The `node` with name `key`.
 # `expKey` is used to indicate that an empty node shall be filled
@@ -102,8 +102,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       result.add(levels.pop().node)
     of yamlStartSeq:
       levels.add(initLevel(newJArray()))
-      if event.seqAnchor != yAnchorNone:
-        anchors[event.seqAnchor] = levels[levels.high].node
+      if event.seqProperties.anchor != yAnchorNone:
+        anchors[event.seqProperties.anchor] = levels[levels.high].node
     of yamlStartMap:
       levels.add(initLevel(newJObject()))
       if event.mapAnchor != yAnchorNone:

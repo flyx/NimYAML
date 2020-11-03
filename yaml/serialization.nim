@@ -17,7 +17,7 @@
 ## information.
 
 import tables, typetraits, strutils, macros, streams, times, parseutils, options
-import parser, taglib, presenter, stream, private/internal, hints, annotations
+import data, parser, taglib, presenter, stream, private/internal, hints, annotations
 export stream, macros, annotations, options
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.
@@ -26,15 +26,15 @@ type
   SerializationContext* = ref object
     ## Context information for the process of serializing YAML from Nim values.
     when not defined(JS):
-      refs*: Table[pointer, AnchorId] # `pointer` does not work with JS
+      refs*: Table[pointer, Anchor] # `pointer` does not work with JS
     style: AnchorStyle
-    nextAnchorId*: AnchorId
-    put*: proc(e: YamlStreamEvent) {.raises: [], closure.}
+    nextAnchorId*: string
+    put*: proc(e: Event) {.raises: [], closure.}
 
   ConstructionContext* = ref object
     ## Context information for the process of constructing Nim values from YAML.
     when not defined(JS):
-      refs*: Table[AnchorId, pointer]
+      refs*: Table[Anchor, pointer]
 
   YamlConstructionError* = object of YamlLoadingError
     ## Exception that may be raised when constructing data objects from a
@@ -91,16 +91,16 @@ proc newConstructionContext*(): ConstructionContext =
   when defined(JS):
     {.emit: [result, """.refs = new Map();"""].}
   else:
-    result.refs = initTable[AnchorId, pointer]()
+    result.refs = initTable[Anchor, pointer]()
 
 proc newSerializationContext*(s: AnchorStyle,
-    putImpl: proc(e: YamlStreamEvent) {.raises: [], closure.}):
+    putImpl: proc(e: Event) {.raises: [], closure.}):
     SerializationContext =
-  result = SerializationContext(style: s, nextAnchorId: 0.AnchorId,
+  result = SerializationContext(style: s, nextAnchorId: "a",
                                 put: putImpl)
   when defined(JS):
     {.emit: [result, """.refs = new Map();"""].}
-  else: result.refs = initTable[pointer, AnchorId]()
+  else: result.refs = initTable[pointer, Anchor]()
 
 template presentTag*(t: typedesc, ts: TagStyle): TagId =
   ## Get the TagId that represents the given type in the given style
@@ -127,15 +127,15 @@ proc safeTagUri(id: TagId): string {.raises: [].} =
 
 proc constructionError(s: YamlStream, msg: string): ref YamlConstructionError =
   result = newException(YamlConstructionError, msg)
-  if not s.getLastTokenContext(result.line, result.column, result.lineContent):
-    (result.line, result.column) = (-1, -1)
+  if not s.getLastTokenContext(result.mark.line, result.mark.column, result.lineContent):
+    (result.mark.line, result.mark.column) = (-1, -1)
     result.lineContent = ""
 
 template constructScalarItem*(s: var YamlStream, i: untyped,
                               t: typedesc, content: untyped) =
   ## Helper template for implementing ``constructObject`` for types that
   ## are constructed from a scalar. ``i`` is the identifier that holds
-  ## the scalar as ``YamlStreamEvent`` in the content. Exceptions raised in
+  ## the scalar as ``Event`` in the content. Exceptions raised in
   ## the content will be automatically catched and wrapped in
   ## ``YamlConstructionError``, which will then be raised.
   bind constructionError
@@ -225,11 +225,11 @@ proc representObject*(value: int, tagStyle: TagStyle,
                       c: SerializationContext, tag: TagId)
     {.raises: [YamlStreamError], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
-  ## on 64-bit systems, this may cause a RangeError.
+  ## on 64-bit systems, this may cause a RangeDefect.
 
   # currently, sizeof(int) is at least sizeof(int32).
   try: c.put(scalarEvent($int32(value), tag, yAnchorNone))
-  except RangeError:
+  except RangeDefect:
     var e = newException(YamlStreamError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
@@ -272,9 +272,9 @@ proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
 proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
     tag: TagId) {.raises: [YamlStreamError], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
-  ## to int32. on 64-bit systems, this may cause a RangeError.
+  ## to int32. on 64-bit systems, this may cause a RangeDefect.
   try: c.put(scalarEvent($uint32(value), tag, yAnchorNone))
-  except RangeError:
+  except RangeDefect:
     var e = newException(YamlStreamError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
@@ -1174,10 +1174,10 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var string) =
   let item = s.peek()
   if item.kind == yamlScalar:
-    if item.scalarTag notin
+    if item.scalarProperties.tag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
       raise s.constructionError("Wrong tag for string")
-    elif item.scalarAnchor != yAnchorNone:
+    elif item.scalarProperties.anchor != yAnchorNone:
       raise s.constructionError("Anchor on non-ref type")
   constructObject(s, c, result)
 
@@ -1238,7 +1238,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     discard s.next()
     return
   new(result)
-  template removeAnchor(anchor: var AnchorId) {.dirty.} =
+  template removeAnchor(anchor: var Anchor) {.dirty.} =
     if anchor != yAnchorNone:
       when defined(JS):
         {.emit: [c, """.refs.set(""", anchor, """, """, result, """);"""].}
@@ -1278,7 +1278,7 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("~", yTagNull))
   elif c.style == asNone: representChild(value[], ts, c)
   else:
-    var val: AnchorId
+    var val: Anchor
     when defined(JS):
       {.emit: ["""
       if (""", c, """.refs.has(""", value, """) {
@@ -1286,7 +1286,7 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
         if (val == """, yAnchorNone, ") {"].}
       val = c.nextAnchorId
       {.emit: [c, """.refs.set(""", value, """, """, val, """);"""].}
-      c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+      nextAnchor(c, len(c.nextAnchorId) - 1)
       {.emit: "}".}
       c.put(aliasEvent(val))
       return
@@ -1297,7 +1297,7 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
         if val == yAnchorNone:
           val = c.nextAnchorId
           c.refs[p] = val
-          c.nextAnchorId = AnchorId(int(c.nextAnchorId) + 1)
+          nextAnchor(c, len(c.nextAnchorId) - 1)
         c.put(aliasEvent(val))
         return
     if c.style == asAlways:
@@ -1305,13 +1305,13 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
       when defined(JS):
         {.emit: [c, ".refs.set(", p, ", ", val, ");"].}
       else: c.refs[p] = val
-      c.nextAnchorId = AnchorId(int(val) + 1)
+      nextAnchor(c, len(c.nextAnchorId) - 1)
     else: c.refs[p] = yAnchorNone
     let
-      a = if c.style == asAlways: val else: cast[AnchorId](p)
+      a = if c.style == asAlways: val else: cast[Anchor](p)
       childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
       origPut = c.put
-    c.put = proc(e: YamlStreamEvent) =
+    c.put = proc(e: Event) =
       var ex = e
       case ex.kind
       of yamlStartMap:
@@ -1409,7 +1409,7 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
-proc setAnchor(a: var AnchorId, c: var SerializationContext)
+proc setAnchor(a: var Anchor, c: var SerializationContext)
     {.inline.} =
   if a != yAnchorNone:
     when defined(JS):
@@ -1421,7 +1421,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream =
   ## Represents a Nim value as ``YamlStream``
   var bys = newBufferYamlStream()
-  var context = newSerializationContext(a, proc(e: YamlStreamEvent) =
+  var context = newSerializationContext(a, proc(e: Event) =
         bys.put(e)
       )
   bys.put(startDocEvent())
