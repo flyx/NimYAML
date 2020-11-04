@@ -90,9 +90,10 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
 
   var
     levels  = newSeq[Level]()
-    anchors = initTable[AnchorId, JsonNode]()
+    anchors = initTable[Anchor, JsonNode]()
   for event in s:
     case event.kind
+    of yamlStartStream, yamlEndStream: discard
     of yamlStartDoc:
       # we don't need to do anything here; root node will be created
       # by first scalar, sequence or map event
@@ -106,13 +107,13 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
         anchors[event.seqProperties.anchor] = levels[levels.high].node
     of yamlStartMap:
       levels.add(initLevel(newJObject()))
-      if event.mapAnchor != yAnchorNone:
-        anchors[event.mapAnchor] = levels[levels.high].node
+      if event.mapProperties.anchor != yAnchorNone:
+        anchors[event.mapProperties.anchor] = levels[levels.high].node
     of yamlScalar:
       if levels.len == 0:
         # parser ensures that next event will be yamlEndDocument
         levels.add((node: jsonFromScalar(event.scalarContent,
-                                         event.scalarTag),
+                                         event.scalarProperties.tag),
                     key: "",
                     expKey: true))
         continue
@@ -120,25 +121,25 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       case levels[levels.high].node.kind
       of JArray:
         let jsonScalar = jsonFromScalar(event.scalarContent,
-                                        event.scalarTag)
+                                        event.scalarProperties.tag)
         levels[levels.high].node.elems.add(jsonScalar)
-        if event.scalarAnchor != yAnchorNone:
-          anchors[event.scalarAnchor] = jsonScalar
+        if event.scalarProperties.anchor != yAnchorNone:
+          anchors[event.scalarProperties.anchor] = jsonScalar
       of JObject:
         if levels[levels.high].expKey:
           levels[levels.high].expKey = false
           # JSON only allows strings as keys
           levels[levels.high].key = event.scalarContent
-          if event.scalarAnchor != yAnchorNone:
+          if event.scalarProperties.anchor != yAnchorNone:
             raise newException(YamlConstructionError,
                 "scalar keys may not have anchors in JSON")
         else:
           let jsonScalar = jsonFromScalar(event.scalarContent,
-                                          event.scalarTag)
+                                          event.scalarProperties.tag)
           levels[levels.high].node[levels[levels.high].key] = jsonScalar
           levels[levels.high].expKey = true
-          if event.scalarAnchor != yAnchorNone:
-            anchors[event.scalarAnchor] = jsonScalar
+          if event.scalarProperties.anchor != yAnchorNone:
+            anchors[event.scalarProperties.anchor] = jsonScalar
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
     of yamlEndSeq, yamlEndMap:
@@ -177,13 +178,13 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
 
 when not defined(JS):
   proc loadToJson*(s: Stream): seq[JsonNode]
-      {.raises: [YamlParserError, YamlConstructionError, IOError].} =
+      {.raises: [YamlParserError, YamlConstructionError, IOError, OSError].} =
     ## Uses `YamlParser <#YamlParser>`_ and
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
-    var
-      parser = newYamlParser(initCoreTagLibrary())
-      events = parser.parse(s)
+    var parser: YamlParser
+    parser.init(initCoreTagLibrary())
+    var events = parser.parse(s)
     try:
       return constructJson(events)
     except YamlStreamError:
@@ -199,9 +200,9 @@ proc loadToJson*(str: string): seq[JsonNode]
   ## Uses `YamlParser <#YamlParser>`_ and
   ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
   ## from a YAML character stream.
-  var
-    parser = newYamlParser(initCoreTagLibrary())
-    events = parser.parse(str)
+  var parser: YamlParser
+  parser.init(initCoreTagLibrary())
+  var events = parser.parse(str)
   try: return constructJson(events)
   except YamlStreamError:
     let e = getCurrentException()

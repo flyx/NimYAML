@@ -730,8 +730,9 @@ proc doTransform(input: Stream | string, output: PresenterTarget,
                  options: PresentationOptions, resolveToCoreYamlTags: bool) =
   var
     taglib = initExtendedTagLibrary()
-    parser = newYamlParser(tagLib)
-    events = parser.parse(input)
+    parser: YamlParser
+  parser.init(tagLib)
+  var events = parser.parse(input)
   try:
     if options.style == psCanonical:
       var bys: YamlStream = newBufferYamlStream()

@@ -4,7 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import "../yaml", strutils
+import ../yaml, ../yaml/data
 
 proc escapeNewlines(s: string): string =
   result = ""
@@ -15,46 +15,42 @@ proc escapeNewlines(s: string): string =
     of '\\': result.add("\\\\")
     else: result.add(c)
 
-proc printDifference*(expected, actual: YamlStreamEvent) =
+proc printDifference(expected, actual: Properties): bool =
+  result = false
+  if expected.tag != actual.tag:
+    echo "[scalar.tag] expected", $expected.tag, ", got", $actual.tag
+    result = true
+  if expected.anchor != actual.anchor:
+    echo "[scalar.anchor] expected", $expected.anchor, ", got", $actual.anchor
+    result = true
+
+proc printDifference*(expected, actual: Event) =
   if expected.kind != actual.kind:
     echo "expected " & $expected.kind & ", got " & $actual.kind
   else:
     case expected.kind
     of yamlScalar:
-      if expected.scalarTag != actual.scalarTag:
-        echo "[", escape(actual.scalarContent), ".tag] expected tag ",
-             expected.scalarTag, ", got ", actual.scalarTag
-      elif expected.scalarAnchor != actual.scalarAnchor:
-        echo "[scalarEvent] expected anchor ", expected.scalarAnchor,
-             ", got ", actual.scalarAnchor
-      elif expected.scalarContent != actual.scalarContent:
-        let msg = "[scalarEvent] content mismatch!\nexpected: " &
-              escapeNewlines(expected.scalarContent) &
-              "\ngot     : " & escapeNewlines(actual.scalarContent)
-        if expected.scalarContent.len != actual.scalarContent.len:
-          echo msg, "\n(length does not match)"
-        else:
-          for i in 0..expected.scalarContent.high:
-            if expected.scalarContent[i] != actual.scalarContent[i]:
-              echo msg, "\n(first different char at pos ", i, ": expected ",
-                   cast[int](expected.scalarContent[i]), ", got ",
-                  cast[int](actual.scalarContent[i]), ")"
-              break
-      else: echo "[scalarEvent] Unknown difference"
+      if not printDifference(expected.scalarProperties, actual.scalarProperties):
+        if expected.scalarContent != actual.scalarContent:
+          let msg = "[scalarEvent] content mismatch!\nexpected: " &
+                escapeNewlines(expected.scalarContent) &
+                "\ngot     : " & escapeNewlines(actual.scalarContent)
+          if expected.scalarContent.len != actual.scalarContent.len:
+            echo msg, "\n(length does not match)"
+          else:
+            for i in 0..expected.scalarContent.high:
+              if expected.scalarContent[i] != actual.scalarContent[i]:
+                echo msg, "\n(first different char at pos ", i, ": expected ",
+                    cast[int](expected.scalarContent[i]), ", got ",
+                    cast[int](actual.scalarContent[i]), ")"
+                break
+        else: echo "[scalar] Unknown difference"
     of yamlStartMap:
-      if expected.mapTag != actual.mapTag:
-        echo "[map.tag] expected ", expected.mapTag, ", got ", actual.mapTag
-      elif expected.mapAnchor != actual.mapAnchor:
-        echo "[map.anchor] expected ", expected.mapAnchor, ", got ",
-            actual.mapAnchor
-      else: echo "[map.tag] Unknown difference"
+      if not printDifference(expected.mapProperties, actual.mapProperties):
+        echo "[map] Unknown difference"
     of yamlStartSeq:
-      if expected.seqTag != actual.seqTag:
-        echo "[seq.tag] expected ", expected.seqTag, ", got ", actual.seqTag
-      elif expected.seqAnchor != actual.seqAnchor:
-        echo "[seq.anchor] expected ", expected.seqAnchor, ", got ",
-            actual.seqAnchor
-      else: echo "[seq] Unknown difference"
+      if not printDifference(expected.seqProperties, actual.seqProperties):
+        echo "[seq] Unknown difference"
     of yamlAlias:
       if expected.aliasTarget != actual.aliasTarget:
         echo "[alias] expected ", expected.aliasTarget, ", got ",
@@ -63,7 +59,7 @@ proc printDifference*(expected, actual: YamlStreamEvent) =
     else: echo "Unknown difference in event kind " & $expected.kind
 
 template ensure*(input: var YamlStream,
-                 expected: varargs[YamlStreamEvent]) {.dirty.} =
+                 expected: varargs[Event]) {.dirty.} =
   var i = 0
   for token in input:
     if i >= expected.len:

@@ -11,14 +11,14 @@
 ## This is the low-level parser API. A ``YamlParser`` enables you to parse any
 ## non-nil string or Stream object as YAML character stream.
 
-import tables, strutils, macros
+import tables, strutils, macros, streams
 import taglib, stream, private/lex, private/internal, data
 
 when defined(nimNoNil):
     {.experimental: "notnil".}
 
 type
-  YamlParser* = ref object
+  YamlParser* = object
     ## A parser object. Retains its ``TagLibrary`` across calls to
     ## `parse <#parse,YamlParser,Stream>`_. Can be used
     ## to access anchor names while parsing a YAML character stream, but
@@ -26,7 +26,6 @@ type
     ## ``yamlEndDocument`` is yielded).
     tagLib: TagLibrary
     issueWarnings: bool
-    anchors: Table[string, Anchor]
 
   State = proc(c: Context, e: var Event): bool {.locks: 0, gcSafe.}
 
@@ -83,28 +82,9 @@ type
     ## Some elements in this list are vague. For a detailed description of a
     ## valid YAML character stream, see the YAML specification.
 
-# interface
-
-proc newYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
-                    issueWarnings: bool = false): YamlParser =
-  ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
-  ## whenever the parser yields a warning.
-  new(result)
-  result.tagLib = tagLib
-  result.issueWarnings = issueWarnings
-
-# implementation
-
-template debug(message: string) {.dirty.} =
-  when defined(yamlDebug):
-    try: styledWriteLine(stdout, fgBlue, message)
-    except IOError: discard
-
 const defaultProperties = (yAnchorNone, yTagQuestionMark)
 
-proc isEmpty(props: Properties): bool =
-  result = props.anchor == yAnchorNone and
-           props.tag == yTagQuestionMark
+# parser states
 
 {.push gcSafe, locks: 0.}
 proc atStreamStart(c: Context, e: var Event): bool
@@ -139,11 +119,44 @@ proc afterFlowSeqItem(c: Context, e: var Event): bool
 proc afterPairValue(c: Context, e: var Event): bool
 {.pop.}
 
-proc init[T](pc: Context, source: T) {.inline.} =
-  pc.levels.add(Level(state: atStreamStart, indentation: -2))
-  pc.headerProps = defaultProperties
-  pc.inlineProps = defaultProperties
-  pc.lex.init(source)
+proc init[T](c: Context, source: T) {.inline.} =
+  c.levels.add(Level(state: atStreamStart, indentation: -2))
+  c.nextImpl = proc(s: YamlStream, e: var Event): bool =
+    let c = Context(s)
+    return c.levels[^1].state(c, e)
+  c.headerProps = defaultProperties
+  c.inlineProps = defaultProperties
+  c.lex.init(source)
+
+# interface
+
+proc init*(p: var YamlParser, tagLib: TagLibrary = initExtendedTagLibrary(),
+            issueWarnings: bool = false) =
+  ## Creates a YAML parser. if ``callback`` is not ``nil``, it will be called
+  ## whenever the parser yields a warning.
+  p.tagLib = tagLib
+  p.issueWarnings = issueWarnings
+
+proc parse*(p: YamlParser, s: Stream): YamlStream =
+  let c = new(Context)
+  c.init(s)
+  return c
+
+proc parse*(p: YamlParser, s: string): YamlStream =
+  let c = new(Context)
+  c.init(s)
+  return c
+
+# implementation
+
+template debug(message: string) {.dirty.} =
+  when defined(yamlDebug):
+    try: styledWriteLine(stdout, fgBlue, message)
+    except IOError: discard
+
+proc isEmpty(props: Properties): bool =
+  result = props.anchor == yAnchorNone and
+           props.tag == yTagQuestionMark
 
 proc generateError(c: Context, message: string):
     ref YamlParserError {.raises: [].} =
@@ -706,7 +719,7 @@ proc beforeBlockMapValue(c: Context, e: var Event): bool =
     raise c.generateError("Unexpected token (expected mapping value): " & $c.lex.cur)
 
 proc beforeBlockIndentation(c: Context, e: var Event): bool =
-  proc endBlockNode() =
+  proc endBlockNode(e: var Event) =
     if c.levels[^1].state == beforeBlockMapKey:
       e = endMapEvent(c.lex.curStartPos, c.lex.curEndPos)
     elif c.levels[^1].state == beforeBlockMapValue:
@@ -729,7 +742,7 @@ proc beforeBlockIndentation(c: Context, e: var Event): bool =
   of Indentation:
     c.blockIndentation = c.lex.indentation
     if c.blockIndentation < c.levels[^1].indentation:
-      endBlockNode()
+      endBlockNode(e)
       return true
     else:
       c.lex.next()
@@ -737,7 +750,7 @@ proc beforeBlockIndentation(c: Context, e: var Event): bool =
   of StreamEnd, DocumentEnd, DirectivesEnd:
     c.blockIndentation = 0
     if c.levels[^1].state != beforeDocEnd:
-      endBlockNode()
+      endBlockNode(e)
       return true
     else:
       return false

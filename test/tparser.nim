@@ -4,9 +4,9 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import os, osproc, terminal, strutils, streams, macros, unittest, sets
+import os, terminal, strutils, streams, macros, unittest, sets
 import testEventParser, commonTestUtils
-import "../yaml"
+import ../yaml, ../yaml/data
 
 const
   testSuiteFolder = "yaml-test-suite"
@@ -18,7 +18,9 @@ proc echoError(msg: string) =
 proc parserTest(path: string, errorExpected : bool): bool =
   var
     tagLib = initExtendedTagLibrary()
-    parser = newYamlParser(tagLib)
+    parser: YamlParser
+  parser.init(tagLib)
+  var
     actualIn = newFileStream(path / "in.yaml")
     actual = parser.parse(actualIn)
     expectedIn = newFileStream(path / "test.event")
@@ -28,14 +30,8 @@ proc parserTest(path: string, errorExpected : bool): bool =
     expectedIn.close()
   var i = 1
   try:
-    while not actual.finished():
+    while true:
       let actualEvent = actual.next()
-      if expected.finished():
-        result = errorExpected
-        if not result:
-          echoError("At token #" & $i & ": Expected stream end, got " &
-                    $actualEvent.kind)
-        return
       let expectedEvent = expected.next()
       if expectedEvent != actualEvent:
         result = errorExpected
@@ -45,12 +41,8 @@ proc parserTest(path: string, errorExpected : bool): bool =
                     ": Actual tokens do not match expected tokens")
         return
       i.inc()
-    if not expected.finished():
-      result = errorExpected
-      if not result:
-        echoError("Got fewer tokens than expected, first missing " &
-                  "token: " & $expected.next().kind)
-      return
+      if actualEvent.kind == yamlEndStream:
+        break
     result = not errorExpected
     if not result:
       echo "Expected error, but parsed without error."
@@ -60,7 +52,7 @@ proc parserTest(path: string, errorExpected : bool): bool =
       let e = getCurrentException()
       if e.parent of YamlParserError:
         let pe = (ref YamlParserError)(e.parent)
-        echo "line ", pe.line, ", column ", pe.column, ": ", pe.msg
+        echo "line ", pe.mark.line, ", column ", pe.mark.column, ": ", pe.msg
         echo pe.lineContent
       else: echo e.msg
       echoError("Catched an exception at token #" & $i &

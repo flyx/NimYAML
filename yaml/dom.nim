@@ -198,8 +198,9 @@ proc loadDom*(s: Stream | string): YamlDocument
     {.raises: [IOError, YamlParserError, YamlConstructionError].} =
   var
     tagLib = initExtendedTagLibrary()
-    parser = newYamlParser(tagLib)
-    events = parser.parse(s)
+    parser: YamlParser
+  parser.init(tagLib)
+  var events = parser.parse(s)
   try: result = compose(events, tagLib)
   except YamlStreamError:
     let e = getCurrentException()

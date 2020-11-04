@@ -1380,9 +1380,9 @@ proc construct*[T](s: var YamlStream, target: var T)
 proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, YamlParserError].} =
   ## Loads a Nim value from a YAML character stream.
-  var
-    parser = newYamlParser(serializationTagLibrary)
-    events = parser.parse(input)
+  var parser: YamlParser
+  parser.init(serializationTagLibrary)
+  var events = parser.parse(input)
   try: construct(events, target)
   except YamlStreamError:
     let e = (ref YamlStreamError)(getCurrentException())
@@ -1391,9 +1391,9 @@ proc load*[K](input: Stream | string, target: var K)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
-  var
-    parser = newYamlParser(serializationTagLibrary)
-    events = parser.parse(input)
+  var parser: YamlParser
+  parser.init(serializationTagLibrary)
+  var events = parser.parse(input)
   try:
     while not events.finished():
       var item: K
