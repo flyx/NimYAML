@@ -156,11 +156,11 @@ proc collectionStyle*(event: Event): CollectionStyle =
   of yamlStartSeq: result = event.seqStyle
   else: raise (ref FieldDefect)(msg: "Event " & $event.kind & " has no collectionStyle")
 
-proc startDocEvent*(explicit: bool = false, startPos, endPos: Mark = defaultMark): Event
+proc startDocEvent*(explicit: bool = false, version: string = "", startPos, endPos: Mark = defaultMark): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML document
   result = Event(startPos: startPos, endPos: endPos,
-                 kind: yamlStartDoc,
+                 kind: yamlStartDoc, version: version,
                  explicitDirectivesEnd: explicit)
 
 proc endDocEvent*(explicit: bool = false, startPos, endPos: Mark = defaultMark): Event
@@ -291,7 +291,7 @@ proc `$`*(event: Event): string {.raises: [].} =
     result = "-DOC"
     if event.explicitDocumentEnd: result &= " ..."
   of yamlStartMap: result = "+MAP" & renderAttrs(event.mapProperties)
-  of yamlStartSeq: result = "+SEQ" & renderAttrs(event.mapProperties)
+  of yamlStartSeq: result = "+SEQ" & renderAttrs(event.seqProperties)
   of yamlScalar:
     result = "=VAL" & renderAttrs(event.scalarProperties,
                                   event.scalarStyle == ssPlain or

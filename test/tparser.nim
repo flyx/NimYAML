@@ -36,9 +36,16 @@ proc parserTest(path: string, errorExpected : bool): bool =
       if expectedEvent != actualEvent:
         result = errorExpected
         if not result:
+          echoError("At event #" & $i &
+                    ": Actual events do not match expected events")
+          echo ".. expected event:"
+          echo "  ", expectedEvent
+          echo ".. actual event:"
+          echo "  ", actualEvent
+          echo ".. difference:"
+          stdout.write("  ")
           printDifference(expectedEvent, actualEvent)
-          echoError("At token #" & $i &
-                    ": Actual tokens do not match expected tokens")
+
         return
       i.inc()
       if actualEvent.kind == yamlEndStream:
@@ -49,14 +56,14 @@ proc parserTest(path: string, errorExpected : bool): bool =
   except:
     result = errorExpected
     if not result:
+      echoError("Caught an exception at event #" & $i &
+                " test was not successful")
       let e = getCurrentException()
       if e.parent of YamlParserError:
         let pe = (ref YamlParserError)(e.parent)
         echo "line ", pe.mark.line, ", column ", pe.mark.column, ": ", pe.msg
         echo pe.lineContent
       else: echo e.msg
-      echoError("Catched an exception at token #" & $i &
-                " test was not successful")
 
 macro genTests(): untyped =
   let

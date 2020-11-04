@@ -90,8 +90,11 @@ const
 
   UnknownIndentation* = int.low
 
-proc currentIndentation*(lex: Lexer): Natural =
+proc currentIndentation*(lex: Lexer): int =
   return lex.source.getColNumber(lex.source.bufpos) - 1
+
+proc recentIndentation*(lex: Lexer): int =
+  return lex.indentation
 
 # lexer source handling
 
@@ -332,35 +335,36 @@ proc readPlainScalar(lex: var Lexer) =
           case lex.c
           of ' ':
             lex.endToken()
-            let contentEnd = lex.source.bufpos - 2
+            let spaceStart = lex.source.bufpos - 2
             block spaceLoop:
-              lex.advance()
-              case lex.c
-              of '\l', '\c':
-                lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
-                break inlineLoop
-              of EndOfFile:
-                lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
-                lex.state = streamEnd
-                break multilineLoop
-              of '#':
-                lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
-                lex.state = expectLineEnd
-                break multilineLoop
-              of ':':
-                if not lex.isPlainSafe():
-                  lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
-                  lex.state = insideLine
+              while true:
+                lex.advance()
+                case lex.c
+                of '\l', '\c':
+                  lex.evaluated.add(lex.source.buf[lineStartPos..spaceStart])
+                  break inlineLoop
+                of EndOfFile:
+                  lex.evaluated.add(lex.source.buf[lineStartPos..spaceStart])
+                  lex.state = streamEnd
                   break multilineLoop
-                break spaceLoop
-              of flowIndicators:
-                if lex.flowDepth > 0:
-                  lex.evaluated.add(lex.source.buf[lineStartPos..contentEnd])
-                  lex.state = insideLine
+                of '#':
+                  lex.evaluated.add(lex.source.buf[lineStartPos..spaceStart])
+                  lex.state = expectLineEnd
                   break multilineLoop
-                break spaceLoop
-              of ' ': discard
-              else: break spaceLoop
+                of ':':
+                  if not lex.isPlainSafe():
+                    lex.evaluated.add(lex.source.buf[lineStartPos..spaceStart])
+                    lex.state = insideLine
+                    break multilineLoop
+                  break spaceLoop
+                of flowIndicators:
+                  if lex.flowDepth > 0:
+                    lex.evaluated.add(lex.source.buf[lineStartPos..spaceStart])
+                    lex.state = insideLine
+                    break multilineLoop
+                  break spaceLoop
+                of ' ': discard
+                else: break spaceLoop
           of ':':
             if not lex.isPlainSafe():
               lex.evaluated.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])

@@ -15,22 +15,22 @@ proc escapeNewlines(s: string): string =
     of '\\': result.add("\\\\")
     else: result.add(c)
 
-proc printDifference(expected, actual: Properties): bool =
+proc printDifference(entity: string, expected, actual: Properties): bool =
   result = false
   if expected.tag != actual.tag:
-    echo "[scalar.tag] expected", $expected.tag, ", got", $actual.tag
+    echo "[", entity, ".tag] expected ", $expected.tag, ", got ", $actual.tag
     result = true
   if expected.anchor != actual.anchor:
-    echo "[scalar.anchor] expected", $expected.anchor, ", got", $actual.anchor
+    echo "[", entity, ".anchor] expected ", $expected.anchor, ", got ", $actual.anchor
     result = true
 
 proc printDifference*(expected, actual: Event) =
   if expected.kind != actual.kind:
-    echo "expected " & $expected.kind & ", got " & $actual.kind
+    echo "expected ", expected.kind, ", got ", $actual.kind
   else:
     case expected.kind
     of yamlScalar:
-      if not printDifference(expected.scalarProperties, actual.scalarProperties):
+      if not printDifference("scalar", expected.scalarProperties, actual.scalarProperties):
         if expected.scalarContent != actual.scalarContent:
           let msg = "[scalarEvent] content mismatch!\nexpected: " &
                 escapeNewlines(expected.scalarContent) &
@@ -46,10 +46,10 @@ proc printDifference*(expected, actual: Event) =
                 break
         else: echo "[scalar] Unknown difference"
     of yamlStartMap:
-      if not printDifference(expected.mapProperties, actual.mapProperties):
+      if not printDifference("map", expected.mapProperties, actual.mapProperties):
         echo "[map] Unknown difference"
     of yamlStartSeq:
-      if not printDifference(expected.seqProperties, actual.seqProperties):
+      if not printDifference("seq", expected.seqProperties, actual.seqProperties):
         echo "[seq] Unknown difference"
     of yamlAlias:
       if expected.aliasTarget != actual.aliasTarget:
@@ -67,7 +67,7 @@ template ensure*(input: var YamlStream,
       fail()
       break
     if token != expected[i]:
-      echo "at token #" & $i & ":"
+      echo "at event #" & $i & ":"
       printDifference(expected[i], token)
       fail()
       break

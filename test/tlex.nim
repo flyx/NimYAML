@@ -186,6 +186,19 @@ suite "Lexer":
         ms(), an("b"), pl("b"), mv(), al("a"), sep(), al("b"), mv(), pl("c"),
         me(), e())
 
+  test "Space at implicit key":
+    assertEquals("foo   :\n  bar", i(0), pl("foo"), mv(), i(2), pl("bar"), e())
+
+  test "inline anchor at implicit key":
+    assertEquals("top6: \l  &anchor6 'key6' : scalar6", i(0), pl("top6"), mv(),
+                 i(2), an("anchor6"), sq("key6"), mv(), pl("scalar6"), e())
+
+  test "Map in Sequence":
+    assertEquals("""-
+  a: b
+  c: d
+""", i(0), si(), i(2), pl("a"), mv(), pl("b"), i(2), pl("c"), mv(), pl("d"), e())
+
   test "Empty lines":
     assertEquals("""block: foo
 

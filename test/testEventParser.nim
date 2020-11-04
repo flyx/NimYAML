@@ -101,10 +101,6 @@ proc nextToken(lex: var EventLexer): LexerToken =
     of "...": result = explDocEnd
     else: raise newException(EventStreamError, "Invalid token: " & lex.content)
 
-template assertInStream() {.dirty.} =
-  if streamPos != inStream:
-    raise newException(EventStreamError, "Missing +STR")
-
 template assertInEvent(name: string) {.dirty.} =
   if not inEvent:
     raise newException(EventStreamError, "Illegal token: " & name)
@@ -168,8 +164,10 @@ template setCurAnchor(val: Anchor) =
                            $curEvent.kind & " may not have an anchor")
 
 template eventStart(k: EventKind) {.dirty.} =
-  assertInStream()
-  yieldEvent()
+  if streamPos == beforeStream:
+    yield Event(kind: yamlStartStream)
+    streamPos = inStream
+  else: yieldEvent()
   curEvent = Event(kind: k)
   setTag(yTagQuestionMark)
   setAnchor(yAnchorNone)
@@ -183,7 +181,6 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
       inEvent = false
       curEvent: Event
       streamPos: StreamPos = beforeStream
-      nextAnchorId = "a"
     while lex.buf[lex.bufpos] != EndOfFile:
       let token = lex.nextToken()
       case token
@@ -195,8 +192,6 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
       of minusStr:
         if streamPos != inStream:
           raise newException(EventStreamError, "Illegal -STR")
-        if inEvent: yield curEvent
-        inEvent = false
         streamPos = afterStream
         eventStart(yamlEndStream)
       of plusDoc: eventStart(yamlStartDoc)
@@ -220,8 +215,7 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
         if curAnchor() != yAnchorNone:
           raise newException(EventStreamError,
                              "Duplicate anchor in " & $curEvent.kind)
-        setCurAnchor(nextAnchorId.Anchor)
-        nextAnchor(nextAnchorId, len(nextAnchorId))
+        setCurAnchor(lex.content.Anchor)
       of starAnchor:
         assertInEvent("alias")
         if curEvent.kind != yamlAlias:
@@ -255,4 +249,7 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
           raise newException(EventStreamError,
                              "Unexpected explicit document end")
       of noToken: discard
+    yieldEvent()
+    if streamPos == inStream:
+      yield Event(kind: yamlEndStream)
   result = initYamlStream(backend)

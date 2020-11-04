@@ -136,7 +136,7 @@ template constructScalarItem*(s: var YamlStream, i: untyped,
   ## Helper template for implementing ``constructObject`` for types that
   ## are constructed from a scalar. ``i`` is the identifier that holds
   ## the scalar as ``Event`` in the content. Exceptions raised in
-  ## the content will be automatically catched and wrapped in
+  ## the content will be automatically caught and wrapped in
   ## ``YamlConstructionError``, which will then be raised.
   bind constructionError
   let i = s.next()
