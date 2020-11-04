@@ -273,7 +273,7 @@ proc beforeImplicitRoot(c: Context, e: var Event): bool =
   if c.lex.cur != Token.Indentation:
     raise c.generateError("Unexpected token (expected line start): " & $c.lex.cur)
   c.inlineStart = c.lex.curEndPos
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   c.lex.next()
   case c.lex.cur
   of SeqItemInd, MapKeyInd, MapValueInd:
@@ -292,7 +292,7 @@ proc beforeImplicitRoot(c: Context, e: var Event): bool =
     raise c.generateError("Unexpected token (expected collection start): " & $c.lex.cur)
 
 proc requireImplicitMapStart(c: Context, e: var Event): bool =
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   case c.lex.cur
   of Alias:
     e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
@@ -346,7 +346,7 @@ proc atBlockIndentation(c: Context, e: var Event): bool =
     discard c.levels.pop()
     return true
   c.inlineStart = c.lex.curStartPos
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   case c.lex.cur
   of nodePropertyKind:
     if isEmpty(c.headerProps):
@@ -359,9 +359,9 @@ proc atBlockIndentation(c: Context, e: var Event): bool =
     e = startSeqEvent(csBlock, c.headerProps,
                       c.headerStart, c.lex.curEndPos)
     c.headerProps = defaultProperties
-    c.levels[^1] = Level(state: inBlockSeq, indentation: c.lex.indentation)
+    c.levels[^1] = Level(state: inBlockSeq, indentation: c.lex.currentIndentation())
     c.levels.add(Level(state: beforeBlockIndentation, indentation: 0))
-    c.levels.add(Level(state: afterCompactParent, indentation: c.lex.indentation))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.lex.currentIndentation()))
     c.lex.next()
     return true
   of MapKeyInd:
@@ -370,10 +370,10 @@ proc atBlockIndentation(c: Context, e: var Event): bool =
     c.headerProps = defaultProperties
     c.levels[^1] = Level(state: beforeBlockMapValue, indentation: 0)
     c.levels.add(Level(state: beforeBlockIndentation))
-    c.levels.add(Level(state: afterCompactParent, indentation: c.lex.indentation))
+    c.levels.add(Level(state: afterCompactParent, indentation: c.lex.currentIndentation()))
     c.lex.next()
   of Plain, SingleQuoted, DoubleQuoted:
-    c.levels[^1].indentation = c.lex.indentation
+    c.levels[^1].indentation = c.lex.currentIndentation()
     e = scalarEvent(c.lex.evaluated, c.headerProps,
                     toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
     c.headerProps = defaultProperties
@@ -409,7 +409,7 @@ proc atBlockIndentation(c: Context, e: var Event): bool =
     c.levels[^1].state = atBlockIndentationProps
 
 proc atBlockIndentationProps(c: Context, e: var Event): bool =
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   case c.lex.cur
   of MapValueInd:
     c.peek = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curEndPos)
@@ -487,7 +487,7 @@ proc afterCompactParent(c: Context, e: var Event): bool =
   of SeqItemInd:
     e = startSeqEvent(csBlock, c.headerProps, c.headerStart, c.lex.curEndPos)
     c.headerProps = defaultProperties
-    c.levels[^1] = Level(state: inBlockSeq, indentation: c.lex.indentation)
+    c.levels[^1] = Level(state: inBlockSeq, indentation: c.lex.currentIndentation())
     c.levels.add(Level(state: beforeBlockIndentation))
     c.levels.add(Level(state: afterCompactParent))
     c.lex.next()
@@ -495,7 +495,7 @@ proc afterCompactParent(c: Context, e: var Event): bool =
   of MapKeyInd:
     e = startMapEvent(csBlock, c.headerProps, c.headerStart, c.lex.curEndPos)
     c.headerProps = defaultProperties
-    c.levels[^1] = Level(state: beforeBlockMapValue, indentation: c.lex.indentation)
+    c.levels[^1] = Level(state: beforeBlockMapValue, indentation: c.lex.currentIndentation())
     c.levels.add(Level(state: beforeBlockIndentation))
     c.levels.add(Level(state: afterCompactParent))
     return true
@@ -504,7 +504,7 @@ proc afterCompactParent(c: Context, e: var Event): bool =
     return false
 
 proc afterCompactParentProps(c: Context, e: var Event): bool =
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   case c.lex.cur
   of nodePropertyKind:
     c.levels.add(Level(state: beforeNodeProperties))
@@ -541,7 +541,7 @@ proc afterCompactParentProps(c: Context, e: var Event): bool =
                     c.inlineStart, c.lex.curEndPos)
     c.inlineProps = defaultProperties
     let headerEnd = c.lex.curStartPos
-    c.levels[^1].indentation = c.lex.indentation
+    c.levels[^1].indentation = c.lex.currentIndentation()
     c.lex.next()
     if c.lex.cur == Token.MapValueInd:
       if c.lex.lastScalarWasMultiline():
@@ -580,7 +580,7 @@ proc afterBlockParent(c: Context, e: var Event): bool =
   return false
 
 proc afterBlockParentProps(c: Context, e: var Event): bool =
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   case c.lex.cur
   of nodePropertyKind:
     c.levels.add(Level(state: beforeNodeProperties))
@@ -600,7 +600,7 @@ proc afterBlockParentProps(c: Context, e: var Event): bool =
     return false
 
 proc requireInlineBlockItem(c: Context, e: var Event): bool =
-  c.levels[^1].indentation = c.lex.indentation
+  c.levels[^1].indentation = c.lex.currentIndentation()
   case c.lex.cur
   of Indentation:
     raise c.generateError("Node properties may not stand alone on a line")
@@ -740,7 +740,7 @@ proc beforeBlockIndentation(c: Context, e: var Event): bool =
   discard c.levels.pop()
   case c.lex.cur
   of Indentation:
-    c.blockIndentation = c.lex.indentation
+    c.blockIndentation = c.lex.currentIndentation()
     if c.blockIndentation < c.levels[^1].indentation:
       endBlockNode(e)
       return true

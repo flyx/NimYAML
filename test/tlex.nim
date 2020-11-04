@@ -2,17 +2,25 @@ import ../yaml/private/lex
 
 import unittest, strutils
 
-const tokensWithValue =
+const
+  tokensWithValue =
     {Token.Plain, Token.SingleQuoted, Token.DoubleQuoted, Token.Literal,
-     Token.Folded, Token.DirectiveParam,
-     Token.TagHandle, Token.Suffix, Token.VerbatimTag,
-     Token.UnknownDirective, Token.Anchor, Token.Alias}
+     Token.Folded, Token.Suffix, Token.VerbatimTag,
+     Token.UnknownDirective}
+  tokensWithFullLexeme =
+    {Token.DirectiveParam, Token.TagHandle}
+  tokensWithShortLexeme = {Token.Anchor, Token.Alias}
+
 
 type
   TokenWithValue = object
     case kind: Token
     of tokensWithValue:
       value: string
+    of tokensWithFullLexeme:
+      lexeme: string
+    of tokensWithShortLexeme:
+      slexeme: string
     of Indentation:
       indentation: int
     else: discard
@@ -23,7 +31,7 @@ proc actualRepr(lex: Lexer, t: Token): string =
   of tokensWithValue + {Token.TagHandle}:
     result.add("(" & escape(lex.evaluated) & ")")
   of Indentation:
-    result.add("(" & $lex.indentation & ")")
+    result.add("(" & $lex.currentIndentation() & ")")
   else: discard
 
 proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
@@ -43,14 +51,22 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
         doAssert lex.evaluated == expectedToken.value, "Wrong token content at #" &
             $i & ": Expected " & escape(expectedToken.value) &
             ", got " & escape(lex.evaluated)
+      of tokensWithFullLexeme:
+        doAssert lex.fullLexeme() == expectedToken.lexeme, "Wrong token lexeme at #" &
+            $i & ": Expected" & escape(expectedToken.lexeme) &
+            ", got " & escape(lex.fullLexeme())
+      of tokensWithShortLexeme:
+        doAssert lex.shortLexeme() == expectedToken.slexeme, "Wrong token slexeme at #" &
+            $i & ": Expected" & escape(expectedToken.slexeme) &
+            ", got " & escape(lex.shortLexeme())
       of Indentation:
-        doAssert lex.indentation == expectedToken.indentation,
+        doAssert lex.currentIndentation() == expectedToken.indentation,
             "Wrong indentation length at #" & $i & ": Expected " &
-            $expectedToken.indentation & ", got " & $lex.indentation
+            $expectedToken.indentation & ", got " & $lex.currentIndentation()
       else: discard
     except LexerError:
       let e = (ref LexerError)(getCurrentException())
-      echo "Error at line " & $e.line & ", column " & $e.column & ":"
+      echo "Error at line", e.line, ", column", e.column, ":", e.msg
       echo e.lineContent
       assert false
 
@@ -71,9 +87,9 @@ proc dt(): TokenWithValue = TokenWithValue(kind: Token.TagDirective)
 proc du(v: string): TokenWithValue =
   TokenWithValue(kind: Token.UnknownDirective, value: v)
 proc dp(v: string): TokenWithValue =
-  TokenWithValue(kind: Token.DirectiveParam, value: v)
+  TokenWithValue(kind: Token.DirectiveParam, lexeme: v)
 proc th(v: string): TokenWithValue =
-  TokenWithValue(kind: Token.TagHandle, value: v)
+  TokenWithValue(kind: Token.TagHandle, lexeme: v)
 proc ts(v: string): TokenWithValue =
   TokenWithValue(kind: Token.Suffix, value: v)
 proc tv(v: string): TokenWithValue =
@@ -87,8 +103,8 @@ proc se(): TokenWithValue = TokenWithValue(kind: Token.SeqEnd)
 proc ms(): TokenWithValue = TokenWithValue(kind: Token.MapStart)
 proc me(): TokenWithValue = TokenWithValue(kind: Token.MapEnd)
 proc sep(): TokenWithValue = TokenWithValue(kind: Token.SeqSep)
-proc an(v: string): TokenWithValue = TokenWithValue(kind: Token.Anchor, value: v)
-proc al(v: string): TokenWithValue = TokenWithValue(kind: Token.Alias, value: v)
+proc an(v: string): TokenWithValue = TokenWithValue(kind: Token.Anchor, slexeme: v)
+proc al(v: string): TokenWithValue = TokenWithValue(kind: Token.Alias, slexeme: v)
 
 suite "Lexer":
   test "Empty document":
@@ -133,11 +149,11 @@ suite "Lexer":
 
   test "Directives":
     assertEquals("%YAML 1.2\n---\n%TAG\n...\n\n%TAG ! example.html",
-        dy(), dp("1.2"), dirE(), i(0), pl("%TAG"), i(0), docE(), dt(),
+        dy(), dp("1.2"), dirE(), i(0), pl("%TAG"), docE(), dt(),
         th("!"), ts("example.html"), e())
 
   test "Markers and Unknown Directive":
-    assertEquals("---\n---\n...\n%UNKNOWN warbl", dirE(), dirE(), i(0),
+    assertEquals("---\n---\n...\n%UNKNOWN warbl", dirE(), dirE(),
         docE(), du("UNKNOWN"), dp("warbl"), e())
 
   test "Block scalar":
@@ -145,7 +161,7 @@ suite "Lexer":
 
   test "Block Scalars":
     assertEquals("one : >2-\l   foo\l  bar\ltwo: |+\l bar\l  baz", i(0),
-        pl("one"), mv(), fs(" foo\lbar"), i(0), pl("two"), mv(),
+        pl("one"), mv(), fs(" foo bar"), i(0), pl("two"), mv(),
         ls("bar\l baz"), e())
 
   test "Flow indicators":
@@ -153,7 +169,7 @@ suite "Lexer":
         mv(), pl("d"), sep(), ss(), pl("e"), se(), mv(), pl("f"), me(), e())
 
   test "Adjacent map values in flow style":
-    assertEquals("{\"foo\":bar, [1]\l:egg}", i(0), ms(), dq("foo"), mv(),
+    assertEquals("{\"foo\":bar, [1]\l :egg}", i(0), ms(), dq("foo"), mv(),
         pl("bar"), sep(), ss(), pl("1"), se(), mv(), pl("egg"), me(), e())
 
   test "Tag handles":

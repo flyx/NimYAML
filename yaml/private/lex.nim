@@ -16,10 +16,8 @@ type
     curStartPos*, curEndPos*: Mark
     # recently read scalar or URI, if any
     evaluated*: string
-    # ltIndentation
-    indentation*: int
-
     # internals
+    indentation: int
     source: BaseLexer
     tokenStart: int
     flowDepth: int
@@ -75,7 +73,6 @@ const
   spaceOrLineEnd = {' ', '\t', '\l', '\c', EndOfFile}
   commentOrLineEnd = {'\l', '\c', EndOfFile, '#'}
   digits         = {'0'..'9'}
-  hexDigits      = {'0'..'9', 'a'..'f', 'A'..'F'}
   flowIndicators = {'[', ']', '{', '}', ','}
   uriChars       = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', ':',
       '@', '&', '-', '=', '+', '$', '_', '.', '~', '*', '\'', '(', ')'}
@@ -93,41 +90,44 @@ const
 
   UnknownIndentation* = int.low
 
+proc currentIndentation*(lex: Lexer): Natural =
+  return lex.source.getColNumber(lex.source.bufpos) - 1
+
 # lexer source handling
 
 proc advance(lex: var Lexer, step: int = 1) {.inline.} =
-  lex.source.bufpos.inc(step)
   lex.c = lex.source.buf[lex.source.bufpos]
+  lex.source.bufpos.inc(step)
 
 template lexCR(lex: var Lexer) =
-  try: lex.source.bufpos = lex.source.handleCR(lex.source.bufpos)
+  try: lex.source.bufpos = lex.source.handleCR(lex.source.bufpos - 1)
   except:
     var e = lex.generateError("Encountered stream error: " &
         getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
-  lex.c = lex.source.buf[lex.source.bufpos]
+  lex.advance()
 
 template lexLF(lex: var Lexer) =
-  try: lex.source.bufpos = lex.source.handleLF(lex.source.bufpos)
+  try: lex.source.bufpos = lex.source.handleLF(lex.source.bufpos - 1)
   except:
     var e = generateError(lex, "Encountered stream error: " &
         getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
-  lex.c = lex.source.buf[lex.source.bufpos]
+  lex.advance()
 
 template lineNumber(lex: Lexer): Positive =
   lex.source.lineNumber
 
 template columnNumber(lex: Lexer): Positive =
-  lex.source.getColNumber(lex.source.bufpos) + 1
+  lex.source.getColNumber(lex.source.bufpos)
 
 template currentLine(lex: Lexer): string =
   lex.source.getCurrentLine(true)
 
 proc isPlainSafe(lex: Lexer): bool {.inline.} =
-  case lex.source.buf[lex.source.bufpos + 1]
+  case lex.source.buf[lex.source.bufpos]
   of spaceOrLineEnd: result = false
   of flowIndicators: result = lex.flowDepth == 0
   else: result = true
@@ -218,26 +218,22 @@ proc isDocumentEnd(lex: var Lexer): bool =
 
 proc readHexSequence(lex: var Lexer, len: int) =
   var charPos = 0
-  let startPos = lex.source.bufpos
   for i in countup(0, len-1):
-    if lex.source.buf[startPos + 1] notin hexDigits:
-      raise lex.generateError("Invalid character in hex escape sequence: " &
-          escape("" & lex.source.buf[startPos + i]))
-  # no pow() for ints, do it manually
-  var coeff = 1
-  for exponent in countup(0, len-1): coeff *= 16
-  for exponent in countdown(len-1, 0):
     lex.advance()
+    let digitPosition = len - i - 1
     case lex.c
-    of digits:
-      charPos += coeff * (int(lex.c) - int('0'))
-    of 'a' .. 'f':
-      charPos += coeff * (int(lex.c) - int('a') + 10)
+    of lineEnd:
+      raise lex.generateError("Unfinished unicode escape sequence")
+    of '0'..'9':
+      charPos = charPos or (int(lex.c) - 0x30) shl (digitPosition * 4)
     of 'A' .. 'F':
-      charPos += coeff * (int(lex.c) - int('A') + 10)
-    else: discard # cannot happen, we checked
-    coeff = coeff div 16
-  lex.evaluated.add($Rune(charPos))
+      charPos = charPos or (int(lex.c) - 0x37) shl (digitPosition * 4)
+    of 'a' .. 'f':
+      charPos = charPos or (int(lex.c) - 0x57) shl (digitPosition * 4)
+    else:
+      raise lex.generateError("Invalid character in hex escape sequence: " &
+          escape("" & lex.c))
+  lex.evaluated.add(toUTF8(Rune(charPos)))
 
 proc readURI(lex: var Lexer) =
   lex.evaluated.setLen(0)
@@ -383,7 +379,7 @@ proc readPlainScalar(lex: var Lexer) =
             break inlineLoop
           of EndOfFile:
             lex.evaluated.add(lex.source.buf[lineStartPos..lex.source.bufpos - 2])
-            if lex.columnNumber() > 0:
+            if lex.currentIndentation() > 0:
               lex.endToken()
             lex.state = streamEnd
             break multilineLoop
@@ -394,7 +390,7 @@ proc readPlainScalar(lex: var Lexer) =
         while true:
           case lex.startLine()
           of lsContent:
-            if lex.columnNumber() <= lex.indentation:
+            if lex.currentIndentation() <= lex.indentation:
               lex.state = afterNewlineState
               break multilineLoop
             break newlineLoop
@@ -412,6 +408,7 @@ proc readPlainScalar(lex: var Lexer) =
             break multilineLoop
           of lsNewline: lex.endLine()
           newlines += 1
+      while lex.c == ' ': lex.advance()
       if (lex.c == ':' and not lex.isPlainSafe()) or
          lex.c == '#' or (lex.c in flowIndicators and
          lex.flowDepth > 0):
@@ -423,7 +420,7 @@ proc readPlainScalar(lex: var Lexer) =
         for i in countup(2, newlines): lex.evaluated.add('\l')
 
 proc streamEndAfterBlock(lex: var Lexer) =
-  if lex.columnNumber() != 0:
+  if lex.currentIndentation() != 0:
     lex.endToken()
     lex.curEndPos.column -= 1
 
@@ -475,13 +472,13 @@ proc readBlockScalar(lex: var Lexer) =
       if indent == 0:
         while lex.c == ' ': lex.advance()
       else:
-        maxLeadingSpaces = lex.columnNumber + indent
-        while lex.c == ' ' and lex.columnNumber < maxLeadingSpaces:
+        maxLeadingSpaces = lex.currentIndentation() + indent
+        while lex.c == ' ' and lex.currentIndentation() < maxLeadingSpaces:
           lex.advance()
       case lex.c
       of '\l', '\c':
         lex.endToken()
-        maxLeadingSpaces = max(maxLeadingSpaces, lex.columnNumber())
+        maxLeadingSpaces = max(maxLeadingSpaces, lex.currentIndentation())
         lex.endLine()
         separationLines += 1
       of EndOfFile:
@@ -490,59 +487,60 @@ proc readBlockScalar(lex: var Lexer) =
         break body
       else:
         if indent == 0:
-          indent = lex.columnNumber()
+          indent = lex.currentIndentation()
           if indent <= max(0, lex.indentation):
             lex.state = lineIndentation
             break body
           elif indent < maxLeadingSpaces:
             raise lex.generateError("Leading all-spaces line contains too many spaces")
-        elif lex.columnNumber < indent: break body
+        elif lex.currentIndentation() < indent: break body
         break
     for i in countup(0, separationLines - 1):
       lex.evaluated.add('\l')
 
     block content:
-      contentStart = lex.source.bufpos - 1
-      while lex.c notin lineEnd: lex.advance()
-      lex.evaluated.add(lex.source.buf[contentStart .. lex.source.bufpos - 2])
-      separationLines = 0
-      if lex.c == EndOfFile:
-        lex.state = streamEnd
-        lex.streamEndAfterBlock()
-        break body
-      separationLines += 1
-      lex.endToken()
-      lex.endLine()
-
-      # empty lines and indentation of next line
       while true:
-        while lex.c == ' ' and lex.columnNumber() < indent:
-          lex.advance()
-        case lex.c
-        of '\l', '\c':
-          lex.endToken()
-          separationLines += 1
-          lex.endLine()
-        of EndOfFile:
+        contentStart = lex.source.bufpos - 1
+        while lex.c notin lineEnd: lex.advance()
+        lex.evaluated.add(lex.source.buf[contentStart .. lex.source.bufpos - 2])
+        separationLines = 0
+        if lex.c == EndOfFile:
           lex.state = streamEnd
           lex.streamEndAfterBlock()
           break body
+        separationLines += 1
+        lex.endToken()
+        lex.endLine()
+
+        # empty lines and indentation of next line
+        while true:
+          while lex.c == ' ' and lex.currentIndentation() < indent:
+            lex.advance()
+          case lex.c
+          of '\l', '\c':
+            lex.endToken()
+            separationLines += 1
+            lex.endLine()
+          of EndOfFile:
+            lex.state = streamEnd
+            lex.streamEndAfterBlock()
+            break body
+          else:
+            if lex.currentIndentation() < indent:
+              break content
+            else: break
+
+        # line folding
+        if lex.cur == Token.Literal:
+          for i in countup(0, separationLines - 1):
+            lex.evaluated.add('\l')
+        elif separationLines == 1:
+          lex.evaluated.add(' ')
         else:
-          if lex.columnNumber() < indent:
-            break content
-          else: break
+          for i in countup(0, separationLines - 2):
+            lex.evaluated.add('\l')
 
-      # line folding
-      if lex.cur == Token.Literal:
-        for i in countup(0, separationLines - 1):
-          lex.evaluated.add('\l')
-      elif separationLines == 1:
-        lex.evaluated.add(' ')
-      else:
-        for i in countup(0, separationLines - 2):
-          lex.evaluated.add('\l')
-
-    if lex.columnNumber() > max(0, lex.indentation):
+    if lex.currentIndentation() > max(0, lex.indentation):
       if lex.c == '#':
         lex.state = expectLineEnd
       else:
@@ -755,7 +753,7 @@ proc outsideDoc(lex: var Lexer): bool =
     lex.startToken()
     if lex.isDirectivesEnd():
       lex.state = expectLineEnd
-      lex.cur = Token.DocumentEnd
+      lex.cur = Token.DirectivesEnd
     else:
       lex.state = indentationSettingToken
       lex.cur = Token.Indentation
@@ -799,6 +797,7 @@ proc yamlVersion(lex: var Lexer): bool =
   lex.cur = Token.DirectiveParam
   lex.endToken()
   lex.state = expectLineEnd
+  return true
 
 proc tagShorthand(lex: var Lexer): bool =
   debug("lex: tagShorthand")
@@ -822,6 +821,7 @@ proc tagShorthand(lex: var Lexer): bool =
   lex.cur = Token.TagHandle
   lex.endToken()
   lex.state = tagUri
+  return true
 
 proc tagUri(lex: var Lexer): bool =
   debug("lex: tagUri")
@@ -886,7 +886,7 @@ proc flowLineStart(lex: var Lexer): bool =
   return false
 
 proc flowLineIndentation(lex: var Lexer): bool =
-  if lex.columnNumber() < lex.indentation:
+  if lex.currentIndentation() < lex.indentation:
     raise lex.generateError("Too few indentation spaces (must surpass surrounding block level)")
   lex.state = insideLine
   return false
@@ -933,6 +933,7 @@ proc readNamespace(lex: var Lexer) =
     lex.readURI()
     lex.endToken()
     lex.cur = Token.VerbatimTag
+    lex.state = afterToken
   else:
     var handleEnd = lex.tokenStart
     while true:
@@ -1022,9 +1023,9 @@ proc insideLine(lex: var Lexer): bool =
   return true
 
 proc indentationSettingToken(lex: var Lexer): bool =
-  let cachedIntentation = lex.columnNumber()
+  let cachedIntentation = lex.currentIndentation()
   result = lex.insideLine()
-  if result and lex.flowDepth > 0:
+  if result and lex.flowDepth == 0:
     if lex.cur in nodePropertyKind:
       lex.propertyIndentation = cachedIntentation
     else:
@@ -1054,6 +1055,7 @@ proc afterJsonEnablingToken(lex: var Lexer): bool =
       lex.endToken()
       lex.cur = Token.MapValueInd
       lex.state = afterToken
+      return true
     of '#', '\l', '\c':
       lex.endLine()
       discard lex.flowLineStart()
