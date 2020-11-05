@@ -172,7 +172,7 @@ proc streamEnd(lex: var Lexer): bool {.raises: [].}
 template debug(message: string) {.dirty.} =
   when defined(yamlDebug):
     try: styledWriteLine(stdout, fgBlue, message)
-    except IOError: discard
+    except ValueError, IOError: discard
 
 proc generateError(lex: Lexer, message: string):
     ref LexerError {.raises: [].} =
@@ -428,6 +428,13 @@ proc streamEndAfterBlock(lex: var Lexer) =
     lex.endToken()
     lex.curEndPos.column -= 1
 
+proc dirEndFollows(lex: Lexer): bool =
+  return lex.c == '-' and lex.source.buf[lex.source.bufpos] == '-' and
+      lex.source.buf[lex.source.bufpos+1] == '-'
+
+proc docEndFollows(lex: Lexer): bool =
+  return lex.c == '.' and lex.source.buf[lex.source.bufpos] == '.' and
+      lex.source.buf[lex.source.bufpos+1] == '.'
 
 proc readBlockScalar(lex: var Lexer) =
   var
@@ -492,7 +499,8 @@ proc readBlockScalar(lex: var Lexer) =
       else:
         if indent == 0:
           indent = lex.currentIndentation()
-          if indent <= max(0, lex.indentation):
+          if indent <= lex.indentation or
+              (indent == 0 and (lex.dirEndFollows() or lex.docEndFollows())):
             lex.state = lineIndentation
             break body
           elif indent < maxLeadingSpaces:
@@ -530,7 +538,8 @@ proc readBlockScalar(lex: var Lexer) =
             lex.streamEndAfterBlock()
             break body
           else:
-            if lex.currentIndentation() < indent:
+            if lex.currentIndentation() < indent or
+                (indent == 0 and lex.dirEndFollows() or lex.docEndFollows()):
               break content
             else: break
 
@@ -544,12 +553,14 @@ proc readBlockScalar(lex: var Lexer) =
           for i in countup(0, separationLines - 2):
             lex.evaluated.add('\l')
 
-    if lex.currentIndentation() > max(0, lex.indentation):
+    let markerFollows = lex.currentIndentation() == 0 and
+        (lex.dirEndFollows() or lex.docEndFollows())
+    if lex.currentIndentation() > lex.indentation and not markerFollows:
       if lex.c == '#':
         lex.state = expectLineEnd
       else:
-        raise lex.generateError("This line at " & escape("" & lex.c) & " is less indented than necessary")
-    elif lex.columnNumber() == 1:
+        raise lex.generateError("This line #" & $lex.curStartPos.line & " at " & escape("" & lex.c) & " is less indented than necessary")
+    elif lex.currentIndentation() == 0:
       lex.state = lineStart
     else:
       lex.state = lineIndentation
@@ -570,7 +581,7 @@ proc processQuotedWhitespace(lex: var Lexer, initial: int) =
   let firstSpace = lex.source.bufpos - 1
   while true:
     case lex.c
-    of ' ': discard
+    of ' ', '\t': discard
     of '\l':
       lex.lexLF()
       break
@@ -584,7 +595,11 @@ proc processQuotedWhitespace(lex: var Lexer, initial: int) =
   lex.seenMultiline = true
   while true:
     case lex.startLine()
-    of lsContent, lsComment: break
+    of lsContent, lsComment:
+      while lex.c in space: lex.advance()
+      if lex.c in {'\l', '\c'}:
+        lex.endLine()
+      else: break
     of lsDirectivesEndMarker:
       raise lex.generateError("Illegal `---` within quoted scalar")
     of lsDocumentEndMarker:
@@ -619,7 +634,7 @@ proc readSingleQuotedScalar(lex: var Lexer) =
         literalStart = lex.source.bufpos
         lex.advance()
       else: break
-    of ' ', '\l', '\c':
+    of ' ', '\t', '\l', '\c':
       lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.processQuotedWhitespace(1)
       literalStart = lex.source.bufpos - 1
@@ -681,7 +696,7 @@ proc readDoubleQuotedScalar(lex: var Lexer) =
     of '"':
       lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       break
-    of ' ', '\l', '\c':
+    of ' ', '\t', '\l', '\c':
       lex.evaluated.add(lex.source.buf[literalStart..lex.source.bufpos - 2])
       lex.processQuotedWhitespace(1)
       literalStart = lex.source.bufpos - 1
@@ -756,7 +771,7 @@ proc outsideDoc(lex: var Lexer): bool =
   of '-':
     lex.startToken()
     if lex.isDirectivesEnd():
-      lex.state = expectLineEnd
+      lex.state = afterToken
       lex.cur = Token.DirectivesEnd
     else:
       lex.state = indentationSettingToken
@@ -783,6 +798,7 @@ proc outsideDoc(lex: var Lexer): bool =
       return false
     lex.endToken()
     lex.cur = Token.Indentation
+    lex.indentation = -1
     lex.state = indentationSettingToken
     lex.lineStartState = lineStart
   return true
@@ -1083,6 +1099,7 @@ proc lineDirEnd(lex: var Lexer): bool =
   lex.curStartPos.column = 1
   lex.endToken()
   lex.cur = Token.DirectivesEnd
+  lex.state = afterToken
   lex.indentation = -1
   lex.propertyIndentation = -1
   return true

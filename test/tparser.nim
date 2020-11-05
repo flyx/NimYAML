@@ -74,8 +74,15 @@ macro genTests(): untyped =
 
   let errorTests = toHashSet(staticExec("cd " & (absolutePath / "tags" / "error") &
                          " && ls -1d *").splitLines())
-  let ignored = toHashSet(["3MYT", "JDH8", "2EBW", "9KAX", "AB8U", "B63P", "FBC9",
-                       "Q5MG", "S98Z", ".git", "name", "tags", "meta"])
+  var ignored = toHashSet([".git", "name", "tags", "meta"])
+  #-----------------------------------------------------------------------------
+  # THE FOLLOWING TESTS WOULD FAIL FOR THE DOCUMENTED REASONS
+  ignored.incl("W5VH")
+    # YAML allows the colon as part of an anchor or alias name.
+    # For aliases, this leads to confusion becaues `*a:` looks like an implicit
+    # mapping key (but is not).
+    # Therefore, NimYAML disallows colons in anchor names.
+  #-----------------------------------------------------------------------------
 
   result = newStmtList()
   # walkDir for some crude reason does not work with travis build

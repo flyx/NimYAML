@@ -33,8 +33,7 @@ type
     ## well-formed if they take it as input parameter.
     nextImpl*: proc(s: YamlStream, e: var Event): bool
     lastTokenContextImpl*:
-        proc(s: YamlStream, line, column: var int,
-             lineContent: var string): bool {.raises: [].}
+        proc(s: YamlStream, lineContent: var string): bool {.raises: [].}
     peeked: bool
     cached: Event
 
@@ -43,13 +42,11 @@ type
     ## backend raises an exception. The error that has occurred is
     ## available from ``parent``.
 
-proc noLastContext(s: YamlStream, line, column: var int,
-    lineContent: var string): bool {.raises: [].} =
-  (line, column, lineContent) = (-1, -1, "")
+proc noLastContext(s: YamlStream, lineContent: var string): bool {.raises: [].} =
   result = false
 
 proc basicInit*(s: YamlStream, lastTokenContextImpl:
-    proc(s: YamlStream, line, column: var int, lineContent: var string): bool
+    proc(s: YamlStream, lineContent: var string): bool
     {.raises: [].} = noLastContext) {.raises: [].} =
   ## initialize basic values of the YamlStream. Call this in your constructor
   ## if you subclass YamlStream.
@@ -121,12 +118,11 @@ proc `peek=`*(s: YamlStream, value: Event) {.raises: [].} =
   s.cached = value
   s.peeked = true
 
-proc getLastTokenContext*(s: YamlStream, line, column: var int,
-    lineContent: var string): bool =
+proc getLastTokenContext*(s: YamlStream, lineContent: var string): bool =
   ## ``true`` if source context information is available about the last returned
   ## token. If ``true``, line, column and lineContent are set to position and
   ## line content where the last token has been read from.
-  result = s.lastTokenContextImpl(s, line, column, lineContent)
+  result = s.lastTokenContextImpl(s, lineContent)
 
 iterator items*(s: YamlStream): Event
     {.raises: [YamlStreamError].} =

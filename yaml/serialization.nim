@@ -18,7 +18,7 @@
 
 import tables, typetraits, strutils, macros, streams, times, parseutils, options
 import data, parser, taglib, presenter, stream, private/internal, hints, annotations
-export stream, macros, annotations, options
+export data, stream, macros, annotations, options
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.
 
@@ -125,10 +125,10 @@ proc safeTagUri(id: TagId): string {.raises: [].} =
     return uri
   except KeyError: internalError("Unexpected KeyError for TagId " & $id)
 
-proc constructionError(s: YamlStream, msg: string): ref YamlConstructionError =
+proc constructionError(s: YamlStream, mark: Mark, msg: string): ref YamlConstructionError =
   result = newException(YamlConstructionError, msg)
-  if not s.getLastTokenContext(result.mark.line, result.mark.column, result.lineContent):
-    (result.mark.line, result.mark.column) = (-1, -1)
+  result.mark = mark
+  if not s.getLastTokenContext(result.lineContent):
     result.lineContent = ""
 
 template constructScalarItem*(s: var YamlStream, i: untyped,
@@ -141,11 +141,11 @@ template constructScalarItem*(s: var YamlStream, i: untyped,
   bind constructionError
   let i = s.next()
   if i.kind != yamlScalar:
-    raise constructionError(s, "Expected scalar")
+    raise s.constructionError(i.startPos, "Expected scalar")
   try: content
   except YamlConstructionError as e: raise e
   except Exception:
-    var e = constructionError(s,
+    var e = s.constructionError(i.startPos,
         "Cannot construct to " & name(t) & ": " & item.scalarContent &
         "; error: " & getCurrentExceptionMsg())
     e.parent = getCurrentException()
@@ -167,7 +167,7 @@ proc representObject*(value: string, ts: TagStyle,
   c.put(scalarEvent(value, tag, yAnchorNone))
 
 proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
-      s: YamlStream, val: string): T =
+      s: YamlStream, mark: Mark, val: string): T =
   result = 0
   for i in 2..<val.len:
     case val[i]
@@ -176,17 +176,17 @@ proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
     of 'a'..'f': result = result shl 4 or T(ord(val[i]) - ord('a') + 10)
     of 'A'..'F': result = result shl 4 or T(ord(val[i]) - ord('A') + 10)
     else:
-      raise s.constructionError("Invalid character in hex: " &
+      raise s.constructionError(mark, "Invalid character in hex: " &
           escape("" & val[i]))
 
 proc parseOctal[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
-    s: YamlStream, val: string): T =
+    s: YamlStream, mark: Mark, val: string): T =
   for i in 2..<val.len:
     case val[i]
     of '_': discard
     of '0'..'7': result = result shl 3 + T((ord(val[i]) - ord('0')))
     else:
-      raise s.constructionError("Invalid character in hex: " &
+      raise s.constructionError(mark, "Invalid character in hex: " &
           escape("" & val[i]))
 
 proc constructObject*[T: int8|int16|int32|int64](
@@ -195,16 +195,16 @@ proc constructObject*[T: int8|int16|int32|int64](
   ## constructs an integer value from a YAML scalar
   constructScalarItem(s, item, T):
     if item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'x', 'X' }:
-      result = parseHex[T](s, item.scalarContent)
+      result = parseHex[T](s, item.startPos, item.scalarContent)
     elif item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'o', 'O'}:
-      result = parseOctal[T](s, item.scalarContent)
+      result = parseOctal[T](s, item.startPos, item.scalarContent)
     else:
       let nInt = parseBiggestInt(item.scalarContent)
       if nInt <= T.high:
         # make sure we don't produce a range error
         result = T(nInt)
       else:
-        raise s.constructionError("Cannot construct int; out of range: " &
+        raise s.constructionError(item.startPos, "Cannot construct int; out of range: " &
           $nInt & " for type " & T.name & " with max of: " & $T.high)
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
@@ -245,9 +245,9 @@ proc constructObject*[T: DefiniteUIntTypes](
   ## construct an unsigned integer value from a YAML scalar
   constructScalarItem(s, item, T):
     if item.scalarContent[0] == '0' and item.scalarContent[1] in {'x', 'X'}:
-      result = parseHex[T](s, item.scalarContent)
+      result = parseHex[T](s, item.startPos, item.scalarContent)
     elif item.scalarContent[0] == '0' and item.scalarContent[1] in {'o', 'O'}:
-      result = parseOctal[T](s, item.scalarContent)
+      result = parseOctal[T](s, item.startPos, item.scalarContent)
     else: result = T(parseBiggestUInt(item.scalarContent))
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
@@ -295,7 +295,7 @@ proc constructObject*[T: float|float32|float64](
         else: result = Inf
     of yTypeFloatNaN: result = NaN
     else:
-      raise s.constructionError("Cannot construct to float: " &
+      raise s.constructionError(item.startPos, "Cannot construct to float: " &
           escape(item.scalarContent))
 
 proc representObject*[T: float|float32|float64](value: T, ts: TagStyle,
@@ -318,7 +318,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
     of yTypeBoolTrue: result = true
     of yTypeBoolFalse: result = false
     else:
-      raise s.constructionError("Cannot construct to bool: " &
+      raise s.constructionError(item.startPos, "Cannot construct to bool: " &
           escape(item.scalarContent))
 
 proc representObject*(value: bool, ts: TagStyle, c: SerializationContext,
@@ -332,7 +332,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
   ## constructs a char value from a YAML scalar
   constructScalarItem(s, item, char):
     if item.scalarContent.len != 1:
-      raise s.constructionError("Cannot construct to char (length != 1): " &
+      raise s.constructionError(item.startPos, "Cannot construct to char (length != 1): " &
           escape(item.scalarContent))
     else: result = item.scalarContent[0]
 
@@ -399,7 +399,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
       let info = tmp.parse("yyyy-M-d'T'H:mm:sszzz")
       result = info.toTime()
     else:
-      raise s.constructionError("Not a parsable timestamp: " &
+      raise s.constructionError(item.startPos, "Not a parsable timestamp: " &
           escape(item.scalarContent))
 
 proc representObject*(value: Time, ts: TagStyle, c: SerializationContext,
@@ -421,7 +421,7 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
   ## constructs a Nim seq from a YAML sequence
   let event = s.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError("Expected sequence start")
+    raise s.constructionError(event.startPos, "Expected sequence start")
   result = newSeq[T]()
   while s.peek().kind != yamlEndSeq:
     var item: T
@@ -435,7 +435,7 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
   ## constructs a Nim seq from a YAML sequence
   let event = s.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError("Expected sequence start")
+    raise s.constructionError(event.startPos, "Expected sequence start")
   result = {}
   while s.peek().kind != yamlEndSeq:
     var item: T
@@ -447,7 +447,7 @@ proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
     c: SerializationContext, tag: TagId) =
   ## represents a Nim seq as YAML sequence
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  c.put(startSeqEvent(tag))
+  c.put(startSeqEvent(csBlock, tag))
   for item in value:
     representChild(item, childTagStyle, c)
   c.put(endSeqEvent())
@@ -464,15 +464,15 @@ proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
   ## constructs a Nim array from a YAML sequence
   var event = s.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError("Expected sequence start")
+    raise s.constructionError(event.startPos, "Expected sequence start")
   for index in low(I)..high(I):
     event = s.peek()
     if event.kind == yamlEndSeq:
-      raise s.constructionError("Too few array values")
+      raise s.constructionError(event.startPos, "Too few array values")
     constructChild(s, c, result[index])
   event = s.next()
   if event.kind != yamlEndSeq:
-    raise s.constructionError("Too many array values")
+    raise s.constructionError(event.startPos, "Too many array values")
 
 proc representObject*[I, T](value: array[I, T], ts: TagStyle,
     c: SerializationContext, tag: TagId) =
@@ -498,7 +498,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
   ## constructs a Nim Table from a YAML mapping
   let event = s.next()
   if event.kind != yamlStartMap:
-    raise s.constructionError("Expected map start, got " & $event.kind)
+    raise s.constructionError(event.startPos, "Expected map start, got " & $event.kind)
   result = initTable[K, V]()
   while s.peek.kind != yamlEndMap:
     var
@@ -507,7 +507,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
     constructChild(s, c, key)
     constructChild(s, c, value)
     if result.contains(key):
-      raise s.constructionError("Duplicate table key!")
+      raise s.constructionError(event.startPos, "Duplicate table key!")
     result[key] = value
   discard s.next()
 
@@ -537,7 +537,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
   ## constructs a Nim OrderedTable from a YAML mapping
   var event = s.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError("Expected seq start, got " & $event.kind)
+    raise s.constructionError(event.startPos, "Expected seq start, got " & $event.kind)
   result = initOrderedTable[K, V]()
   while s.peek.kind != yamlEndSeq:
     var
@@ -545,14 +545,14 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
       value: V
     event = s.next()
     if event.kind != yamlStartMap:
-      raise s.constructionError("Expected map start, got " & $event.kind)
+      raise s.constructionError(event.startPos, "Expected map start, got " & $event.kind)
     constructChild(s, c, key)
     constructChild(s, c, value)
     event = s.next()
     if event.kind != yamlEndMap:
-      raise s.constructionError("Expected map end, got " & $event.kind)
+      raise s.constructionError(event.startPos, "Expected map end, got " & $event.kind)
     if result.contains(key):
-      raise s.constructionError("Duplicate table key!")
+      raise s.constructionError(event.startPos, "Duplicate table key!")
     result.add(key, value)
   discard s.next()
 
@@ -643,9 +643,9 @@ macro matchMatrix(t: typedesc): untyped =
     result.add(newLit(false))
 
 proc checkDuplicate(s: NimNode, tName: string, name: string, i: int,
-                    matched: NimNode): NimNode {.compileTime.} =
+                    matched: NimNode, m: NimNode): NimNode {.compileTime.} =
   result = newIfStmt((newNimNode(nnkBracketExpr).add(matched, newLit(i)),
-      newNimNode(nnkRaiseStmt).add(newCall(bindSym("constructionError"), s,
+      newNimNode(nnkRaiseStmt).add(newCall(bindSym("constructionError"), s, m,
       newLit("While constructing " & tName & ": Duplicate field: " &
       escape(name))))))
 
@@ -669,7 +669,7 @@ proc getOptionInner(fType: NimNode): NimNode {.compileTime.} =
   else: return nil
 
 proc checkMissing(s: NimNode, t: NimNode, tName: string, field: NimNode,
-                  i: int, matched, o: NimNode):
+                  i: int, matched, o: NimNode, m: NimNode):
     NimNode {.compileTime.} =
   let
     fType = getTypeInst(field)
@@ -683,7 +683,7 @@ proc checkMissing(s: NimNode, t: NimNode, tName: string, field: NimNode,
         elif hasSparse(`t`) and `o`.`field` is Option:
           `o`.`field` = none(`optionInner`)
         else:
-          raise constructionError(`s`, "While constructing " & `tName` &
+          raise constructionError(`s`, `m`, "While constructing " & `tName` &
               ": Missing field: " & `fName`)
 
 proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
@@ -708,7 +708,7 @@ proc ifNotTransient(o, field: NimNode,
         `stmts`
 
 macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
-                             matched: typed) =
+                             matched: typed, m: Mark) =
   result = newStmtList()
   let
     tDecl = getType(t)
@@ -718,7 +718,7 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       result.add(checkMissing(
-          s, t, tName, child[0], field, matched, o))
+          s, t, tName, child[0], field, matched, o, m))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         var
@@ -735,16 +735,16 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
         for item in child[bIndex][recListIndex].recListItems:
           inc(field)
           discChecks.add(checkMissing(
-              s, t, tName, item, field, matched, o))
+              s, t, tName, item, field, matched, o, m))
         result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
             "in", curValues), discChecks)))
     else:
-      result.add(checkMissing(s, t, tName, child, field, matched, o))
+      result.add(checkMissing(s, t, tName, child, field, matched, o, m))
     inc(field)
 
 macro constructFieldValue(t: typedesc, stream: untyped,
                           context: untyped, name: untyped, o: untyped,
-                          matched: untyped, failOnUnknown: bool) =
+                          matched: untyped, failOnUnknown: bool, m: untyped) =
   let
     tDecl = getType(t)
     tName = $tDecl[1]
@@ -770,7 +770,7 @@ macro constructFieldValue(t: typedesc, stream: untyped,
         objConstr.add(newColonExpr(newIdentNode($otherChild), newDotExpr(o,
             newIdentNode($otherChild))))
       disOb.add(newStmtList(
-          checkDuplicate(stream, tName, $child[0], fieldIndex, matched),
+          checkDuplicate(stream, tName, $child[0], fieldIndex, matched, m),
           newNimNode(nnkVarSection).add(
               newNimNode(nnkIdentDefs).add(
                   newIdentNode("value"), discType, newEmptyNode())),
@@ -808,7 +808,7 @@ macro constructFieldValue(t: typedesc, stream: untyped,
               infix(newStrLitNode("Field " & $item & " not allowed for " &
               $child[0] & " == "), "&", prefix(discriminant, "$"))))))
           ob.add(ifNotTransient(o, item,
-              [checkDuplicate(stream, tName, $item, fieldIndex, matched),
+              [checkDuplicate(stream, tName, $item, fieldIndex, matched, m),
               ifStmt, markAsFound(fieldIndex, matched)], true, stream, tName,
               $item))
           caseStmt.add(ob)
@@ -817,7 +817,7 @@ macro constructFieldValue(t: typedesc, stream: untyped,
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
       let field = newDotExpr(o, newIdentNode($child))
       ob.add(ifNotTransient(o, child,
-          [checkDuplicate(stream, tName, $child, fieldIndex, matched),
+          [checkDuplicate(stream, tName, $child, fieldIndex, matched, m),
           newCall("constructChild", stream, context, field),
           markAsFound(fieldIndex, matched)], true, stream, tName, $child))
       caseStmt.add(ob)
@@ -825,7 +825,7 @@ macro constructFieldValue(t: typedesc, stream: untyped,
   caseStmt.add(newNimNode(nnkElse).add(newNimNode(nnkWhenStmt).add(
     newNimNode(nnkElifBranch).add(failOnUnknown,
       newNimNode(nnkRaiseStmt).add(
-        newCall(bindSym("constructionError"), stream,
+        newCall(bindSym("constructionError"), stream, m,
         infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
         newCall(bindSym("escape"), name))))))))
   result.add(caseStmt)
@@ -859,8 +859,9 @@ proc constructObjectDefault*[O: object|tuple](
     startKind = when isVariantObject(getType(O)): yamlStartSeq else: yamlStartMap
     endKind = when isVariantObject(getType(O)): yamlEndSeq else: yamlEndMap
   if e.kind != startKind:
-    raise s.constructionError("While constructing " &
+    raise s.constructionError(e.startPos, "While constructing " &
         typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
+  let startPos = e.startPos
   when hasIgnore(O):
     const ignoredKeyList = O.getCustomPragmaVal(ignore)
     const failOnUnknown = len(ignoredKeyList) > 0
@@ -870,10 +871,10 @@ proc constructObjectDefault*[O: object|tuple](
     e = s.next()
     when isVariantObject(getType(O)):
       if e.kind != yamlStartMap:
-        raise s.constructionError("Expected single-pair map, got " & $e.kind)
+        raise s.constructionError(e.startPos, "Expected single-pair map, got " & $e.kind)
       e = s.next()
     if e.kind != yamlScalar:
-      raise s.constructionError("Expected field name, got " & $e.kind)
+      raise s.constructionError(e.startPos, "Expected field name, got " & $e.kind)
     let name = e.scalarContent
     when result is tuple:
       var i = 0
@@ -881,7 +882,7 @@ proc constructObjectDefault*[O: object|tuple](
       for fname, value in fieldPairs(result):
         if fname == name:
           if matched[i]:
-            raise s.constructionError("While constructing " &
+            raise s.constructionError(e.startPos, "While constructing " &
                 typetraits.name(O) & ": Duplicate field: " & escape(name))
           constructChild(s, c, value)
           matched[i] = true
@@ -890,12 +891,12 @@ proc constructObjectDefault*[O: object|tuple](
         inc(i)
       when failOnUnknown:
         if not found:
-          raise s.constructionError("While constructing " &
+          raise s.constructionError(e.startPos, "While constructing " &
               typetraits.name(O) & ": Unknown field: " & escape(name))
     else:
       when hasIgnore(O) and failOnUnknown:
         if name notin ignoredKeyList:
-          constructFieldValue(O, s, c, name, result, matched, failOnUnknown)
+          constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
         else:
           e = s.next()
           var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
@@ -906,21 +907,21 @@ proc constructObjectDefault*[O: object|tuple](
             of yamlScalar: discard
             else: internalError("Unexpected event kind.")
       else:
-        constructFieldValue(O, s, c, name, result, matched, failOnUnknown)
+        constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
     when isVariantObject(getType(O)):
       e = s.next()
       if e.kind != yamlEndMap:
-        raise s.constructionError("Expected end of single-pair map, got " &
+        raise s.constructionError(e.startPos, "Expected end of single-pair map, got " &
             $e.kind)
   discard s.next()
   when result is tuple:
     var i = 0
     for fname, value in fieldPairs(result):
       if not matched[i]:
-        raise s.constructionError("While constructing " &
+        raise s.constructionError(e.startPos, "While constructing " &
             typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
-  else: ensureAllFieldsPresent(s, O, result, matched)
+  else: ensureAllFieldsPresent(s, O, result, matched, startPos)
 
 proc constructObject*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
@@ -1001,8 +1002,8 @@ proc representObject*[O: object](value: O, ts: TagStyle,
     c: SerializationContext, tag: TagId) =
   ## represents a Nim object or tuple as YAML mapping
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  when isVariantObject(getType(O)): c.put(startSeqEvent(tag, yAnchorNone))
-  else: c.put(startMapEvent(tag, yAnchorNone))
+  when isVariantObject(getType(O)): c.put(startSeqEvent(csBlock, (yAnchorNone, tag)))
+  else: c.put(startMapEvent(csBlock, (yAnchorNone, tag)))
   genRepresentObject(O, value, childTagStyle)
   when isVariantObject(getType(O)): c.put(endSeqEvent())
   else: c.put(endMapEvent())
@@ -1025,10 +1026,10 @@ proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
   ## constructs a Nim enum from a YAML scalar
   let e = s.next()
   if e.kind != yamlScalar:
-    raise s.constructionError("Expected scalar, got " & $e.kind)
+    raise s.constructionError(e.startPos, "Expected scalar, got " & $e.kind)
   try: result = parseEnum[O](e.scalarContent)
   except ValueError:
-    var ex = s.constructionError("Cannot parse '" &
+    var ex = s.constructionError(e.startPos, "Cannot parse '" &
         escape(e.scalarContent) & "' as " & type(O).name)
     ex.parent = getCurrentException()
     raise ex
@@ -1128,7 +1129,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         of yTypeBoolTrue, yTypeBoolFalse:
           possibleTagIds.add(yamlTag(bool))
         of yTypeNull:
-          raise s.constructionError("not implemented!")
+          raise s.constructionError(item.startPos, "not implemented!")
         of yTypeUnknown:
           possibleTagIds.add(yamlTag(string))
         of yTypeTimestamp:
@@ -1139,12 +1140,12 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         possibleTagIds.add(item.scalarTag)
     of yamlStartMap:
       if item.mapTag in [yTagQuestionMark, yTagExclamationMark]:
-        raise s.constructionError(
+        raise s.constructionError(item.startPos,
             "Complex value of implicit variant object type must have a tag.")
       possibleTagIds.add(item.mapTag)
     of yamlStartSeq:
       if item.seqTag in [yTagQuestionMark, yTagExclamationMark]:
-        raise s.constructionError(
+        raise s.constructionError(item.startPos,
             "Complex value of implicit variant object type must have a tag.")
       possibleTagIds.add(item.seqTag)
     else: internalError("Unexpected item kind: " & $item.kind)
@@ -1152,21 +1153,21 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
   else:
     case item.kind
     of yamlScalar:
-      if item.scalarTag notin [yTagQuestionMark, yTagExclamationMark,
+      if item.scalarProperties.tag notin [yTagQuestionMark, yTagExclamationMark,
                                yamlTag(T)]:
-        raise s.constructionError("Wrong tag for " & typetraits.name(T))
-      elif item.scalarAnchor != yAnchorNone:
-        raise s.constructionError("Anchor on non-ref type")
+        raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+      elif item.scalarProperties.anchor != yAnchorNone:
+        raise s.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlStartMap:
-      if item.mapTag notin [yTagQuestionMark, yamlTag(T)]:
-        raise s.constructionError("Wrong tag for " & typetraits.name(T))
-      elif item.mapAnchor != yAnchorNone:
-        raise s.constructionError("Anchor on non-ref type")
+      if item.mapProperties.tag notin [yTagQuestionMark, yamlTag(T)]:
+        raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+      elif item.mapProperties.anchor != yAnchorNone:
+        raise s.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlStartSeq:
-      if item.seqTag notin [yTagQuestionMark, yamlTag(T)]:
-        raise s.constructionError("Wrong tag for " & typetraits.name(T))
-      elif item.seqAnchor != yAnchorNone:
-        raise s.constructionError("Anchor on non-ref type")
+      if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(T)]:
+        raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+      elif item.seqProperties.anchor != yAnchorNone:
+        raise s.constructionError(item.startPos, "Anchor on non-ref type")
     else: internalError("Unexpected item kind: " & $item.kind)
     constructObject(s, c, result)
 
@@ -1176,19 +1177,19 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
   if item.kind == yamlScalar:
     if item.scalarProperties.tag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
-      raise s.constructionError("Wrong tag for string")
+      raise s.constructionError(item.startPos, "Wrong tag for string")
     elif item.scalarProperties.anchor != yAnchorNone:
-      raise s.constructionError("Anchor on non-ref type")
+      raise s.constructionError(item.startPos, "Anchor on non-ref type")
   constructObject(s, c, result)
 
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
                         result: var seq[T]) =
   let item = s.peek()
   if item.kind == yamlStartSeq:
-    if item.seqTag notin [yTagQuestionMark, yamlTag(seq[T])]:
-      raise s.constructionError("Wrong tag for " & typetraits.name(seq[T]))
-    elif item.seqAnchor != yAnchorNone:
-      raise s.constructionError("Anchor on non-ref type")
+    if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(seq[T])]:
+      raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(seq[T]))
+    elif item.seqProperties.anchor != yAnchorNone:
+      raise s.constructionError(item.startPos, "Anchor on non-ref type")
   constructObject(s, c, result)
 
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
@@ -1211,21 +1212,22 @@ when defined(JS):
                        result: var Time) =
     let e = s.peek()
     if e.kind == yamlScalar:
-      if e.scalarTag notin [yTagQuestionMark, yTagTimestamp]:
-        raise s.constructionError("Wrong tag for Time")
+      if e.scalarProperties.tag notin [yTagQuestionMark, yTagTimestamp]:
+        raise s.constructionError(e.startPos, "Wrong tag for Time")
       elif guessType(e.scalarContent) != yTypeTimestamp:
-        raise s.constructionError("Invalid timestamp")
-      elif e.scalarAnchor != yAnchorNone:
-        raise s.constructionError("Anchor on non-ref type")
+        raise s.constructionError(e.startPos, "Invalid timestamp")
+      elif e.scalarProperties.anchor != yAnchorNone:
+        raise s.constructionError(e.startPos, "Anchor on non-ref type")
       constructObject(s, c, result)
     else:
-      raise s.constructionError("Unexpected structure, expected timestamp")
+      raise s.constructionError(e.startPos, "Unexpected structure, expected timestamp")
 
 proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
                         result: var ref O) =
   var e = s.peek()
   if e.kind == yamlScalar:
-    if e.scalarTag == yTagNull or (e.scalarTag == yTagQuestionMark and
+    let props = e.scalarProperties
+    if props.tag == yTagNull or (props.tag == yTagQuestionMark and
         guessType(e.scalarContent) == yTypeNull):
       result = nil
       discard s.next()
@@ -1359,11 +1361,15 @@ proc construct*[T](s: var YamlStream, target: var T)
   var context = newConstructionContext()
   try:
     var e = s.next()
+    yAssert(e.kind == yamlStartStream)
+    e = s.next()
     yAssert(e.kind == yamlStartDoc)
 
     constructChild(s, context, target)
     e = s.next()
     yAssert(e.kind == yamlEndDoc)
+    e = s.next()
+    yAssert(e.kind == yamlEndStream)
   except YamlConstructionError:
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
@@ -1430,9 +1436,9 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
   if a == asTidy:
     for item in bys.mitems():
       case item.kind
-      of yamlStartMap: setAnchor(item.mapAnchor, context)
-      of yamlStartSeq: setAnchor(item.seqAnchor, context)
-      of yamlScalar: setAnchor(item.scalarAnchor, context)
+      of yamlStartMap: setAnchor(item.mapProperties.anchor, context)
+      of yamlStartSeq: setAnchor(item.seqProperties.anchor, context)
+      of yamlScalar: setAnchor(item.scalarProperties.anchor, context)
       else: discard
   result = bys
 

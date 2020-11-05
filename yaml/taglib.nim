@@ -30,15 +30,20 @@ type
     ## `initExtendedTagLibrary <#initExtendedTagLibrary>`_.
     tags*: Table[string, TagId]
     nextCustomTagId*: TagId
-    tagHandles: Table[string, string]
+    prefixes: seq[tuple[prefix, uri: string]]
 
 proc initTagLibrary*(): TagLibrary {.raises: [].} =
   ## initializes the ``tags`` table and sets ``nextCustomTagId`` to
   ## ``yFirstCustomTagId``.
   new(result)
   result.tags = initTable[string, TagId]()
-  result.tagHandles = {"!": "!", yamlTagRepositoryPrefix : "!!"}.toTable()
+  result.prefixes = @[("!", "!"), ("!!", yamlTagRepositoryPrefix)]
   result.nextCustomTagId = yFirstCustomTagId
+
+proc resetPrefixes*(tagLib: TagLibrary) {.raises: [].} =
+  ## resets the registered prefixes in the given tag library, so that it
+  ## only contains the prefixes `!` and `!!`.
+  tagLib.prefixes.setLen(2)
 
 proc registerUri*(tagLib: TagLibrary, uri: string): TagId {.raises: [].} =
   ## registers a custom tag URI with a ``TagLibrary``. The URI will get
@@ -103,7 +108,7 @@ proc initExtendedTagLibrary*(): TagLibrary {.raises: [].} =
 
 proc initSerializationTagLibrary*(): TagLibrary =
   result = initTagLibrary()
-  result.tagHandles[nimyamlTagRepositoryPrefix] = "!n!"
+  result.prefixes.add(("!n!", nimyamlTagRepositoryPrefix))
   result.tags["!"] = yTagExclamationMark
   result.tags["?"] = yTagQuestionMark
   result.tags[y"str"]        = yTagString
@@ -190,11 +195,19 @@ setTagUri(uint64, n"system:uint64", yTagNimUInt64)
 setTagUri(float32, n"system:float32", yTagNimFloat32)
 setTagUri(float64, n"system:float64", yTagNimFloat64)
 
-proc registerHandle*(tagLib: TagLibrary, handle, prefix: string) =
+proc registerHandle*(tagLib: TagLibrary, uri, prefix: string): bool =
   ## Registers a handle for a prefix. When presenting any tag that starts with
   ## this prefix, the handle is used instead. Also causes the presenter to
   ## output a TAG directive for the handle.
-  taglib.tagHandles[prefix] = handle
+  ##
+  ## Returns true iff a new item has been created, false if an existing item
+  ## has been updated.
+  for i in countup(0, len(tagLib.prefixes)-1):
+    if tagLib.prefixes[i].prefix == prefix:
+      tagLib.prefixes[i].uri = uri
+      return false
+  taglib.prefixes.add((prefix, uri))
+  return false
 
 proc searchHandle*(tagLib: TagLibrary, tag: string):
     tuple[handle: string, len: int] {.raises: [].} =
@@ -203,22 +216,25 @@ proc searchHandle*(tagLib: TagLibrary, tag: string):
   ## longest prefix is returned. If no registered handle matches, (nil, 0) is
   ## returned.
   result.len = 0
-  for key, value in tagLib.tagHandles:
-    if key.len > result.len:
-      if tag.startsWith(key):
-        result.len = key.len
-        result.handle = value
+  for item in tagLib.prefixes:
+    if item.uri.len > result.len:
+      if tag.startsWith(item.uri):
+        result.len = item.uri.len
+        result.handle = item.prefix
 
 proc resolve*(tagLib: TagLibrary, handle: string): string {.raises: [].} =
   ## try to resolve the given tag handle.
   ## return the registered URI if the tag handle is found.
   ## if the handle is unknown, return the empty string.
-  return tagLib.tagHandles.getOrDefault(handle, "")
+  for item in tagLib.prefixes:
+    if item.prefix == handle:
+      return item.uri
+  return ""
 
-iterator handles*(tagLib: TagLibrary): tuple[prefix, handle: string] =
+iterator handles*(tagLib: TagLibrary): tuple[prefix, uri: string] =
   ## iterate over registered tag handles that may be used as shortcuts
   ## (e.g. ``!n!`` for ``tag:nimyaml.org,2016:``)
-  for key, value in tagLib.tagHandles: yield (key, value)
+  for item in tagLib.prefixes.items(): yield item
 
 proc nimTag*(suffix: string): string =
   ## prepends NimYAML's tag repository prefix to the given suffix. For example,

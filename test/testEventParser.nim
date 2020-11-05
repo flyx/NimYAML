@@ -10,7 +10,8 @@ import lexbase, streams, tables, strutils
 type
   LexerToken = enum
     plusStr, minusStr, plusDoc, minusDoc, plusMap, minusMap, plusSeq, minusSeq,
-    eqVal, eqAli, chevTag, andAnchor, starAnchor, quotContent, colonContent,
+    eqVal, eqAli, chevTag, andAnchor, starAnchor, colonContent, sqContent,
+    dqContent, litContent, foContent,
     explDirEnd, explDocEnd, noToken
 
   StreamPos = enum
@@ -31,7 +32,14 @@ proc nextToken(lex: var EventLexer): LexerToken =
   if lex.buf[lex.bufpos] == EndOfFile: return noToken
   case lex.buf[lex.bufpos]
   of ':', '"', '\'', '|', '>':
-    let t = if lex.buf[lex.bufpos] == ':': colonContent else: quotContent
+    let t = case lex.buf[lex.bufpos]
+    of ':': colonContent
+    of '"': dqContent
+    of '\'': sqContent
+    of '|': litContent
+    of '>': foContent
+    else: colonContent
+
     lex.content = ""
     lex.bufpos.inc()
     while true:
@@ -226,19 +234,30 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
               escape(lex.content))
         else:
           curEvent.aliasTarget = lex.content.Anchor
-      of quotContent:
-        assertInEvent("scalar content")
-        if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
-        if curEvent.kind != yamlScalar:
-          raise newException(EventStreamError,
-                             "scalar content in non-scalar tag")
-        curEvent.scalarContent = lex.content
       of colonContent:
         assertInEvent("scalar content")
         curEvent.scalarContent = lex.content
         if curEvent.kind != yamlScalar:
           raise newException(EventStreamError,
                              "scalar content in non-scalar tag")
+      of sqContent:
+        assertInEvent("scalar content")
+        curEvent.scalarContent = lex.content
+        if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
+        curEvent.scalarStyle = ssSingleQuoted
+      of dqContent:
+        assertInEvent("scalar content")
+        curEvent.scalarContent = lex.content
+        if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
+        curEvent.scalarStyle = ssDoubleQuoted
+      of litContent:
+        assertInEvent("scalar content")
+        curEvent.scalarContent = lex.content
+        curEvent.scalarStyle = ssLiteral
+      of foContent:
+        assertInEvent("scalar content")
+        curEvent.scalarContent = lex.content
+        curEvent.scalarStyle = ssFolded
       of explDirEnd:
         assertInEvent("explicit directives end")
         if curEvent.kind != yamlStartDoc:
