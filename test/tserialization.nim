@@ -119,8 +119,8 @@ template expectConstructionError(li, co: int, message: string, body: typed) =
     fail()
   except YamlConstructionError:
     let e = (ref YamlConstructionError)(getCurrentException())
-    doAssert li == e.line, "Expected error line " & $li & ", was " & $e.line
-    doAssert co == e.column, "Expected error column " & $co & ", was " & $e.column
+    doAssert li == e.mark.line, "Expected error line " & $li & ", was " & $e.mark.line
+    doAssert co == e.mark.column, "Expected error column " & $co & ", was " & $e.mark.column
     doAssert message == e.msg, "Expected error message \n" & escape(message) &
         ", got \n" & escape(e.msg)
 
@@ -307,18 +307,18 @@ suite "Serialization":
 
   test "Dump OrderedTable[tuple[int32, int32], string]":
     var input = initOrderedTable[tuple[a, b: int32], string]()
-    input.add((a: 23'i32, b: 42'i32), "dreiundzwanzigzweiundvierzig")
-    input.add((a: 13'i32, b: 47'i32), "dreizehnsiebenundvierzig")
+    input[(a: 23'i32, b: 42'i32)] = "dreiundzwanzigzweiundvierzig"
+    input[(a: 13'i32, b: 47'i32)] = "dreizehnsiebenundvierzig"
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
-        """!n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str) 
-- 
-  ? 
+        """!n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str)
+-
+  ?
     a: 23
     b: 42
   : dreiundzwanzigzweiundvierzig
-- 
-  ? 
+-
+  ?
     a: 13
     b: 47
   : dreizehnsiebenundvierzig""", output)
@@ -479,19 +479,19 @@ suite "Serialization":
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & """
 
-- 
-  - 
+-
+  -
     name: Bastet
-  - 
+  -
     kind: akCat
-  - 
+  -
     purringIntensity: 7
-- 
-  - 
+-
+  -
     name: Anubis
-  - 
+  -
     kind: akDog
-  - 
+  -
     barkometer: 13""", output
 
   test "Load custom variant object - missing field":
@@ -545,17 +545,17 @@ suite "Serialization":
     let output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & """
 
-- 
-  - 
+-
+  -
     gStorable: gs
-  - 
+  -
     kind: deA
-  - 
+  -
     cStorable: cs
-- 
-  - 
+-
+  -
     gStorable: a
-  - 
+  -
     kind: deC""", output
 
   test "Load object with ignored key":
@@ -586,17 +586,17 @@ suite "Serialization":
       b.next = c
       c.next = a
       var output = dump(a, tsRootOnly, asTidy, blockOnly)
-      assertStringEqual yamlDirs & """!example.net:Node &a 
+      assertStringEqual yamlDirs & """!example.net:Node &a
 value: a
-next: 
+next:
   value: b
-  next: 
+  next:
     value: c
     next: *a""", output
 
     test "Load cyclic data structure":
-      let input = yamlDirs & """!n!system:seq(example.net:Node) 
-  - &a 
+      let input = yamlDirs & """!n!system:seq(example.net:Node)
+  - &a
     value: a
     next: &b
       value: b
@@ -610,7 +610,7 @@ next:
       try: load(input, result)
       except YamlConstructionError:
         let ex = (ref YamlConstructionError)(getCurrentException())
-        echo "line ", ex.line, ", column ", ex.column, ": ", ex.msg
+        echo "line ", ex.mark.line, ", column ", ex.mark.column, ": ", ex.msg
         echo ex.lineContent
         raise ex
 
@@ -651,7 +651,7 @@ next:
   test "Custom representObject":
     let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
     var output = dump(input, tsAll, asTidy, blockOnly)
-    assertStringEqual yamlDirs & """!n!system:seq(test:BetterInt) 
+    assertStringEqual yamlDirs & """!n!system:seq(test:BetterInt)
 - !test:BetterInt 1
 - !test:BetterInt 9_998_887
 - !test:BetterInt 98_312""", output

@@ -14,13 +14,13 @@ type
   Lexer* = object
     cur*: Token
     curStartPos*, curEndPos*: Mark
+    flowDepth*: int
     # recently read scalar or URI, if any
     evaluated*: string
     # internals
     indentation: int
     source: BaseLexer
     tokenStart: int
-    flowDepth: int
     state, lineStartState, jsonEnablingState: State
     c: char
     seenMultiline: bool
@@ -90,10 +90,10 @@ const
 
   UnknownIndentation* = int.low
 
-proc currentIndentation*(lex: Lexer): int =
+proc currentIndentation*(lex: Lexer): int {.locks: 0.} =
   return lex.source.getColNumber(lex.source.bufpos) - 1
 
-proc recentIndentation*(lex: Lexer): int =
+proc recentIndentation*(lex: Lexer): int {.locks: 0.} =
   return lex.indentation
 
 # lexer source handling
@@ -163,7 +163,7 @@ proc afterJsonEnablingToken(lex: var Lexer): bool {.raises: LexerError.}
 proc lineIndentation(lex: var Lexer): bool {.raises: [].}
 proc lineDirEnd(lex: var Lexer): bool {.raises: [].}
 proc lineDocEnd(lex: var Lexer): bool {.raises: [].}
-proc atSuffix(lex: var Lexer): bool {.raises: [].}
+proc atSuffix(lex: var Lexer): bool {.raises: [LexerError].}
 proc streamEnd(lex: var Lexer): bool {.raises: [].}
 {.pop.}
 
@@ -333,7 +333,7 @@ proc readPlainScalar(lex: var Lexer) =
         while true:
           lex.advance()
           case lex.c
-          of ' ':
+          of space:
             lex.endToken()
             let spaceStart = lex.source.bufpos - 2
             block spaceLoop:
@@ -363,7 +363,7 @@ proc readPlainScalar(lex: var Lexer) =
                     lex.state = insideLine
                     break multilineLoop
                   break spaceLoop
-                of ' ': discard
+                of space: discard
                 else: break spaceLoop
           of ':':
             if not lex.isPlainSafe():
@@ -412,7 +412,7 @@ proc readPlainScalar(lex: var Lexer) =
             break multilineLoop
           of lsNewline: lex.endLine()
           newlines += 1
-      while lex.c == ' ': lex.advance()
+      while lex.c in space: lex.advance()
       if (lex.c == ':' and not lex.isPlainSafe()) or
          lex.c == '#' or (lex.c in flowIndicators and
          lex.flowDepth > 0):
@@ -478,7 +478,9 @@ proc readBlockScalar(lex: var Lexer) =
 
   block body:
     # determining indentation and leading empty lines
-    var maxLeadingSpaces = 0
+    var
+      maxLeadingSpaces = 0
+      moreIndented = false
     while true:
       if indent == 0:
         while lex.c == ' ': lex.advance()
@@ -506,16 +508,18 @@ proc readBlockScalar(lex: var Lexer) =
           elif indent < maxLeadingSpaces:
             raise lex.generateError("Leading all-spaces line contains too many spaces")
         elif lex.currentIndentation() < indent: break body
+        if lex.cur == Token.Folded and lex.c in space:
+          moreIndented = true
         break
     for i in countup(0, separationLines - 1):
       lex.evaluated.add('\l')
+    separationLines = if moreIndented: 1 else: 0
 
     block content:
       while true:
         contentStart = lex.source.bufpos - 1
         while lex.c notin lineEnd: lex.advance()
         lex.evaluated.add(lex.source.buf[contentStart .. lex.source.bufpos - 2])
-        separationLines = 0
         if lex.c == EndOfFile:
           lex.state = streamEnd
           lex.streamEndAfterBlock()
@@ -524,7 +528,9 @@ proc readBlockScalar(lex: var Lexer) =
         lex.endToken()
         lex.endLine()
 
+        let oldMoreIndented = moreIndented
         # empty lines and indentation of next line
+        moreIndented = false
         while true:
           while lex.c == ' ' and lex.currentIndentation() < indent:
             lex.advance()
@@ -541,7 +547,11 @@ proc readBlockScalar(lex: var Lexer) =
             if lex.currentIndentation() < indent or
                 (indent == 0 and lex.dirEndFollows() or lex.docEndFollows()):
               break content
-            else: break
+            if lex.cur == Token.Folded and lex.c in space:
+              moreIndented = true
+              if not oldMoreIndented:
+                separationLines += 1
+            break
 
         # line folding
         if lex.cur == Token.Literal:
@@ -552,6 +562,7 @@ proc readBlockScalar(lex: var Lexer) =
         else:
           for i in countup(0, separationLines - 2):
             lex.evaluated.add('\l')
+        separationLines = if moreIndented: 1 else: 0
 
     let markerFollows = lex.currentIndentation() == 0 and
         (lex.dirEndFollows() or lex.docEndFollows())
@@ -718,16 +729,16 @@ proc basicInit(lex: var Lexer) =
 
 # interface
 
-proc lastScalarWasMultiline*(lex: Lexer): bool =
+proc lastScalarWasMultiline*(lex: Lexer): bool {.locks: 0.} =
   result = lex.seenMultiline
 
-proc shortLexeme*(lex: Lexer): string =
+proc shortLexeme*(lex: Lexer): string {.locks: 0.} =
   return lex.source.buf[lex.tokenStart..lex.source.bufpos-2]
 
-proc fullLexeme*(lex: Lexer): string =
+proc fullLexeme*(lex: Lexer): string {.locks: 0.} =
   return lex.source.buf[lex.tokenStart - 1..lex.source.bufpos-2]
 
-proc currentLine*(lex: Lexer): string =
+proc currentLine*(lex: Lexer): string {.locks: 0.} =
   return lex.source.getCurrentLine(false)
 
 proc next*(lex: var Lexer) =
@@ -900,6 +911,7 @@ proc flowLineStart(lex: var Lexer): bool =
     let lineStart = lex.source.bufpos
     while lex.c == ' ': lex.advance()
     indent = lex.source.bufpos - lineStart
+    while lex.c in space: lex.advance()
   if indent <= lex.indentation:
     raise lex.generateError("Too few indentation spaces (must surpass surrounding block level)")
   lex.state = insideLine
@@ -980,10 +992,8 @@ proc readAnchorName(lex: var Lexer) =
   lex.startToken()
   while true:
     lex.advance()
-    if lex.c notin tagShorthandChars + {'_'}: break
-  if lex.c notin spaceOrLineEnd + flowIndicators:
-    raise lex.generateError("Illegal character in anchor: " & escape("" & lex.c))
-  elif lex.source.bufpos == lex.tokenStart + 1:
+    if lex.c in spaceOrLineEnd + flowIndicators: break
+  if lex.source.bufpos == lex.tokenStart + 1:
     raise lex.generateError("Anchor name must not be empty")
   lex.state = afterToken
 
@@ -1052,7 +1062,7 @@ proc indentationSettingToken(lex: var Lexer): bool =
       lex.indentation = cachedIntentation
 
 proc afterToken(lex: var Lexer): bool =
-  while lex.c == ' ': lex.advance()
+  while lex.c in space: lex.advance()
   if lex.c in commentOrLineEnd:
     lex.endLine()
   else:
@@ -1115,8 +1125,20 @@ proc lineDocEnd(lex: var Lexer): bool =
 
 proc atSuffix(lex: var Lexer): bool =
   lex.startToken()
-  while lex.c in suffixChars: lex.advance()
-  lex.evaluated = lex.fullLexeme()
+  lex.evaluated.setLen(0)
+  var curStart = lex.tokenStart - 1
+  while true:
+    case lex.c
+    of suffixChars: lex.advance()
+    of '%':
+      if curStart <= lex.source.bufpos - 2:
+        lex.evaluated.add(lex.source.buf[curStart..lex.source.bufpos - 2])
+      lex.readHexSequence(2)
+      curStart = lex.source.bufpos
+      lex.advance()
+    else: break
+  if curStart <= lex.source.bufpos - 2:
+    lex.evaluated.add(lex.source.buf[curStart..lex.source.bufpos - 2])
   lex.endToken()
   lex.cur = Token.Suffix
   lex.state = afterToken

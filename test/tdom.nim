@@ -80,16 +80,16 @@ suite "DOM":
       input = initYamlDoc(newYamlNode([a, b, newYamlNode("c"), a, b]))
     var result = serialize(input, initExtendedTagLibrary())
     ensure(result, startDocEvent(), startSeqEvent(),
-           scalarEvent("a", anchor=0.AnchorId),
-           scalarEvent("b", anchor=1.AnchorId), scalarEvent("c"),
-           aliasEvent(0.AnchorId), aliasEvent(1.AnchorId), endSeqEvent(),
+           scalarEvent("a", anchor="a".Anchor),
+           scalarEvent("b", anchor="b".Anchor), scalarEvent("c"),
+           aliasEvent("a".Anchor), aliasEvent("b".Anchor), endSeqEvent(),
            endDocEvent())
   test "Serializing with all anchors":
     let
       a = newYamlNode("a")
       input = initYamlDoc(newYamlNode([a, newYamlNode("b"), a]))
     var result = serialize(input, initExtendedTagLibrary(), asAlways)
-    ensure(result, startDocEvent(), startSeqEvent(anchor=0.AnchorId),
-           scalarEvent("a", anchor=1.AnchorId),
-           scalarEvent("b", anchor=2.AnchorId), aliasEvent(1.AnchorId),
+    ensure(result, startDocEvent(), startSeqEvent(anchor="a".Anchor),
+           scalarEvent("a", anchor = "b".Anchor),
+           scalarEvent("b", anchor="c".Anchor), aliasEvent("b".Anchor),
            endSeqEvent(), endDocEvent())

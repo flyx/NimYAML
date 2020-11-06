@@ -457,15 +457,15 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
           of ov1_2: target.append("%YAML 1.2" & newline)
           of ov1_1: target.append("%YAML 1.1" & newLine)
           of ovNone: discard
-          for prefix, handle in tagLib.handles():
-            if handle == "!":
-              if prefix != "!":
-                target.append("%TAG ! " & prefix & newline)
-            elif handle == "!!":
-              if prefix != yamlTagRepositoryPrefix:
-                target.append("%TAG !! " & prefix & newline)
+          for prefix, uri in tagLib.handles():
+            if prefix == "!":
+              if uri != "!":
+                target.append("%TAG ! " & uri & newline)
+            elif prefix == "!!":
+              if uri != yamlTagRepositoryPrefix:
+                target.append("%TAG !! " & uri & newline)
             else:
-              target.append("%TAG " & handle & ' ' & prefix & newline)
+              target.append("%TAG " & prefix & ' ' & uri & newline)
           target.append("--- ")
         except:
           var e = newException(YamlPresenterOutputError, "")

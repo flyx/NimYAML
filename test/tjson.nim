@@ -8,13 +8,10 @@ import "../yaml"
 
 import unittest, json
 
-proc wc(line, column: int, lineContent: string, message: string) =
-  echo "Warning (", line, ",", column, "): ", message, "\n", lineContent
-
 proc ensureEqual(yamlIn, jsonIn: string) =
   try:
     var
-      parser = newYamlParser(initCoreTagLibrary(), wc)
+      parser = initYamlParser(initCoreTagLibrary(), true)
       s = parser.parse(yamlIn)
       yamlResult = constructJson(s)
       jsonResult = parseJson(jsonIn)
@@ -24,7 +21,7 @@ proc ensureEqual(yamlIn, jsonIn: string) =
   except YamlStreamError:
     let e = (ref YamlParserError)(getCurrentException().parent)
     echo "error occurred: " & e.msg
-    echo "line: ", e.line, ", column: ", e.column
+    echo "line: ", e.mark.line, ", column: ", e.mark.column
     echo e.lineContent
     raise e
 

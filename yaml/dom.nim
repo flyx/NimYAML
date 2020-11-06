@@ -195,7 +195,7 @@ proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
   yAssert n.kind == yamlEndDoc
 
 proc loadDom*(s: Stream | string): YamlDocument
-    {.raises: [IOError, YamlParserError, YamlConstructionError].} =
+    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
   var
     tagLib = initExtendedTagLibrary()
     parser: YamlParser

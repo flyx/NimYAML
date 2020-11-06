@@ -31,7 +31,7 @@ type
     ## and is not required to check for it. The procs in this module will
     ## always yield a well-formed ``YamlStream`` and expect it to be
     ## well-formed if they take it as input parameter.
-    nextImpl*: proc(s: YamlStream, e: var Event): bool
+    nextImpl*: proc(s: YamlStream, e: var Event): bool {.gcSafe.}
     lastTokenContextImpl*:
         proc(s: YamlStream, lineContent: var string): bool {.raises: [].}
     peeked: bool
@@ -55,15 +55,15 @@ proc basicInit*(s: YamlStream, lastTokenContextImpl:
 
 when not defined(JS):
   type IteratorYamlStream = ref object of YamlStream
-    backend: iterator(): Event
+    backend: iterator(): Event {.gcSafe.}
 
-  proc initYamlStream*(backend: iterator(): Event): YamlStream
+  proc initYamlStream*(backend: iterator(): Event {.gcSafe.}): YamlStream
       {.raises: [].} =
     ## Creates a new ``YamlStream`` that uses the given iterator as backend.
     result = new(IteratorYamlStream)
     result.basicInit()
     IteratorYamlStream(result).backend = backend
-    result.nextImpl = proc(s: YamlStream, e: var Event): bool =
+    result.nextImpl = proc(s: YamlStream, e: var Event): bool {.gcSafe.} =
       e = IteratorYamlStream(s).backend()
       result = true
 
@@ -86,7 +86,7 @@ proc newBufferYamlStream*(): BufferYamlStream not nil =
 proc put*(bys: BufferYamlStream, e: Event) {.raises: [].} =
   bys.buf.add(e)
 
-proc next*(s: YamlStream): Event {.raises: [YamlStreamError].} =
+proc next*(s: YamlStream): Event {.raises: [YamlStreamError], gcSafe.} =
   ## Get the next item of the stream. Requires ``finished(s) == true``.
   ## If the backend yields an exception, that exception will be encapsulated
   ## into a ``YamlStreamError``, which will be raised.

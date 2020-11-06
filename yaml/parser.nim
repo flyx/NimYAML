@@ -27,7 +27,7 @@ type
     tagLib: TagLibrary
     issueWarnings: bool
 
-  State = proc(c: Context, e: var Event): bool {.locks: 0, gcSafe.}
+  State = proc(c: Context, e: var Event): bool {.gcSafe.}
 
   Level = object
     state: State
@@ -38,6 +38,9 @@ type
     issueWarnings: bool
     lex: Lexer
     levels: seq[Level]
+    keyCache: seq[Event]
+    keyCachePos: int
+    caching: bool
 
     headerProps, inlineProps: Properties
     headerStart, inlineStart: Mark
@@ -87,7 +90,7 @@ const defaultProperties = (yAnchorNone, yTagQuestionMark)
 
 # parser states
 
-{.push gcSafe, locks: 0.}
+{.push gcSafe, .}
 proc atStreamStart(c: Context, e: var Event): bool
 proc atStreamEnd(c: Context, e : var Event): bool
 proc beforeDoc(c: Context, e: var Event): bool
@@ -97,14 +100,14 @@ proc beforeImplicitRoot(c: Context, e: var Event): bool
 proc atBlockIndentation(c: Context, e: var Event): bool
 proc beforeBlockIndentation(c: Context, e: var Event): bool
 proc beforeNodeProperties(c: Context, e: var Event): bool
-proc requireImplicitMapStart(c: Context, e: var Event): bool
 proc afterCompactParent(c: Context, e: var Event): bool
 proc afterCompactParentProps(c: Context, e: var Event): bool
-proc requireInlineBlockItem(c: Context, e: var Event): bool
+proc mergePropsOnNewline(c: Context, e: var Event): bool
 proc beforeFlowItemProps(c: Context, e: var Event): bool
 proc inBlockSeq(c: Context, e: var Event): bool
 proc beforeBlockMapValue(c: Context, e: var Event): bool
 proc atBlockIndentationProps(c: Context, e: var Event): bool
+proc beforeFlowItem(c: Context, e: var Event): bool
 proc afterFlowSeqSep(c: Context, e: var Event): bool
 proc afterFlowMapSep(c: Context, e: var Event): bool
 proc atBlockMapKeyProps(c: Context, e: var Event): bool
@@ -118,6 +121,7 @@ proc afterFlowMapValue(c: Context, e: var Event): bool
 proc afterFlowSeqSepProps(c: Context, e: var Event): bool
 proc afterFlowSeqItem(c: Context, e: var Event): bool
 proc afterPairValue(c: Context, e: var Event): bool
+proc emitCollectionKey(c: Context, e: var Event): bool
 {.pop.}
 
 template debug(message: string) {.dirty.} =
@@ -162,14 +166,22 @@ proc init[T](c: Context, p: YamlParser, source: T) {.inline.} =
   c.tagLib = p.tagLib
   c.issueWarnings = p.issueWarnings
   c.lex.init(source)
+  c.keyCachePos = 0
+  c.caching = false
 
 # interface
 
 proc init*(p: var YamlParser, tagLib: TagLibrary = initExtendedTagLibrary(),
             issueWarnings: bool = false) =
-  ## Creates a YAML parser.
+  ## Initializes a YAML parser.
   p.tagLib = tagLib
   p.issueWarnings = issueWarnings
+
+proc initYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
+                     issueWarnings: bool = false): YamlParser =
+  ## Creates an initializes YAML parser and returns it
+  result.tagLib = tagLib
+  result.issueWarnings = issueWarnings
 
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   let c = new(Context)
@@ -188,7 +200,7 @@ proc isEmpty(props: Properties): bool =
            props.tag == yTagQuestionMark
 
 proc generateError(c: Context, message: string):
-    ref YamlParserError {.raises: [].} =
+    ref YamlParserError {.raises: [], .} =
   result = (ref YamlParserError)(
     msg: message, parent: nil, mark: c.lex.curStartPos,
     lineContent: c.lex.currentLine())
@@ -215,6 +227,18 @@ proc toStyle(t: Token): ScalarStyle =
     of Literal: ssLiteral
     of Folded: ssFolded
     else: ssAny)
+
+proc mergeProps(c: Context, src, target: var Properties) =
+  if src.tag != yTagQuestionMark:
+    if target.tag != yTagQuestionMark:
+      raise c.generateError("Only one tag allowed per node")
+    target.tag = src.tag
+    src.tag = yTagQuestionMark
+  if src.anchor != yAnchorNone:
+    if target.anchor != yAnchorNone:
+      raise c.generateError("Only one anchor allowed per node")
+    target.anchor = src.anchor
+    src.anchor = yAnchorNone
 
 proc autoScalarTag(props: Properties, t: Token): Properties =
   result = props
@@ -278,7 +302,7 @@ proc beforeDoc(c: Context, e: var Event): bool =
       c.lex.next()
       if c.lex.cur != Token.Suffix:
         raise c.generateError("Invalid token (expected tag URI): " & $c.lex.cur)
-      discard c.tagLib.registerHandle(c.lex.fullLexeme(), tagHandle)
+      discard c.tagLib.registerHandle(c.lex.evaluated, tagHandle)
       c.lex.next()
     of UnknownDirective:
       seenDirectives = true
@@ -291,7 +315,7 @@ proc beforeDoc(c: Context, e: var Event): bool =
 
 proc afterDirectivesEnd(c: Context, e: var Event): bool =
   case c.lex.cur
-  of TagHandle, VerbatimTag, Token.Anchor:
+  of nodePropertyKind:
     c.inlineStart = c.lex.curStartPos
     c.pushLevel(beforeNodeProperties)
     return false
@@ -304,10 +328,9 @@ proc afterDirectivesEnd(c: Context, e: var Event): bool =
     e = scalarEvent("", c.inlineProps, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
     c.popLevel()
     return true
-  of Folded, Literal:
-    e = scalarEvent(c.lex.evaluated, c.inlineProps,
-                    if c.lex.cur == Token.Folded: ssFolded else: ssLiteral,
-                    c.lex.curStartPos, c.lex.curEndPos)
+  of scalarTokenKind:
+    e = scalarEvent(c.lex.evaluated, autoScalarTag(c.inlineProps, c.lex.cur),
+                    toStyle(c.lex.cur), c.lex.curStartPos, c.lex.curEndPos)
     c.popLevel()
     c.lex.next()
     return true
@@ -324,66 +347,14 @@ proc beforeImplicitRoot(c: Context, e: var Event): bool =
   of SeqItemInd, MapKeyInd, MapValueInd:
     c.transition(afterCompactParent)
     return false
-  of scalarTokenKind:
-    c.transition(requireImplicitMapStart)
+  of scalarTokenKind, MapStart, SeqStart:
+    c.transition(atBlockIndentationProps)
     return false
   of nodePropertyKind:
-    c.transition(requireImplicitMapStart)
+    c.transition(atBlockIndentationProps)
     c.pushLevel(beforeNodeProperties)
-  of MapStart, SeqStart:
-    c.transition(afterCompactParentProps)
-    return false
   else:
     raise c.generateError("Unexpected token (expected collection start): " & $c.lex.cur)
-
-proc requireImplicitMapStart(c: Context, e: var Event): bool =
-  c.updateIndentation(c.lex.recentIndentation())
-  case c.lex.cur
-  of Alias:
-    e = aliasEvent(c.lex.shortLexeme().Anchor, c.inlineStart, c.lex.curEndPos)
-    let headerEnd = c.lex.curStartPos
-    c.lex.next()
-    if c.lex.cur == Token.MapValueInd:
-      c.peek = e
-      e = startMapEvent(csBlock, c.headerProps, c.headerStart, headerEnd)
-      c.headerProps = defaultProperties
-      c.transition(afterImplicitKey)
-    else:
-      if not isEmpty(c.headerProps):
-        raise c.generateError("Alias may not have properties")
-      c.popLevel()
-    return true
-  of Plain, SingleQuoted, DoubleQuoted:
-    e = scalarEvent(c.lex.evaluated, autoScalarTag(c.inlineProps, c.lex.cur),
-                    toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
-    c.inlineProps = defaultProperties
-    let headerEnd = c.lex.curStartPos
-    c.lex.next()
-    case c.lex.cur
-    of Token.MapValueInd:
-      if c.lex.lastScalarWasMultiline():
-        raise c.generateError("Implicit mapping key may not be multiline")
-      c.peek = move(e)
-      e = startMapEvent(csBlock, c.headerProps,
-                        c.headerStart, headerEnd)
-      c.headerProps = defaultProperties
-      c.transition(afterImplicitKey)
-    else: c.popLevel()
-    return true
-  of Literal, Folded:
-    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur),
-                    c.inlineStart, c.lex.curEndPos)
-    c.inlineProps = defaultProperties
-    c.lex.next()
-    c.popLevel()
-    return true
-  of MapStart, SeqStart:
-    c.transition(beforeFlowItemProps)
-    return false
-  of Indentation:
-    raise c.generateError("Standalone node properties not allowed on non-header line")
-  else:
-    raise c.generateError("Unexpected token (expected implicit mapping key): " & $c.lex.cur)
 
 proc atBlockIndentation(c: Context, e: var Event): bool =
   if c.blockIndentation == c.levels[^1].indentation and
@@ -400,9 +371,9 @@ proc atBlockIndentation(c: Context, e: var Event): bool =
   case c.lex.cur
   of nodePropertyKind:
     if isEmpty(c.headerProps):
-      c.transition(requireInlineBlockItem)
+      c.transition(mergePropsOnNewline)
     else:
-      c.transition(requireImplicitMapStart)
+      c.transition(atBlockIndentationProps)
     c.pushLevel(beforeNodeProperties)
     return false
   of SeqItemInd:
@@ -486,20 +457,41 @@ proc atBlockIndentationProps(c: Context, e: var Event): bool =
       c.headerProps = defaultProperties
       c.transition(afterImplicitKey)
     else:
+      c.mergeProps(c.headerProps, e.scalarProperties)
       c.popLevel()
     return true
-  of MapStart:
-    e = startMapEvent(csFlow, c.headerProps, c.headerStart, c.lex.curEndPos)
+  of MapStart, SeqStart:
+    let
+      startPos = c.lex.curStartPos
+      indent = c.levels[^1].indentation
+    c.transition(beforeFlowItemProps)
+    c.caching = true
+    while c.lex.flowDepth > 0:
+      c.keyCache.add(c.next())
+    c.keyCache.add(c.next())
+    c.caching = false
+    if c.lex.cur == Token.MapValueInd:
+      c.pushLevel(afterImplicitKey, indent)
+      c.pushLevel(emitCollectionKey)
+      if c.lex.curStartPos.line != startPos.line:
+        raise c.generateError("Implicit mapping key may not be multiline")
+      e = startMapEvent(csBlock, c.headerProps, c.headerStart, startPos)
+      c.headerProps = defaultProperties
+      return true
+    else:
+      c.pushLevel(emitCollectionKey)
+      return false
+  of Literal, Folded:
+    c.mergeProps(c.inlineProps, c.headerProps)
+    e = scalarEvent(c.lex.evaluated, c.headerProps, toStyle(c.lex.cur),
+                    c.inlineStart, c.lex.curEndPos)
     c.headerProps = defaultProperties
-    c.transition(afterFlowMapSep)
     c.lex.next()
+    c.popLevel()
     return true
-  of SeqStart:
-    e = startSeqEvent(csFlow, c.headerProps, c.headerStart, c.lex.curEndPos)
-    c.headerProps = defaultProperties
-    c.transition(afterFlowSeqSep)
+  of Indentation:
     c.lex.next()
-    return true
+    return false
   else:
     raise c.generateError("Unexpected token (expected block content): " & $c.lex.cur)
 
@@ -521,8 +513,7 @@ proc beforeNodeProperties(c: Context, e: var Event): bool =
       raise c.generateError("Only one anchor allowed per node")
     c.inlineProps.anchor = c.lex.shortLexeme().Anchor
   of Indentation:
-    c.headerProps = c.inlineProps
-    c.inlineProps = defaultProperties
+    c.mergeProps(c.inlineProps, c.headerProps)
     c.popLevel()
     return false
   of Alias:
@@ -656,19 +647,10 @@ proc afterBlockParentProps(c: Context, e: var Event): bool =
     c.transition(afterCompactParentProps)
     return false
 
-proc requireInlineBlockItem(c: Context, e: var Event): bool =
+proc mergePropsOnNewline(c: Context, e: var Event): bool =
   c.updateIndentation(c.lex.recentIndentation())
   if c.lex.cur == Token.Indentation:
-    if c.inlineProps.tag != yTagQuestionMark:
-      if c.headerProps.tag != yTagQuestionMark:
-        raise c.generateError("Only one tag allowed per node")
-      c.headerProps.tag = c.inlineProps.tag
-      c.inlineProps.tag = yTagQuestionMark
-    if c.inlineProps.anchor != yAnchorNone:
-      if c.headerProps.anchor != yAnchorNone:
-        raise c.generateError("Only one anchor allowed per node")
-      c.headerProps.anchor = c.inlineProps.anchor
-      c.inlineProps.anchor = yAnchorNone
+    c.mergeProps(c.inlineProps, c.headerProps)
   c.transition(afterCompactParentProps)
   return false
 
@@ -826,7 +808,6 @@ proc beforeBlockIndentation(c: Context, e: var Event): bool =
     raise c.generateError("Unexpected content after node in block context (expected newline): " & $c.lex.cur)
 
 proc beforeFlowItem(c: Context, e: var Event): bool =
-  debug("parse: beforeFlowItem")
   c.inlineStart = c.lex.curStartPos
   case c.lex.cur
   of nodePropertyKind:
@@ -931,7 +912,7 @@ proc afterFlowMapSep(c: Context, e: var Event): bool =
   c.pushLevel(beforeFlowItem)
   return false
 
-proc possibleNextSequenceItem(c: Context, e: var Event, endToken: Token, afterProps, afterItem: State): bool =
+proc afterFlowSeqSep(c: Context, e: var Event): bool =
   c.inlineStart = c.lex.curStartPos
   case c.lex.cur
   of SeqSep:
@@ -939,41 +920,42 @@ proc possibleNextSequenceItem(c: Context, e: var Event, endToken: Token, afterPr
     c.lex.next()
     return true
   of nodePropertyKind:
-    c.transition(afterProps)
+    c.transition(afterFlowSeqSepProps)
     c.pushLevel(beforeNodeProperties)
     return false
-  of Plain, SingleQuoted, DoubleQuoted:
-    c.transition(afterProps)
+  of Plain, SingleQuoted, DoubleQuoted, MapStart, SeqStart:
+    c.transition(afterFlowSeqSepProps)
     return false
   of MapKeyInd:
-    c.transition(afterItem)
+    c.transition(afterFlowSeqSepProps)
     e = startMapEvent(csFlow, defaultProperties, c.lex.curStartPos, c.lex.curEndPos)
     c.lex.next()
+    c.transition(afterFlowSeqItem)
     c.pushLevel(beforePairValue)
     c.pushLevel(beforeFlowItem)
     return true
   of MapValueInd:
-    c.transition(afterItem)
+    c.transition(afterFlowSeqItem)
     e = startMapEvent(csFlow, defaultProperties, c.lex.curStartPos, c.lex.curEndPos)
     c.pushLevel(atEmptyPairKey)
     return true
+  of SeqEnd:
+    e = endSeqEvent(c.lex.curStartPos, c.lex.curEndPos)
+    c.lex.next()
+    c.popLevel()
+    return true
   else:
-    if c.lex.cur == endToken:
-      e = endSeqEvent(c.lex.curStartPos, c.lex.curEndPos)
-      c.lex.next()
-      c.popLevel()
-      return true
-    else:
-      c.transition(afterItem)
-      c.pushLevel(beforeFlowItem)
-      return false
+    c.transition(afterFlowSeqItem)
+    c.pushLevel(beforeFlowItem)
+    return false
 
-proc afterFlowSeqSep(c: Context, e: var Event): bool =
-  return possibleNextSequenceItem(c, e, Token.SeqEnd, afterFlowSeqSepProps, afterFlowSeqItem)
-
-proc forcedNextSequenceItem(c: Context, e: var Event): bool =
-  if c.lex.cur in {Token.Plain, Token.SingleQuoted, Token.DoubleQuoted}:
-    e = scalarEvent(c.lex.evaluated, c.inlineProps, toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
+proc afterFlowSeqSepProps(c: Context, e: var Event): bool =
+  # here we handle potential implicit single pairs within flow sequences.
+  c.transition(afterFlowSeqItem)
+  case c.lex.cur
+  of Plain, SingleQuoted, DoubleQuoted:
+    e = scalarEvent(c.lex.evaluated, autoScalarTag(c.inlineProps, c.lex.cur),
+                    toStyle(c.lex.cur), c.inlineStart, c.lex.curEndPos)
     c.inlineProps = defaultProperties
     c.lex.next()
     if c.lex.cur == Token.MapValueInd:
@@ -981,13 +963,39 @@ proc forcedNextSequenceItem(c: Context, e: var Event): bool =
       e = startMapEvent(csFlow, defaultProperties, c.lex.curStartPos, c.lex.curStartPos)
       c.pushLevel(afterImplicitPairStart)
     return true
+  of MapStart, SeqStart:
+    let
+      startPos = c.lex.curStartPos
+      indent = c.levels[^1].indentation
+      cacheStart = c.keyCache.len
+      targetFlowDepth = c.lex.flowDepth - 1
+      alreadyCaching = c.caching
+    c.pushLevel(beforeFlowItemProps)
+    c.caching = true
+    while c.lex.flowDepth > targetFlowDepth:
+      c.keyCache.add(c.next())
+    c.keyCache.add(c.next())
+    c.caching = alreadyCaching
+    if c.lex.cur == Token.MapValueInd:
+      c.pushLevel(afterImplicitPairStart, indent)
+      if c.lex.curStartPos.line != startPos.line:
+        raise c.generateError("Implicit mapping key may not be multiline")
+      if not alreadyCaching:
+        c.pushLevel(emitCollectionKey)
+        e = startMapEvent(csPair, defaultProperties, startPos, startPos)
+        return true
+      else:
+        # we are already filling a cache.
+        # so we just squeeze the map start in.
+        c.keyCache.insert(startMapEvent(csPair, defaultProperties, startPos, startPos), cacheStart)
+        return false
+    else:
+      if not alreadyCaching:
+        c.pushLevel(emitCollectionKey)
+      return false
   else:
     c.pushLevel(beforeFlowItem)
     return false
-
-proc afterFlowSeqSepProps(c: Context, e: var Event): bool =
-  c.transition(afterFlowSeqItem)
-  return forcedNextSequenceItem(c, e)
 
 proc atEmptyPairKey(c: Context, e: var Event): bool =
   c.transition(beforePairValue)
@@ -1015,6 +1023,17 @@ proc afterImplicitPairStart(c: Context, e: var Event): bool =
 proc afterPairValue(c: Context, e: var Event): bool =
   e = endMapEvent(c.lex.curStartPos, c.lex.curEndPos)
   c.popLevel()
+  return true
+
+proc emitCollectionKey(c: Context, e: var Event): bool =
+  debug("emitCollection key: pos = " & $c.keyCachePos & ", len = " & $c.keyCache.len)
+  yAssert(c.keyCachePos < c.keyCache.len)
+  e = move(c.keyCache[c.keyCachePos])
+  inc(c.keyCachePos)
+  if c.keyCachePos == len(c.keyCache):
+    c.keyCache.setLen(0)
+    c.keyCachePos = 0
+    c.popLevel()
   return true
 
 proc display*(p: YamlParser, event: Event): string =

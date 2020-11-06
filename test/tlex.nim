@@ -161,7 +161,7 @@ suite "Lexer":
 
   test "Block Scalars":
     assertEquals("one : >2-\l   foo\l  bar\ltwo: |+\l bar\l  baz", i(0),
-        pl("one"), mv(), fs(" foo bar"), i(0), pl("two"), mv(),
+        pl("one"), mv(), fs(" foo\nbar"), i(0), pl("two"), mv(),
         ls("bar\l baz"), e())
 
   test "Flow indicators":

@@ -28,7 +28,7 @@ type
     ssAny, ssPlain, ssSingleQuoted, ssDoubleQuoted, ssLiteral, ssFolded
 
   CollectionStyle* = enum
-    csBlock, csFlow
+    csAny, csBlock, csFlow, csPair
 
   EventKind* = enum
     ## Kinds of YAML events that may occur in an ``YamlStream``. Event kinds
@@ -156,6 +156,12 @@ proc collectionStyle*(event: Event): CollectionStyle =
   of yamlStartSeq: result = event.seqStyle
   else: raise (ref FieldDefect)(msg: "Event " & $event.kind & " has no collectionStyle")
 
+proc startStreamEvent*(): Event =
+  return Event(startPos: defaultMark, endPos: defaultMark, kind: yamlStartStream)
+
+proc endStreamEvent*(): Event =
+  return Event(startPos: defaultMark, endPos: defaultMark, kind: yamlEndStream)
+
 proc startDocEvent*(explicit: bool = false, version: string = "", startPos, endPos: Mark = defaultMark): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML document
@@ -176,10 +182,10 @@ proc startMapEvent*(style: CollectionStyle, props: Properties,
                  kind: yamlStartMap, mapProperties: props,
                  mapStyle: style)
 
-proc startMapEvent*(style: CollectionStyle,
+proc startMapEvent*(style: CollectionStyle = csAny,
                     tag: TagId = yTagQuestionMark,
                     anchor: Anchor = yAnchorNone,
-                    startPos, endPos: Mark): Event {.inline.} =
+                    startPos, endPos: Mark = defaultMark): Event {.inline.} =
   return startMapEvent(style, (anchor, tag), startPos, endPos)
 
 proc endMapEvent*(startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
@@ -194,7 +200,7 @@ proc startSeqEvent*(style: CollectionStyle,
                  kind: yamlStartSeq, seqProperties: props,
                  seqStyle: style)
 
-proc startSeqEvent*(style: CollectionStyle,
+proc startSeqEvent*(style: CollectionStyle = csAny,
                     tag: TagId = yTagQuestionMark,
                     anchor: Anchor = yAnchorNone,
                     startPos, endPos: Mark = defaultMark): Event {.inline.} =
@@ -222,12 +228,12 @@ proc aliasEvent*(target: Anchor, startPos, endPos: Mark = defaultMark): Event {.
   ## creates a new event that represents a YAML alias
   result = Event(startPos: startPos, endPos: endPos, kind: yamlAlias, aliasTarget: target)
 
-proc `==`*(left, right: Anchor): bool {.borrow.}
-proc `$`*(id: Anchor): string {.borrow.}
-proc hash*(id: Anchor): Hash {.borrow.}
+proc `==`*(left, right: Anchor): bool {.borrow, locks: 0.}
+proc `$`*(id: Anchor): string {.borrow, locks: 0.}
+proc hash*(id: Anchor): Hash {.borrow, locks: 0.}
 
-proc `==`*(left, right: TagId): bool {.borrow.}
-proc hash*(id: TagId): Hash {.borrow.}
+proc `==`*(left, right: TagId): bool {.borrow, locks: 0.}
+proc hash*(id: TagId): Hash {.borrow, locks: 0.}
 
 proc `$`*(id: TagId): string {.raises: [].} =
   case id
