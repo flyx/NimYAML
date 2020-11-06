@@ -107,7 +107,12 @@ type
   ScalarStyle = enum
     sLiteral, sFolded, sPlain, sDoubleQuoted
 
-  PresenterTarget = Stream | ptr[string]
+  Context = object
+    target: Stream
+    tagLib: TagLibrary
+    options: PresentationOptions
+    handles: seq[tuple[handle, uriPrefix: string]]
+    levels: seq[DumperState]
 
 const
   defaultPresentationOptions* =
@@ -123,6 +128,24 @@ proc defineOptions*(style: PresentationStyle = psDefault,
   ## you to only set those values that should not equal the default.
   PresentationOptions(style: style, indentationStep: indentationStep,
                       newlines: newlines, outputVersion: outputVersion)
+
+proc state(c: Context): DumperState = c.levels[^1]
+
+proc `state=`(c: var Context, v: DumperState) =
+  c.levels[^1] = v
+
+proc searchHandle(c: Context, tag: string):
+    tuple[handle: string, len: int] {.raises: [].} =
+  ## search in the registered tag handles for one whose prefix matches the start
+  ## of the given tag. If multiple registered handles match, the one with the
+  ## longest prefix is returned. If no registered handle matches, ("", 0) is
+  ## returned.
+  result.len = 0
+  for item in c.handles:
+    if item.uriPrefix.len > result.len:
+      if tag.startsWith(item.uriPrefix):
+        result.len = item.uriPrefix.len
+        result.handle = item.handle
 
 proc inspect(scalar: string, indentation: int,
              words, lines: var seq[tuple[start, finish: int]]):
@@ -204,111 +227,114 @@ template append(target: Stream, val: string | char) =
 template append(target: ptr[string], val: string | char) =
   target[].add(val)
 
-proc writeDoubleQuoted(scalar: string, s: PresenterTarget, indentation: int,
+proc writeDoubleQuoted(c: Context, scalar: string, indentation: int,
                        newline: string)
             {.raises: [YamlPresenterOutputError].} =
   var curPos = indentation
+  let t = c.target
   try:
-    s.append('"')
+    t.append('"')
     curPos.inc()
     for c in scalar:
       if curPos == 79:
-        s.append('\\')
-        s.append(newline)
-        s.append(repeat(' ', indentation))
+        t.append('\\')
+        t.append(newline)
+        t.append(repeat(' ', indentation))
         curPos = indentation
         if c == ' ':
-          s.append('\\')
+          t.append('\\')
           curPos.inc()
       case c
       of '"':
-        s.append("\\\"")
+        t.append("\\\"")
         curPos.inc(2)
       of '\l':
-        s.append("\\n")
+        t.append("\\n")
         curPos.inc(2)
       of '\t':
-        s.append("\\t")
+        t.append("\\t")
         curPos.inc(2)
       of '\\':
-        s.append("\\\\")
+        t.append("\\\\")
         curPos.inc(2)
       else:
         if ord(c) < 32:
-          s.append("\\x" & toHex(ord(c), 2))
+          t.append("\\x" & toHex(ord(c), 2))
           curPos.inc(4)
         else:
-          s.append(c)
+          t.append(c)
           curPos.inc()
-    s.append('"')
+    t.append('"')
   except:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
     e.parent = getCurrentException()
     raise e
 
-proc writeDoubleQuotedJson(scalar: string, s: PresenterTarget)
+proc writeDoubleQuotedJson(c: Context, scalar: string)
     {.raises: [YamlPresenterOutputError].} =
+  let t = c.target
   try:
-    s.append('"')
+    t.append('"')
     for c in scalar:
       case c
-      of '"': s.append("\\\"")
-      of '\\': s.append("\\\\")
-      of '\l': s.append("\\n")
-      of '\t': s.append("\\t")
-      of '\f': s.append("\\f")
-      of '\b': s.append("\\b")
+      of '"': t.append("\\\"")
+      of '\\': t.append("\\\\")
+      of '\l': t.append("\\n")
+      of '\t': t.append("\\t")
+      of '\f': t.append("\\f")
+      of '\b': t.append("\\b")
       else:
-        if ord(c) < 32: s.append("\\u" & toHex(ord(c), 4)) else: s.append(c)
-    s.append('"')
+        if ord(c) < 32: t.append("\\u" & toHex(ord(c), 4)) else: t.append(c)
+    t.append('"')
   except:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
     e.parent = getCurrentException()
     raise e
 
-proc writeLiteral(scalar: string, indentation, indentStep: int,
-                  s: PresenterTarget, lines: seq[tuple[start, finish: int]],
-                  newline: string)
+proc writeLiteral(c: Context, scalar: string, indentation, indentStep: int,
+                  lines: seq[tuple[start, finish: int]], newline: string)
     {.raises: [YamlPresenterOutputError].} =
+  let t = c.target
   try:
-    s.append('|')
-    if scalar[^1] != '\l': s.append('-')
-    if scalar[0] in [' ', '\t']: s.append($indentStep)
+    t.append('|')
+    if scalar[^1] != '\l': t.append('-')
+    if scalar[0] in [' ', '\t']: t.append($indentStep)
     for line in lines:
-      s.append(newline)
-      s.append(repeat(' ', indentation + indentStep))
+      t.append(newline)
+      t.append(repeat(' ', indentation + indentStep))
       if line.finish >= line.start:
-        s.append(scalar[line.start .. line.finish])
+        t.append(scalar[line.start .. line.finish])
   except:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
     e.parent = getCurrentException()
     raise e
 
-proc writeFolded(scalar: string, indentation, indentStep: int,
-                 s: PresenterTarget, words: seq[tuple[start, finish: int]],
+proc writeFolded(c: Context, scalar: string, indentation, indentStep: int,
+                 words: seq[tuple[start, finish: int]],
                  newline: string)
     {.raises: [YamlPresenterOutputError].} =
+  let t = c.target
   try:
-    s.append(">")
-    if scalar[^1] != '\l': s.append('-')
-    if scalar[0] in [' ', '\t']: s.append($indentStep)
+    t.append(">")
+    if scalar[^1] != '\l': t.append('-')
+    if scalar[0] in [' ', '\t']: t.append($indentStep)
     var curPos = 80
     for word in words:
       if word.start > 0 and scalar[word.start - 1] == '\l':
-        s.append(newline & newline)
-        s.append(repeat(' ', indentation + indentStep))
+        t.append(newline & newline)
+        t.append(repeat(' ', indentation + indentStep))
         curPos = indentation + indentStep
       elif curPos + (word.finish - word.start) > 80:
-        s.append(newline)
-        s.append(repeat(' ', indentation + indentStep))
+        t.append(newline)
+        t.append(repeat(' ', indentation + indentStep))
         curPos = indentation + indentStep
       else:
-        s.append(' ')
+        t.append(' ')
         curPos.inc()
-      s.append(scalar[word.start .. word.finish])
+      t.append(scalar[word.start .. word.finish])
       curPos += word.finish - word.start + 1
   except:
     var e = newException(YamlPresenterOutputError,
@@ -316,106 +342,106 @@ proc writeFolded(scalar: string, indentation, indentStep: int,
     e.parent = getCurrentException()
     raise e
 
-template safeWrite(target: PresenterTarget, s: string or char) =
-  try: target.append(s)
+template safeWrite(c: Context, s: string or char) =
+  try: c.target.append(s)
   except:
     var e = newException(YamlPresenterOutputError, "")
     e.parent = getCurrentException()
     raise e
 
-proc startItem(target: PresenterTarget, style: PresentationStyle,
-               indentation: int, state: var DumperState, isObject: bool,
+proc startItem(c: var Context, indentation: int, isObject: bool,
                newline: string) {.raises: [YamlPresenterOutputError].} =
+  let t = c.target
   try:
-    case state
+    case c.state
     of dBlockMapValue:
-      target.append(newline)
-      target.append(repeat(' ', indentation))
-      if isObject or style == psCanonical:
-        target.append("? ")
-        state = dBlockExplicitMapKey
-      else: state = dBlockImplicitMapKey
-    of dBlockInlineMap: state = dBlockImplicitMapKey
+      t.append(newline)
+      t.append(repeat(' ', indentation))
+      if isObject or c.options.style == psCanonical:
+        t.append("? ")
+        c.state = dBlockExplicitMapKey
+      else: c.state = dBlockImplicitMapKey
+    of dBlockInlineMap: c.state = dBlockImplicitMapKey
     of dBlockExplicitMapKey:
-      target.append(newline)
-      target.append(repeat(' ', indentation))
-      target.append(": ")
-      state = dBlockMapValue
+      t.append(newline)
+      t.append(repeat(' ', indentation))
+      t.append(": ")
+      c.state = dBlockMapValue
     of dBlockImplicitMapKey:
-      target.append(": ")
-      state = dBlockMapValue
+      t.append(": ")
+      c.state = dBlockMapValue
     of dFlowExplicitMapKey:
-      if style != psMinimal:
-        target.append(newline)
-        target.append(repeat(' ', indentation))
-      target.append(": ")
-      state = dFlowMapValue
+      if c.options.style != psMinimal:
+        t.append(newline)
+        t.append(repeat(' ', indentation))
+      t.append(": ")
+      c.state = dFlowMapValue
     of dFlowMapValue:
-      if (isObject and style != psMinimal) or style in [psJson, psCanonical]:
-        target.append(',' & newline & repeat(' ', indentation))
-        if style == psJson: state = dFlowImplicitMapKey
+      if (isObject and c.options.style != psMinimal) or c.options.style in [psJson, psCanonical]:
+        t.append(',' & newline & repeat(' ', indentation))
+        if c.options.style == psJson: c.state = dFlowImplicitMapKey
         else:
-          target.append("? ")
-          state = dFlowExplicitMapKey
-      elif isObject and style == psMinimal:
-        target.append(", ? ")
-        state = dFlowExplicitMapKey
+          t.append("? ")
+          c.state = dFlowExplicitMapKey
+      elif isObject and c.options.style == psMinimal:
+        t.append(", ? ")
+        c.state = dFlowExplicitMapKey
       else:
-        target.append(", ")
-        state = dFlowImplicitMapKey
+        t.append(", ")
+        c.state = dFlowImplicitMapKey
     of dFlowMapStart:
-      if (isObject and style != psMinimal) or style in [psJson, psCanonical]:
-        target.append(newline & repeat(' ', indentation))
-        if style == psJson: state = dFlowImplicitMapKey
+      if (isObject and c.options.style != psMinimal) or c.options.style in [psJson, psCanonical]:
+        t.append(newline & repeat(' ', indentation))
+        if c.options.style == psJson: c.state = dFlowImplicitMapKey
         else:
-          target.append("? ")
-          state = dFlowExplicitMapKey
-      else: state = dFlowImplicitMapKey
+          t.append("? ")
+          c.state = dFlowExplicitMapKey
+      else: c.state = dFlowImplicitMapKey
     of dFlowImplicitMapKey:
-      target.append(": ")
-      state = dFlowMapValue
+      t.append(": ")
+      c.state = dFlowMapValue
     of dBlockSequenceItem:
-      target.append(newline)
-      target.append(repeat(' ', indentation))
-      target.append("- ")
+      t.append(newline)
+      t.append(repeat(' ', indentation))
+      t.append("- ")
     of dFlowSequenceStart:
-      case style
+      case c.options.style
       of psMinimal, psDefault: discard
       of psCanonical, psJson:
-        target.append(newline)
-        target.append(repeat(' ', indentation))
+        t.append(newline)
+        t.append(repeat(' ', indentation))
       of psBlockOnly: discard # can never happen
-      state = dFlowSequenceItem
+      c.state = dFlowSequenceItem
     of dFlowSequenceItem:
-      case style
-      of psMinimal, psDefault: target.append(", ")
+      case c.options.style
+      of psMinimal, psDefault: t.append(", ")
       of psCanonical, psJson:
-        target.append(',' & newline)
-        target.append(repeat(' ', indentation))
+        t.append(',' & newline)
+        t.append(repeat(' ', indentation))
       of psBlockOnly: discard # can never happen
   except:
     var e = newException(YamlPresenterOutputError, "")
     e.parent = getCurrentException()
     raise e
 
-proc writeTagAndAnchor(target: PresenterTarget, props: Properties,
-                       tagLib: TagLibrary) {.raises: [YamlPresenterOutputError].} =
+proc writeTagAndAnchor(c: Context, props: Properties) {.raises: [YamlPresenterOutputError].} =
+  let t = c.target
   try:
     if props.tag notin [yTagQuestionMark, yTagExclamationMark]:
-      let tagUri = tagLib.uri(props.tag)
-      let (handle, length) = tagLib.searchHandle(tagUri)
+      let tagUri = c.tagLib.uri(props.tag)
+      let (handle, length) = c.searchHandle(tagUri)
       if length > 0:
-        target.append(handle)
-        target.append(tagUri[length..tagUri.high])
-        target.append(' ')
+        t.append(handle)
+        t.append(tagUri[length..tagUri.high])
+        t.append(' ')
       else:
-        target.append("!<")
-        target.append(tagUri)
-        target.append("> ")
+        t.append("!<")
+        t.append(tagUri)
+        t.append("> ")
     if props.anchor != yAnchorNone:
-      target.append("&")
-      target.append($props.anchor)
-      target.append(' ')
+      t.append("&")
+      t.append($props.anchor)
+      t.append(' ')
   except:
     var e = newException(YamlPresenterOutputError, "")
     e.parent = getCurrentException()
@@ -429,15 +455,12 @@ proc nextItem(c: var Deque, s: var YamlStream):
   else:
     result = s.next()
 
-proc doPresent(s: var YamlStream, target: PresenterTarget,
-              tagLib: TagLibrary,
-              options: PresentationOptions = defaultPresentationOptions) =
+proc doPresent(c: var Context, s: var YamlStream) =
   var
     indentation = 0
-    levels = newSeq[DumperState]()
     cached = initDeQue[Event]()
-  let newline = if options.newlines == nlLF: "\l"
-    elif options.newlines == nlCRLF: "\c\l" else: "\n"
+  let newline = if c.options.newlines == nlLF: "\l"
+    elif c.options.newlines == nlCRLF: "\c\l" else: "\n"
   var firstDoc = true
   while true:
     let item = nextItem(cached, s)
@@ -445,94 +468,95 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
     of yamlStartStream: discard
     of yamlEndStream: break
     of yamlStartDoc:
+      resetHandles(c.handles)
+      for v in item.handles:
+        discard registerHandle(c.handles, v.handle, v.uriPrefix)
       if not firstDoc:
-        if options.style == psJson:
+        if c.options.style == psJson:
           raise newException(YamlPresenterJsonError,
               "Cannot output more than one document in JSON style")
-        target.safeWrite("..." & newline)
+        c.safeWrite("..." & newline)
 
-      if options.style != psJson:
+      if c.options.style != psJson:
         try:
-          case options.outputVersion
-          of ov1_2: target.append("%YAML 1.2" & newline)
-          of ov1_1: target.append("%YAML 1.1" & newLine)
+          case c.options.outputVersion
+          of ov1_2: c.target.append("%YAML 1.2" & newline)
+          of ov1_1: c.target.append("%YAML 1.1" & newLine)
           of ovNone: discard
-          for prefix, uri in tagLib.handles():
-            if prefix == "!":
-              if uri != "!":
-                target.append("%TAG ! " & uri & newline)
-            elif prefix == "!!":
-              if uri != yamlTagRepositoryPrefix:
-                target.append("%TAG !! " & uri & newline)
+          for v in c.handles:
+            if v.handle == "!":
+              if v.uriPrefix != "!":
+                c.target.append("%TAG ! " & v.uriPrefix & newline)
+            elif v.handle == "!!":
+              if v.uriPrefix != yamlTagRepositoryPrefix:
+                c.target.append("%TAG !! " & v.uriPrefix & newline)
             else:
-              target.append("%TAG " & prefix & ' ' & uri & newline)
-          target.append("--- ")
+              c.target.append("%TAG " & v.handle & ' ' & v.uriPrefix & newline)
+          c.target.append("--- ")
         except:
           var e = newException(YamlPresenterOutputError, "")
           e.parent = getCurrentException()
           raise e
     of yamlScalar:
-      if levels.len == 0:
-        if options.style != psJson: target.safeWrite(newline)
+      if c.levels.len == 0:
+        if c.options.style != psJson: c.safeWrite(newline)
       else:
-        startItem(target, options.style, indentation,
-                  levels[levels.high], false, newline)
-      if options.style != psJson:
-        writeTagAndAnchor(target, item.scalarProperties, taglib)
+        c.startItem(indentation, false, newline)
+      if c.options.style != psJson:
+        c.writeTagAndAnchor(item.scalarProperties)
 
-      if options.style == psJson:
+      if c.options.style == psJson:
         let hint = guessType(item.scalarContent)
         let tag = item.scalarProperties.tag
         if tag in [yTagQuestionMark, yTagBoolean] and
               hint in {yTypeBoolTrue, yTypeBoolFalse}:
-          target.safeWrite(if hint == yTypeBoolTrue: "true" else: "false")
+          c.safeWrite(if hint == yTypeBoolTrue: "true" else: "false")
         elif tag in [yTagQuestionMark, yTagNull] and
             hint == yTypeNull:
-          target.safeWrite("null")
+          c.safeWrite("null")
         elif tag in [yTagQuestionMark, yTagInteger,
             yTagNimInt8, yTagNimInt16, yTagNimInt32, yTagNimInt64,
             yTagNimUInt8, yTagNimUInt16, yTagNimUInt32, yTagNimUInt64] and
             hint == yTypeInteger:
-          target.safeWrite(item.scalarContent)
+          c.safeWrite(item.scalarContent)
         elif tag in [yTagQuestionMark, yTagFloat, yTagNimFloat32,
             yTagNimFloat64] and hint in {yTypeFloatInf, yTypeFloatNaN}:
           raise newException(YamlPresenterJsonError,
               "Infinity and not-a-number values cannot be presented as JSON!")
         elif tag in [yTagQuestionMark, yTagFloat] and
             hint == yTypeFloat:
-          target.safeWrite(item.scalarContent)
-        else: writeDoubleQuotedJson(item.scalarContent, target)
-      elif options.style == psCanonical:
-        writeDoubleQuoted(item.scalarContent, target,
-                          indentation + options.indentationStep, newline)
+          c.safeWrite(item.scalarContent)
+        else: c.writeDoubleQuotedJson(item.scalarContent)
+      elif c.options.style == psCanonical:
+        c.writeDoubleQuoted(item.scalarContent,
+                          indentation + c.options.indentationStep, newline)
       else:
         var words, lines = newSeq[tuple[start, finish: int]]()
         case item.scalarContent.inspect(
-            indentation + options.indentationStep, words, lines)
-        of sLiteral: writeLiteral(item.scalarContent, indentation,
-                        options.indentationStep, target, lines, newline)
-        of sFolded: writeFolded(item.scalarContent, indentation,
-                        options.indentationStep, target, words, newline)
-        of sPlain: target.safeWrite(item.scalarContent)
-        of sDoubleQuoted: writeDoubleQuoted(item.scalarContent, target,
-                        indentation + options.indentationStep, newline)
+            indentation + c.options.indentationStep, words, lines)
+        of sLiteral: c.writeLiteral(item.scalarContent, indentation,
+                        c.options.indentationStep, lines, newline)
+        of sFolded: c.writeFolded(item.scalarContent, indentation,
+                        c.options.indentationStep, words, newline)
+        of sPlain: c.safeWrite(item.scalarContent)
+        of sDoubleQuoted: c.writeDoubleQuoted(item.scalarContent,
+                        indentation + c.options.indentationStep, newline)
     of yamlAlias:
-      if options.style == psJson:
+      if c.options.style == psJson:
         raise newException(YamlPresenterJsonError,
                            "Alias not allowed in JSON output")
-      yAssert levels.len > 0
-      startItem(target, options.style, indentation, levels[levels.high],
-                false, newline)
+      yAssert c.levels.len > 0
+      c.startItem(indentation, false, newline)
       try:
-        target.append('*')
-        target.append($item.aliasTarget)
+        c.target.append('*')
+        c.target.append($item.aliasTarget)
       except:
         var e = newException(YamlPresenterOutputError, "")
         e.parent = getCurrentException()
         raise e
     of yamlStartSeq:
       var nextState: DumperState
-      case options.style
+      case c.options.style
       of psDefault:
         var length = 0
         while true:
@@ -547,8 +571,7 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
             break
         nextState = if length <= 60: dFlowSequenceStart else: dBlockSequenceItem
       of psJson:
-        if levels.len > 0 and levels[levels.high] in
-            [dFlowMapStart, dFlowMapValue]:
+        if c.levels.len > 0 and c.state in [dFlowMapStart, dFlowMapValue]:
           raise newException(YamlPresenterJsonError, "Cannot have sequence as map key in JSON output!")
         nextState = dFlowSequenceStart
       of psMinimal, psCanonical: nextState = dFlowSequenceStart
@@ -557,33 +580,32 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         if next.kind == yamlEndSeq: nextState = dFlowSequenceStart
         else: nextState = dBlockSequenceItem
 
-      if levels.len == 0:
+      if c.levels.len == 0:
         case nextState
         of dBlockSequenceItem:
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.seqProperties, tagLib)
+          if c.options.style != psJson:
+            c.writeTagAndAnchor(item.seqProperties)
         of dFlowSequenceStart:
-          target.safeWrite(newline)
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.seqProperties, tagLib)
-          indentation += options.indentationStep
+          c.safeWrite(newline)
+          if c.options.style != psJson:
+            c.writeTagAndAnchor(item.seqProperties)
+          indentation += c.options.indentationStep
         else: internalError("Invalid nextState: " & $nextState)
       else:
-        startItem(target, options.style, indentation,
-                  levels[levels.high], true, newline)
-        if options.style != psJson:
-          writeTagAndAnchor(target, item.seqProperties, tagLib)
-        indentation += options.indentationStep
+        c.startItem(indentation, true, newline)
+        if c.options.style != psJson:
+          c.writeTagAndAnchor(item.seqProperties)
+        indentation += c.options.indentationStep
 
-      if nextState == dFlowSequenceStart: target.safeWrite('[')
-      if levels.len > 0 and options.style in [psJson, psCanonical] and
-          levels[levels.high] in [dBlockExplicitMapKey, dBlockMapValue,
-                                  dBlockImplicitMapKey, dBlockSequenceItem]:
-        indentation += options.indentationStep
-      levels.add(nextState)
+      if nextState == dFlowSequenceStart: c.safeWrite('[')
+      if c.levels.len > 0 and c.options.style in [psJson, psCanonical] and
+          c.state in [dBlockExplicitMapKey, dBlockMapValue,
+                      dBlockImplicitMapKey, dBlockSequenceItem]:
+        indentation += c.options.indentationStep
+      c.levels.add(nextState)
     of yamlStartMap:
       var nextState: DumperState
-      case options.style
+      case c.options.style
       of psDefault:
         type MapParseState = enum
           mpInitial, mpKey, mpValue, mpNeedBlock
@@ -601,8 +623,7 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
       of psMinimal: nextState = dFlowMapStart
       of psCanonical: nextState = dFlowMapStart
       of psJson:
-        if levels.len > 0 and levels[levels.high] in
-            [dFlowMapStart, dFlowMapValue]:
+        if c.levels.len > 0 and c.state in [dFlowMapStart, dFlowMapValue]:
           raise newException(YamlPresenterJsonError,
                              "Cannot have map as map key in JSON output!")
         nextState = dFlowMapStart
@@ -610,103 +631,101 @@ proc doPresent(s: var YamlStream, target: PresenterTarget,
         let next = s.peek()
         if next.kind == yamlEndMap: nextState = dFlowMapStart
         else: nextState = dBlockMapValue
-      if levels.len == 0:
+      if c.levels.len == 0:
         case nextState
         of dBlockMapValue:
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.mapProperties, tagLib)
+          if c.options.style != psJson:
+            c.writeTagAndAnchor(item.mapProperties)
           else:
-            if options.style != psJson:
-              target.safeWrite(newline)
-              writeTagAndAnchor(target, item.mapProperties, tagLib)
-            indentation += options.indentationStep
+            if c.options.style != psJson:
+              c.safeWrite(newline)
+              c.writeTagAndAnchor(item.mapProperties)
+            indentation += c.options.indentationStep
         of dFlowMapStart:
-          target.safeWrite(newline)
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.mapProperties, tagLib)
-          indentation += options.indentationStep
+          c.safeWrite(newline)
+          if c.options.style != psJson:
+            c.writeTagAndAnchor(item.mapProperties)
+          indentation += c.options.indentationStep
         of dBlockInlineMap: discard
         else: internalError("Invalid nextState: " & $nextState)
       else:
         if nextState in [dBlockMapValue, dBlockImplicitMapKey]:
-          startItem(target, options.style, indentation,
-                    levels[levels.high], true, newline)
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.mapProperties, tagLib)
+          c.startItem(indentation, true, newline)
+          if c.options.style != psJson:
+            c.writeTagAndAnchor(item.mapProperties)
         else:
-          startItem(target, options.style, indentation,
-                    levels[levels.high], true, newline)
-          if options.style != psJson:
-            writeTagAndAnchor(target, item.mapProperties, tagLib)
-        indentation += options.indentationStep
+          c.startItem(indentation, true, newline)
+          if c.options.style != psJson:
+            c.writeTagAndAnchor(item.mapProperties)
+        indentation += c.options.indentationStep
 
-      if nextState == dFlowMapStart: target.safeWrite('{')
-      if levels.len > 0 and options.style in [psJson, psCanonical] and
-          levels[levels.high] in
-          [dBlockExplicitMapKey, dBlockMapValue,
-           dBlockImplicitMapKey, dBlockSequenceItem]:
-        indentation += options.indentationStep
-      levels.add(nextState)
+      if nextState == dFlowMapStart: c.safeWrite('{')
+      if c.levels.len > 0 and c.options.style in [psJson, psCanonical] and
+          c.state in [dBlockExplicitMapKey, dBlockMapValue,
+                      dBlockImplicitMapKey, dBlockImplicitMapKey,
+                      dBlockSequenceItem]:
+        indentation += c.options.indentationStep
+      c.levels.add(nextState)
 
     of yamlEndSeq:
-      yAssert levels.len > 0
-      case levels.pop()
+      yAssert c.levels.len > 0
+      case c.levels.pop()
       of dFlowSequenceItem:
-        case options.style
-        of psDefault, psMinimal, psBlockOnly: target.safeWrite(']')
+        case c.options.style
+        of psDefault, psMinimal, psBlockOnly: c.safeWrite(']')
         of psJson, psCanonical:
-          indentation -= options.indentationStep
+          indentation -= c.options.indentationStep
           try:
-            target.append(newline)
-            target.append(repeat(' ', indentation))
-            target.append(']')
+            c.target.append(newline)
+            c.target.append(repeat(' ', indentation))
+            c.target.append(']')
           except:
             var e = newException(YamlPresenterOutputError, "")
             e.parent = getCurrentException()
             raise e
-          if levels.len == 0 or levels[levels.high] notin
+          if c.levels.len == 0 or c.state notin
               [dBlockExplicitMapKey, dBlockMapValue,
                dBlockImplicitMapKey, dBlockSequenceItem]:
             continue
       of dFlowSequenceStart:
-        if levels.len > 0 and options.style in [psJson, psCanonical] and
-            levels[levels.high] in [dBlockExplicitMapKey, dBlockMapValue,
-                                    dBlockImplicitMapKey, dBlockSequenceItem]:
-          indentation -= options.indentationStep
-        target.safeWrite(']')
+        if c.levels.len > 0 and c.options.style in [psJson, psCanonical] and
+            c.state in [dBlockExplicitMapKey, dBlockMapValue,
+                        dBlockImplicitMapKey, dBlockSequenceItem]:
+          indentation -= c.options.indentationStep
+        c.safeWrite(']')
       of dBlockSequenceItem: discard
       else: internalError("Invalid popped level")
-      indentation -= options.indentationStep
+      indentation -= c.options.indentationStep
     of yamlEndMap:
-      yAssert levels.len > 0
-      let level = levels.pop()
+      yAssert c.levels.len > 0
+      let level = c.levels.pop()
       case level
       of dFlowMapValue:
-        case options.style
-        of psDefault, psMinimal, psBlockOnly: target.safeWrite('}')
+        case c.options.style
+        of psDefault, psMinimal, psBlockOnly: c.safeWrite('}')
         of psJson, psCanonical:
-          indentation -= options.indentationStep
+          indentation -= c.options.indentationStep
           try:
-            target.append(newline)
-            target.append(repeat(' ', indentation))
-            target.append('}')
+            c.target.append(newline)
+            c.target.append(repeat(' ', indentation))
+            c.target.append('}')
           except:
             var e = newException(YamlPresenterOutputError, "")
             e.parent = getCurrentException()
             raise e
-          if levels.len == 0 or levels[levels.high] notin
+          if c.levels.len == 0 or c.state notin
               [dBlockExplicitMapKey, dBlockMapValue,
                dBlockImplicitMapKey, dBlockSequenceItem]:
             continue
       of dFlowMapStart:
-        if levels.len > 0 and options.style in [psJson, psCanonical] and
-            levels[levels.high] in [dBlockExplicitMapKey, dBlockMapValue,
-                                    dBlockImplicitMapKey, dBlockSequenceItem]:
-          indentation -= options.indentationStep
-        target.safeWrite('}')
+        if c.levels.len > 0 and c.options.style in [psJson, psCanonical] and
+            c.state in [dBlockExplicitMapKey, dBlockMapValue,
+                        dBlockImplicitMapKey, dBlockSequenceItem]:
+          indentation -= c.options.indentationStep
+        c.safeWrite('}')
       of dBlockMapValue, dBlockInlineMap: discard
       else: internalError("Invalid level: " & $level)
-      indentation -= options.indentationStep
+      indentation -= c.options.indentationStep
     of yamlEndDoc:
       firstDoc = false
 
@@ -716,63 +735,69 @@ proc present*(s: var YamlStream, target: Stream,
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].} =
   ## Convert ``s`` to a YAML character stream and write it to ``target``.
-  doPresent(s, target, tagLib, options)
+  var c = Context(target: target, tagLib: tagLib, options: options)
+  doPresent(c, s)
 
 proc present*(s: var YamlStream, tagLib: TagLibrary,
               options: PresentationOptions = defaultPresentationOptions):
     string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                       YamlStreamError].} =
   ## Convert ``s`` to a YAML character stream and return it as string.
-  result = ""
-  doPresent(s, addr result, tagLib, options)
 
-proc doTransform(input: Stream | string, output: PresenterTarget,
-                 options: PresentationOptions, resolveToCoreYamlTags: bool) =
+  var
+    ss = newStringStream()
+    c = Context(target: ss, tagLib: tagLib, options: options)
+  doPresent(c, s)
+  return ss.data
+
+proc doTransform(c: var Context, input: Stream,
+                 resolveToCoreYamlTags: bool) =
   var
     taglib = initExtendedTagLibrary()
     parser: YamlParser
   parser.init(tagLib)
   var events = parser.parse(input)
   try:
-    if options.style == psCanonical:
+    if c.options.style == psCanonical:
       var bys: YamlStream = newBufferYamlStream()
       for e in events:
         if resolveToCoreYamlTags:
           var event = e
           case event.kind
-          of yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
+          of yamlStartStream, yamlEndStream, yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
             discard
           of yamlStartMap:
-            if event.mapTag in [yTagQuestionMark, yTagExclamationMark]:
-              event.mapTag = yTagMapping
+            if event.mapProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
+              event.mapProperties.tag = yTagMapping
           of yamlStartSeq:
-            if event.seqTag in [yTagQuestionMark, yTagExclamationMark]:
-              event.seqTag = yTagSequence
+            if event.seqProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
+              event.seqProperties.tag = yTagSequence
           of yamlScalar:
-            if event.scalarTag == yTagQuestionMark:
+            if event.scalarProperties.tag == yTagQuestionMark:
               case guessType(event.scalarContent)
-              of yTypeInteger: event.scalarTag = yTagInteger
+              of yTypeInteger: event.scalarProperties.tag = yTagInteger
               of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
-                event.scalarTag = yTagFloat
-              of yTypeBoolTrue, yTypeBoolFalse: event.scalarTag = yTagBoolean
-              of yTypeNull: event.scalarTag = yTagNull
-              of yTypeTimestamp: event.scalarTag = yTagTimestamp
-              of yTypeUnknown: event.scalarTag = yTagString
-            elif event.scalarTag == yTagExclamationMark:
-              event.scalarTag = yTagString
+                event.scalarProperties.tag = yTagFloat
+              of yTypeBoolTrue, yTypeBoolFalse: event.scalarProperties.tag = yTagBoolean
+              of yTypeNull: event.scalarProperties.tag = yTagNull
+              of yTypeTimestamp: event.scalarProperties.tag = yTagTimestamp
+              of yTypeUnknown: event.scalarProperties.tag = yTagString
+            elif event.scalarProperties.tag == yTagExclamationMark:
+              event.scalarProperties.tag = yTagString
           BufferYamlStream(bys).put(event)
         else: BufferYamlStream(bys).put(e)
-      when output is ptr[string]: output[] = present(bys, tagLib, options)
-      else: present(bys, output, tagLib, options)
+      doPresent(c, bys)
     else:
-      when output is ptr[string]: output[] = present(events, tagLib, options)
-      else: present(events, output, tagLib, options)
+      doPresent(c, events)
   except YamlStreamError:
     var e = getCurrentException()
     while e.parent of YamlStreamError: e = e.parent
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & e.parent.repr)
+
+proc genInput(input: Stream): Stream = input
+proc genInput(input: string): Stream = newStringStream(input)
 
 proc transform*(input: Stream | string, output: Stream,
                 options: PresentationOptions = defaultPresentationOptions,
@@ -783,7 +808,7 @@ proc transform*(input: Stream | string, output: Stream,
   ## while resolving non-specific tags to the ones in the YAML core tag
   ## library. If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
   ## be replaced by specific tags according to the YAML core schema.
-  doTransform(input, output, options, resolveToCoreYamlTags)
+  doTransform(genInput(input), output, options, resolveToCoreYamlTags)
 
 proc transform*(input: Stream | string,
                 options: PresentationOptions = defaultPresentationOptions,
@@ -796,4 +821,4 @@ proc transform*(input: Stream | string,
   ## ``true``, non-specific tags will be replaced by specific tags according to
   ## the YAML core schema.
   result = ""
-  doTransform(input, addr result, options, resolveToCoreYamlTags)
+  doTransform(genInput(input), addr result, options, resolveToCoreYamlTags)

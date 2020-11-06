@@ -1361,15 +1361,11 @@ proc construct*[T](s: var YamlStream, target: var T)
   var context = newConstructionContext()
   try:
     var e = s.next()
-    yAssert(e.kind == yamlStartStream)
-    e = s.next()
     yAssert(e.kind == yamlStartDoc)
 
     constructChild(s, context, target)
     e = s.next()
     yAssert(e.kind == yamlEndDoc)
-    e = s.next()
-    yAssert(e.kind == yamlEndStream)
   except YamlConstructionError:
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
@@ -1386,10 +1382,19 @@ proc construct*[T](s: var YamlStream, target: var T)
 proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, YamlParserError].} =
   ## Loads a Nim value from a YAML character stream.
-  var parser: YamlParser
-  parser.init(serializationTagLibrary)
-  var events = parser.parse(input)
-  try: construct(events, target)
+  var
+    parser = initYamlParser(serializationTagLibrary)
+    events = parser.parse(input)
+  try:
+    var e = events.next()
+    yAssert(e.kind == yamlStartStream)
+    construct(events, target)
+    e = events.next()
+    if e.kind != yamlEndStream:
+      var ex = (ref YamlConstructionError)(
+        mark: e.startPos, msg: "stream contains multiple document")
+      discard events.getLastTokenContext(ex.lineContent)
+      raise ex
   except YamlStreamError:
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
@@ -1397,16 +1402,18 @@ proc load*[K](input: Stream | string, target: var K)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
-  var parser: YamlParser
-  parser.init(serializationTagLibrary)
-  var events = parser.parse(input)
-  discard events.next() # stream start
+  var
+    parser = initYamlParser(serializationTagLibrary)
+    events = parser.parse(input)
+    e = events.next()
+  yAssert(e.kind == yamlStartStream)
   try:
     while events.peek().kind == yamlStartDoc:
       var item: K
       construct(events, item)
       target.add(item)
-    discard events.next() # stream end
+    e = events.next()
+    yAssert(e.kind == yamlEndStream)
   except YamlConstructionError:
     var e = (ref YamlConstructionError)(getCurrentException())
     discard events.getLastTokenContext(e.lineContent)
@@ -1433,7 +1440,7 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
         bys.put(e)
       )
   bys.put(startStreamEvent())
-  bys.put(startDocEvent())
+  bys.put(startDocEvent(handles = @[("!n!", nimyamlTagRepositoryPrefix)]))
   representChild(value, ts, context)
   bys.put(endDocEvent())
   bys.put(endStreamEvent())

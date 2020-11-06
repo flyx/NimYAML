@@ -68,6 +68,7 @@ type
     of yamlStartDoc:
       explicitDirectivesEnd*: bool
       version*: string
+      handles*: seq[tuple[handle, uriPrefix: string]]
     of yamlEndDoc:
       explicitDocumentEnd*: bool
     of yamlEndMap, yamlEndSeq: discard
@@ -162,11 +163,13 @@ proc startStreamEvent*(): Event =
 proc endStreamEvent*(): Event =
   return Event(startPos: defaultMark, endPos: defaultMark, kind: yamlEndStream)
 
-proc startDocEvent*(explicit: bool = false, version: string = "", startPos, endPos: Mark = defaultMark): Event
+proc startDocEvent*(explicit: bool = false, version: string = "",
+                    handles: seq[tuple[handle, uriPrefix: string]] = @[],
+                    startPos, endPos: Mark = defaultMark): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML document
   result = Event(startPos: startPos, endPos: endPos,
-                 kind: yamlStartDoc, version: version,
+                 kind: yamlStartDoc, version: version, handles: handles,
                  explicitDirectivesEnd: explicit)
 
 proc endDocEvent*(explicit: bool = false, startPos, endPos: Mark = defaultMark): Event

@@ -210,6 +210,9 @@ suite "Lexer":
     assertEquals("foo:\n  bar\n  baz\n---\nderp", i(0), pl("foo"), mv(), i(2),
                  pl("bar baz"), dirE(), i(0), pl("derp"), e())
 
+  test "Sequence with compact maps":
+    assertEquals("""- a: drzw\n- b""", i(0), ss(), pl("a"), mv(), pl("drzw"), i(0), ss(), pl("b"), e())
+
   test "Empty lines":
     assertEquals("""block: foo
 

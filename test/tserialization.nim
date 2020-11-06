@@ -311,17 +311,17 @@ suite "Serialization":
     input[(a: 13'i32, b: 47'i32)] = "dreizehnsiebenundvierzig"
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
-        """!n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str)
--
-  ?
-    a: 23
-    b: 42
-  : dreiundzwanzigzweiundvierzig
--
-  ?
-    a: 13
-    b: 47
-  : dreizehnsiebenundvierzig""", output)
+        "!n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str) \n" &
+        "- \n" &
+        "  ? \n" &
+        "    a: 23\n" &
+        "    b: 42\n" &
+        "  : dreiundzwanzigzweiundvierzig\n" &
+        "- \n" &
+        "  ? \n" &
+        "    a: 13\n" &
+        "    b: 47\n" &
+        "  : dreizehnsiebenundvierzig", output)
 
   test "Load Sequences in Sequence":
     let input = " - [1, 2, 3]\n - [4, 5]\n - [6]"

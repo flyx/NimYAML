@@ -62,3 +62,16 @@ proc nextAnchor*(s: var string, i: int) =
       nextAnchor(s, i - 1)
   else:
     inc(s[i])
+
+template resetHandles*(handles: var seq[tuple[handle, uriPrefix: string]]) {.dirty.} =
+  handles.setLen(0)
+  handles.add(("!", "!"))
+  handles.add(("!!", yamlTagRepositoryPrefix))
+
+proc registerHandle*(handles: var seq[tuple[handle, uriPrefix: string]], handle, uriPrefix: string): bool =
+  for i in countup(0, len(handles)-1):
+    if handles[i].handle == handle:
+      handles[i].uriPrefix = uriPrefix
+      return false
+  handles.add((handle, uriPrefix))
+  return false
