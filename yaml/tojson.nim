@@ -191,6 +191,8 @@ when not defined(JS):
       let e = getCurrentException()
       if e.parent of IOError:
         raise (ref IOError)(e.parent)
+      elif e.parent of OSError:
+        raise (ref OSError)(e.parent)
       elif e.parent of YamlParserError:
         raise (ref YamlParserError)(e.parent)
       else: internalError("Unexpected exception: " & e.parent.repr)

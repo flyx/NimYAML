@@ -793,6 +793,7 @@ proc doTransform(c: var Context, input: Stream,
     var e = getCurrentException()
     while e.parent of YamlStreamError: e = e.parent
     if e.parent of IOError: raise (ref IOError)(e.parent)
+    elif e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & e.parent.repr)
 
@@ -802,7 +803,7 @@ proc genInput(input: string): Stream = newStringStream(input)
 proc transform*(input: Stream | string, output: Stream,
                 options: PresentationOptions = defaultPresentationOptions,
                 resolveToCoreYamlTags: bool = false)
-    {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
+    {.raises: [IOError, OSError, YamlParserError, YamlPresenterJsonError,
                YamlPresenterOutputError].} =
   ## Parser ``input`` as YAML character stream and then dump it to ``output``
   ## while resolving non-specific tags to the ones in the YAML core tag
@@ -813,7 +814,7 @@ proc transform*(input: Stream | string, output: Stream,
 proc transform*(input: Stream | string,
                 options: PresentationOptions = defaultPresentationOptions,
                 resolveToCoreYamlTags: bool = false):
-    string {.raises: [IOError, YamlParserError, YamlPresenterJsonError,
+    string {.raises: [IOError, OSError, YamlParserError, YamlPresenterJsonError,
                       YamlPresenterOutputError].} =
   ## Parser ``input`` as YAML character stream, resolves non-specific tags to
   ## the ones in the YAML core tag library, and then returns a serialized

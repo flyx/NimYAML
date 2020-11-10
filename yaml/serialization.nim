@@ -1372,10 +1372,12 @@ proc load*[K](input: Stream | string, target: var K)
   except YamlStreamError:
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
+    if e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
-proc loadAs*[K](input: string): K {.raises: [YamlConstructionError, IOError, YamlParserError].} =
+proc loadAs*[K](input: string): K {.raises:
+    [YamlConstructionError, IOError, OSError, YamlParserError].} =
   ## Loads the given YAML input to a value of the type K and returns it
   load(input, result)
 
@@ -1399,6 +1401,7 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
   except YamlStreamError:
     let e = (ref YamlStreamError)(getCurrentException())
     if e.parent of IOError: raise (ref IOError)(e.parent)
+    elif e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 

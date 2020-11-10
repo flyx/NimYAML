@@ -208,6 +208,8 @@ proc loadDom*(s: Stream | string): YamlDocument
       raise (ref YamlParserError)(ex.parent)
     elif ex.parent of IOError:
       raise (ref IOError)(ex.parent)
+    elif ex.parent of OSError:
+      raise (ref OSError)(ex.parent)
     else: internalError("Unexpected exception: " & ex.parent.repr)
 
 proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
@@ -230,6 +232,8 @@ proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
       raise (ref YamlParserError)(ex.parent)
     elif ex.parent of IOError:
       raise (ref IOError)(ex.parent)
+    elif ex.parent of OSError:
+      raise (ref OSError)(ex.parent)
     else: internalError("Unexpected exception: " & ex.parent.repr)
 
 proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
