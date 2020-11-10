@@ -915,6 +915,8 @@ proc afterFlowMapSep(c: Context, e: var Event): bool =
     c.lex.next()
     c.popLevel()
     return true
+  of SeqSep:
+    raise c.generateError("Missing mapping entry between commas (use '?' for an empty mapping entry)")
   else: discard
   c.transition(afterFlowMapKey)
   c.pushLevel(beforeFlowItem)
