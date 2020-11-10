@@ -1,5 +1,5 @@
 import hashes
-import private/internal
+import private/escaping
 
 type
   Anchor* = distinct string ## \

@@ -12,7 +12,7 @@
 ## non-nil string or Stream object as YAML character stream.
 
 import tables, strutils, macros, streams
-import taglib, stream, private/lex, private/internal, data
+import taglib, stream, private/lex, private/internal, private/escaping, data
 
 when defined(nimNoNil):
     {.experimental: "notnil".}

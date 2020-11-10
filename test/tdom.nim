@@ -18,7 +18,8 @@ suite "DOM":
   test "Serializing simple Scalar":
     let input = initYamlDoc(newYamlNode("scalar"))
     var result = serialize(input, initExtendedTagLibrary())
-    ensure(result, startDocEvent(), scalarEvent("scalar"), endDocEvent())
+    ensure(result, startStreamEvent(), startDocEvent(), scalarEvent("scalar"),
+        endDocEvent(), endStreamEvent())
   test "Composing sequence":
     let
       input = newStringStream("- !!str a\n- !!bool no")
@@ -37,9 +38,9 @@ suite "DOM":
         newYamlNode("a", "tag:yaml.org,2002:str"),
         newYamlNode("no", "tag:yaml.org,2002:bool")]))
     var result = serialize(input, initExtendedTagLibrary())
-    ensure(result, startDocEvent(), startSeqEvent(),
+    ensure(result, startStreamEvent(), startDocEvent(), startSeqEvent(),
            scalarEvent("a", yTagString), scalarEvent("no", yTagBoolean),
-           endSeqEvent(), endDocEvent())
+           endSeqEvent(), endDocEvent(), endStreamEvent())
   test "Composing mapping":
     let
       input = newStringStream("--- !!map\n!foo bar: [a, b]")
@@ -58,9 +59,9 @@ suite "DOM":
         (key: newYamlNode("bar"), value: newYamlNode([newYamlNode("a"),
                                                       newYamlNode("b")]))]))
     var result = serialize(input, initExtendedTagLibrary())
-    ensure(result, startDocEvent(), startMapEvent(), scalarEvent("bar"),
-           startSeqEvent(), scalarEvent("a"), scalarEvent("b"),
-           endSeqEvent(), endMapEvent(), endDocEvent())
+    ensure(result, startStreamEvent(), startDocEvent(), startMapEvent(),
+        scalarEvent("bar"), startSeqEvent(), scalarEvent("a"), scalarEvent("b"),
+        endSeqEvent(), endMapEvent(), endDocEvent(), endStreamEvent())
   test "Composing with anchors":
     let
       input = newStringStream("- &a foo\n- &b bar\n- *a\n- *b")
@@ -79,17 +80,18 @@ suite "DOM":
       b = newYamlNode("b")
       input = initYamlDoc(newYamlNode([a, b, newYamlNode("c"), a, b]))
     var result = serialize(input, initExtendedTagLibrary())
-    ensure(result, startDocEvent(), startSeqEvent(),
+    ensure(result, startStreamEvent(), startDocEvent(), startSeqEvent(),
            scalarEvent("a", anchor="a".Anchor),
            scalarEvent("b", anchor="b".Anchor), scalarEvent("c"),
            aliasEvent("a".Anchor), aliasEvent("b".Anchor), endSeqEvent(),
-           endDocEvent())
+           endDocEvent(), endStreamEvent())
   test "Serializing with all anchors":
     let
       a = newYamlNode("a")
       input = initYamlDoc(newYamlNode([a, newYamlNode("b"), a]))
     var result = serialize(input, initExtendedTagLibrary(), asAlways)
-    ensure(result, startDocEvent(), startSeqEvent(anchor="a".Anchor),
+    ensure(result, startStreamEvent(), startDocEvent(),
+           startSeqEvent(anchor="a".Anchor),
            scalarEvent("a", anchor = "b".Anchor),
            scalarEvent("b", anchor="c".Anchor), aliasEvent("b".Anchor),
-           endSeqEvent(), endDocEvent())
+           endSeqEvent(), endDocEvent(), endStreamEvent())

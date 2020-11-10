@@ -1,4 +1,4 @@
-import yaml, streams
+import yaml, yaml/data, streams
 type Person = object
   name: string
 
@@ -7,14 +7,15 @@ setTagUri(Person, nimTag("demo:Person"), yTagPerson)
 var
   s = newFileStream("in.yaml", fmRead)
   context = newConstructionContext()
-  parser = newYamlParser(serializationTagLibrary)
+  parser = initYamlParser(serializationTagLibrary)
   events = parser.parse(s)
 
+assert events.next().kind == yamlStartStream
 assert events.next().kind == yamlStartDoc
 assert events.next().kind == yamlStartSeq
 var nextEvent = events.peek()
 while nextEvent.kind != yamlEndSeq:
-  var curTag = nextEvent.tag()
+  var curTag = nextEvent.properties().tag
   if curTag == yTagQuestionMark:
     # we only support implicitly tagged scalars
     assert nextEvent.kind == yamlScalar
@@ -47,5 +48,5 @@ while nextEvent.kind != yamlEndSeq:
   nextEvent = events.peek()
 assert events.next().kind == yamlEndSeq
 assert events.next().kind == yamlEndDoc
-assert events.finished()
+assert events.next().kind == yamlEndStream
 s.close()

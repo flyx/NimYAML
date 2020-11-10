@@ -192,42 +192,61 @@ proc loadDom*(s: Stream | string): YamlDocument
     {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
   var
     tagLib = initExtendedTagLibrary()
-    parser: YamlParser
-  parser.init(tagLib)
-  var events = parser.parse(s)
-  try: result = compose(events, tagLib)
+    parser = initYamlParser(tagLib)
+    events = parser.parse(s)
+    e: Event
+  try:
+    e = events.next()
+    yAssert(e.kind == yamlStartStream)
+    result = compose(events, tagLib)
+    e = events.next()
+    if e.kind != yamlEndStream:
+      raise newYamlConstructionError(events, e.startPos, "stream contains multiple documents")
   except YamlStreamError:
-    let e = getCurrentException()
-    if e.parent of YamlParserError:
-      raise (ref YamlParserError)(e.parent)
-    elif e.parent of IOError:
-      raise (ref IOError)(e.parent)
-    else: internalError("Unexpected exception: " & e.parent.repr)
+    let ex = getCurrentException()
+    if ex.parent of YamlParserError:
+      raise (ref YamlParserError)(ex.parent)
+    elif ex.parent of IOError:
+      raise (ref IOError)(ex.parent)
+    else: internalError("Unexpected exception: " & ex.parent.repr)
+
+proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
+    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
+  var
+    tagLib = initExtendedTagLibrary()
+    parser = initYamlParser(tagLib)
+    events = parser.parse(s)
+    e: Event
+  try:
+    e = events.next()
+    yAssert(e.kind == yamlStartStream)
+    while events.peek().kind == yamlStartDoc:
+      result.add(compose(events, tagLib))
+    e = events.next()
+    yAssert(e.kind != yamlEndStream)
+  except YamlStreamError:
+    let ex = getCurrentException()
+    if ex.parent of YamlParserError:
+      raise (ref YamlParserError)(ex.parent)
+    elif ex.parent of IOError:
+      raise (ref IOError)(ex.parent)
+    else: internalError("Unexpected exception: " & ex.parent.repr)
 
 proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
                    tagLib: TagLibrary) {.raises: [].}=
-  var val = yAnchorNone
+  var anchor = yAnchorNone
   let p = cast[pointer](n)
   if a != asNone and c.refs.hasKey(p):
-    val = c.refs.getOrDefault(p).a
-    if val == yAnchorNone:
-      val = c.nextAnchorId.Anchor
-      c.refs[p] = (val, false)
-      nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
-    c.put(aliasEvent(val))
+    anchor = c.refs.getOrDefault(p).a
+    c.refs[p] = (anchor, true)
+    c.put(aliasEvent(anchor))
     return
-  var
-    anchor: Anchor
   if a != asNone:
-    val = c.nextAnchorId.Anchor
+    anchor = c.nextAnchorId.Anchor
     c.refs[p] = (c.nextAnchorId.Anchor, false)
     nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
   let tag = if tagLib.tags.hasKey(n.tag): tagLib.tags.getOrDefault(n.tag) else:
           tagLib.registerUri(n.tag)
-  case a
-  of asNone: anchor = yAnchorNone
-  of asTidy: anchor = cast[Anchor](n)
-  of asAlways: anchor = val
 
   case n.kind
   of yScalar: c.put(scalarEvent(n.content, tag, anchor))
@@ -243,13 +262,6 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
       serializeNode(value, c, a, tagLib)
     c.put(endMapEvent())
 
-proc processAnchoredEvent(target: var Properties, c: SerializationContext) =
-  for key, val in c.refs:
-    if val.a == target.anchor:
-      if not val.referenced:
-        target.anchor = yAnchorNone
-      break
-
 proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
     YamlStream {.raises: [].} =
   var
@@ -257,15 +269,20 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
     c = newSerializationContext(a, proc(e: Event) {.raises: [].} =
       bys.put(e)
     )
+  c.put(startStreamEvent())
   c.put(startDocEvent())
   serializeNode(doc.root, c, a, tagLib)
   c.put(endDocEvent())
+  c.put(endStreamEvent())
   if a == asTidy:
+    var ctx = initAnchorContext()
     for event in bys.mitems():
       case event.kind
-      of yamlScalar: processAnchoredEvent(event.scalarProperties, c)
-      of yamlStartMap: processAnchoredEvent(event.mapProperties, c)
-      of yamlStartSeq: processAnchoredEvent(event.seqProperties, c)
+      of yamlScalar: ctx.process(event.scalarProperties, c.refs)
+      of yamlStartMap: ctx.process(event.mapProperties, c.refs)
+      of yamlStartSeq: ctx.process(event.seqProperties, c.refs)
+      of yamlAlias:
+        event.aliasTarget = ctx.map(event.aliasTarget)
       else: discard
   result = bys
 

@@ -116,11 +116,14 @@ proc safeTagUri(tag: Tag): string {.raises: [].} =
   except KeyError:
     internalError("Unexpected KeyError for Tag " & $tag)
 
-proc constructionError(s: YamlStream, mark: Mark, msg: string): ref YamlConstructionError =
+proc newYamlConstructionError*(s: YamlStream, mark: Mark, msg: string): ref YamlConstructionError =
   result = newException(YamlConstructionError, msg)
   result.mark = mark
   if not s.getLastTokenContext(result.lineContent):
     result.lineContent = ""
+
+proc constructionError(s: YamlStream, mark: Mark, msg: string): ref YamlConstructionError =
+  return newYamlConstructionError(s, mark, msg)
 
 template constructScalarItem*(s: var YamlStream, i: untyped,
                               t: typedesc, content: untyped) =
@@ -1351,7 +1354,7 @@ proc construct*[T](s: var YamlStream, target: var T)
     raise ex
 
 proc load*[K](input: Stream | string, target: var K)
-    {.raises: [YamlConstructionError, IOError, YamlParserError].} =
+    {.raises: [YamlConstructionError, IOError, OSError, YamlParserError].} =
   ## Loads a Nim value from a YAML character stream.
   var
     parser = initYamlParser(serializationTagLibrary)
@@ -1363,7 +1366,7 @@ proc load*[K](input: Stream | string, target: var K)
     e = events.next()
     if e.kind != yamlEndStream:
       var ex = (ref YamlConstructionError)(
-        mark: e.startPos, msg: "stream contains multiple document")
+        mark: e.startPos, msg: "stream contains multiple documents")
       discard events.getLastTokenContext(ex.lineContent)
       raise ex
   except YamlStreamError:
@@ -1399,14 +1402,6 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
-proc setAnchor(a: var Anchor, c: var SerializationContext)
-    {.inline.} =
-  if a != yAnchorNone:
-    for key, val in c.refs:
-      if val.a == a:
-        if not val.referenced: a = yAnchorNone
-        return
-
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
                    a: AnchorStyle = asTidy): YamlStream =
   ## Represents a Nim value as ``YamlStream``
@@ -1420,11 +1415,13 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
   bys.put(endDocEvent())
   bys.put(endStreamEvent())
   if a == asTidy:
+    var ctx = initAnchorContext()
     for item in bys.mitems():
       case item.kind
-      of yamlStartMap: setAnchor(item.mapProperties.anchor, context)
-      of yamlStartSeq: setAnchor(item.seqProperties.anchor, context)
-      of yamlScalar: setAnchor(item.scalarProperties.anchor, context)
+      of yamlStartMap: ctx.process(item.mapProperties, context.refs)
+      of yamlStartSeq: ctx.process(item.seqProperties, context.refs)
+      of yamlScalar: ctx.process(item.scalarProperties, context.refs)
+      of yamlAlias: item.aliasTarget = ctx.map(item.aliasTarget)
       else: discard
   result = bys
 
