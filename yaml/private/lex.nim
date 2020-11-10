@@ -77,8 +77,6 @@ const
   uriChars       = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', ':',
       '@', '&', '-', '=', '+', '$', '_', '.', '~', '*', '\'', '(', ')'}
   tagShorthandChars = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '-'}
-  suffixChars = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '#', ';', '/', '?', '@',
-                 '&', '=', '+', '$', '_', '.', '!', '~', '*', '\'', '-'}
   nodePropertyKind* = {Token.TagHandle, Token.VerbatimTag, Token.Anchor}
   scalarTokenKind* = {Token.Plain, Token.SingleQuoted, Token.DoubleQuoted,
                      Token.Literal, Token.Folded}
@@ -743,7 +741,8 @@ proc currentLine*(lex: Lexer): string {.locks: 0.} =
 
 proc next*(lex: var Lexer) =
   while not lex.state(lex): discard
-  debug("lexer -> " & $lex.cur)
+  debug("lexer -> [" & $lex.curStartPos.line & "," & $lex.curStartPos.column &
+      "-" & $lex.curEndPos.line & "," & $lex.curEndPos.column & "] " & $lex.cur)
 
 proc init*(lex: var Lexer, source: Stream) {.raises: [IOError, OSError].} =
   lex.source.open(source)
@@ -815,7 +814,6 @@ proc outsideDoc(lex: var Lexer): bool =
   return true
 
 proc yamlVersion(lex: var Lexer): bool =
-  debug("lex: yamlVersion")
   while lex.c in space: lex.advance()
   lex.startToken()
   lex.readNumericSubtoken()
@@ -831,7 +829,6 @@ proc yamlVersion(lex: var Lexer): bool =
   return true
 
 proc tagShorthand(lex: var Lexer): bool =
-  debug("lex: tagShorthand")
   while lex.c in space: lex.advance()
   if lex.c != '!':
     raise lex.generateError("Illegal character, tag shorthand must start with '!': " & escape("" & lex.c))
@@ -855,7 +852,6 @@ proc tagShorthand(lex: var Lexer): bool =
   return true
 
 proc tagUri(lex: var Lexer): bool =
-  debug("lex: tagUri")
   while lex.c in space: lex.advance()
   lex.startToken()
   if lex.c == '<':
@@ -867,7 +863,6 @@ proc tagUri(lex: var Lexer): bool =
   return true
 
 proc unknownDirParams(lex: var Lexer): bool =
-  debug("lex: unknownDirParams")
   while lex.c in space: lex.advance()
   if lex.c in lineEnd + {'#'}:
     lex.state = expectLineEnd
@@ -880,7 +875,6 @@ proc unknownDirParams(lex: var Lexer): bool =
   return true
 
 proc expectLineEnd(lex: var Lexer): bool =
-  debug("lex: expectLineEnd")
   while lex.c in space: lex.advance()
   if lex.c notin commentOrLineEnd:
     raise lex.generateError("Unexpected character (expected line end): " & escape("" & lex.c))
@@ -888,7 +882,6 @@ proc expectLineEnd(lex: var Lexer): bool =
   return false
 
 proc lineStart(lex: var Lexer): bool =
-  debug("lex: lineStart")
   return case lex.startLine()
   of lsDirectivesEndMarker: lex.lineDirEnd()
   of lsDocumentEndMarker: lex.lineDocEnd()
@@ -1129,7 +1122,7 @@ proc atSuffix(lex: var Lexer): bool =
   var curStart = lex.tokenStart - 1
   while true:
     case lex.c
-    of suffixChars: lex.advance()
+    of uriChars: lex.advance()
     of '%':
       if curStart <= lex.source.bufpos - 2:
         lex.evaluated.add(lex.source.buf[curStart..lex.source.bufpos - 2])

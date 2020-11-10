@@ -348,6 +348,7 @@ proc beforeImplicitRoot(c: Context, e: var Event): bool =
   if c.lex.cur != Token.Indentation:
     raise c.generateError("Unexpected token (expected line start): " & $c.lex.cur)
   c.inlineStart = c.lex.curEndPos
+  c.headerStart = c.lex.curEndPos
   c.updateIndentation(c.lex.recentIndentation())
   c.lex.next()
   case c.lex.cur

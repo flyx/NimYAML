@@ -909,7 +909,7 @@ proc constructObjectDefault*[O: object|tuple](
     var i = 0
     for fname, value in fieldPairs(result):
       if not matched[i]:
-        raise s.constructionError(e.startPos, "While constructing " &
+        raise s.constructionError(startPos, "While constructing " &
             typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
   else: ensureAllFieldsPresent(s, O, result, matched, startPos)

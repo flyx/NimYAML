@@ -374,7 +374,7 @@ suite "Serialization":
   test "Load Tuple - missing field":
     let input = "str: value\nb: true"
     var result: MyTuple
-    expectConstructionError(2, 8, "While constructing MyTuple: Missing field: \"i\""):
+    expectConstructionError(1, 1, "While constructing MyTuple: Missing field: \"i\""):
       load(input, result)
 
   test "Load Tuple - duplicate field":
@@ -421,7 +421,7 @@ suite "Serialization":
   test "Load custom object - missing field":
     let input = "surname: Pan\nage: 12\n  "
     var result: Person
-    expectConstructionError(3, 3, "While constructing Person: Missing field: \"firstnamechar\""):
+    expectConstructionError(1, 1, "While constructing Person: Missing field: \"firstnamechar\""):
       load(input, result)
 
   test "Load custom object - duplicate field":
@@ -477,27 +477,26 @@ suite "Serialization":
     let input = @[Animal(name: "Bastet", kind: akCat, purringIntensity: 7),
                   Animal(name: "Anubis", kind: akDog, barkometer: 13)]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & """
-
--
-  -
-    name: Bastet
-  -
-    kind: akCat
-  -
-    purringIntensity: 7
--
-  -
-    name: Anubis
-  -
-    kind: akDog
-  -
-    barkometer: 13""", output
+    assertStringEqual yamlDirs & "\n" &
+        "- \n" &
+        "  - \n" &
+        "    name: Bastet\n" &
+        "  - \n" &
+        "    kind: akCat\n" &
+        "  - \n" &
+        "    purringIntensity: 7\n" &
+        "- \n" &
+        "  - \n" &
+        "    name: Anubis\n" &
+        "  - \n" &
+        "    kind: akDog\n" &
+        "  - \n" &
+        "    barkometer: 13", output
 
   test "Load custom variant object - missing field":
     let input = "[{name: Bastet}, {kind: akCat}]"
     var result: Animal
-    expectConstructionError(1, 32, "While constructing Animal: Missing field: \"purringIntensity\""):
+    expectConstructionError(1, 1, "While constructing Animal: Missing field: \"purringIntensity\""):
       load(input, result)
 
   test "Load non-variant object with transient fields":
@@ -512,7 +511,7 @@ suite "Serialization":
   test "Load non-variant object with transient fields - unknown field":
     let input = "{b: b, c: c, d: d}"
     var result: NonVariantWithTransient
-    expectConstructionError(1, 9, "While constructing NonVariantWithTransient: Field \"c\" is transient and may not occur in input"):
+    expectConstructionError(1, 8, "While constructing NonVariantWithTransient: Field \"c\" is transient and may not occur in input"):
       load(input, result)
 
   test "Dump non-variant object with transient fields":
@@ -534,7 +533,7 @@ suite "Serialization":
   test "Load variant object with transient fields, error":
     let input = "[gStorable: gc, kind: deC, neverThere: foo]"
     var result: VariantWithTransient
-    expectConstructionError(1, 38, "While constructing VariantWithTransient: Field \"neverThere\" is transient and may not occur in input"):
+    expectConstructionError(1, 28, "While constructing VariantWithTransient: Field \"neverThere\" is transient and may not occur in input"):
       load(input, result)
 
   test "Dump variant object with transient fields":
@@ -543,20 +542,19 @@ suite "Serialization":
         VariantWithTransient(kind: deC, gStorable: "a", gTemporary: "b",
         neverThere: 42)]
     let output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & """
-
--
-  -
-    gStorable: gs
-  -
-    kind: deA
-  -
-    cStorable: cs
--
-  -
-    gStorable: a
-  -
-    kind: deC""", output
+    assertStringEqual yamlDirs & "\n" &
+        "- \n" &
+        "  - \n" &
+        "    gStorable: gs\n" &
+        "  - \n" &
+        "    kind: deA\n" &
+        "  - \n" &
+        "    cStorable: cs\n" &
+        "- \n" &
+        "  - \n" &
+        "    gStorable: a\n" &
+        "  - \n" &
+        "    kind: deC", output
 
   test "Load object with ignored key":
     let input = "[{x: 1, y: 2}, {x: 3, z: 4, y: 5}, {z: [1, 2, 3], x: 4, y: 5}]"
@@ -573,7 +571,7 @@ suite "Serialization":
   test "Load object with ignored key - unknown field":
     let input = "{x: 1, y: 2, zz: 3}"
     var result: WithIgnoredField
-    expectConstructionError(1, 16, "While constructing WithIgnoredField: Unknown field: \"zz\""):
+    expectConstructionError(1, 14, "While constructing WithIgnoredField: Unknown field: \"zz\""):
       load(input, result)
 
   when not defined(JS):
@@ -586,13 +584,13 @@ suite "Serialization":
       b.next = c
       c.next = a
       var output = dump(a, tsRootOnly, asTidy, blockOnly)
-      assertStringEqual yamlDirs & """!example.net:Node &a
-value: a
-next:
-  value: b
-  next:
-    value: c
-    next: *a""", output
+      assertStringEqual yamlDirs & "!example.net:Node &a \n" &
+          "value: a\n" &
+          "next: \n" &
+          "  value: b\n" &
+          "  next: \n" &
+          "    value: c\n" &
+          "    next: *a", output
 
     test "Load cyclic data structure":
       let input = yamlDirs & """!n!system:seq(example.net:Node)
@@ -651,7 +649,7 @@ next:
   test "Custom representObject":
     let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
     var output = dump(input, tsAll, asTidy, blockOnly)
-    assertStringEqual yamlDirs & """!n!system:seq(test:BetterInt)
-- !test:BetterInt 1
-- !test:BetterInt 9_998_887
-- !test:BetterInt 98_312""", output
+    assertStringEqual yamlDirs & "!n!system:seq(test:BetterInt) \n" &
+        "- !test:BetterInt 1\n" &
+        "- !test:BetterInt 9_998_887\n" &
+        "- !test:BetterInt 98_312", output
