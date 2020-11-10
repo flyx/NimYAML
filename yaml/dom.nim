@@ -138,7 +138,7 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
   template addAnchor(c: ConstructionContext, target: Anchor) =
     if target != yAnchorNone:
       yAssert(not c.refs.hasKey(target))
-      c.refs[target] = (id: typeID(YamlNode), p: cast[pointer](result))
+      c.refs[target] = (tag: yamlTag(YamlNode), p: cast[pointer](result))
 
   var start: Event
   shallowCopy(start, s.next())

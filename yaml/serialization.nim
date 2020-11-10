@@ -32,7 +32,7 @@ type
 
   ConstructionContext* = ref object
     ## Context information for the process of constructing Nim values from YAML.
-    refs*: Table[Anchor, tuple[id: TypeID, p: pointer]]
+    refs*: Table[Anchor, tuple[tag: Tag, p: pointer]]
 
   YamlConstructionError* = object of YamlLoadingError
     ## Exception that may be raised when constructing data objects from a
@@ -86,7 +86,7 @@ proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext)
 
 proc newConstructionContext*(): ConstructionContext =
   new(result)
-  result.refs = initTable[Anchor, tuple[id: TypeID, p: pointer]]()
+  result.refs = initTable[Anchor, tuple[tag: Tag, p: pointer]]()
 
 proc newSerializationContext*(s: AnchorStyle,
     putImpl: proc(e: Event) {.raises: [], closure.}):
@@ -1223,14 +1223,18 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
       discard s.next()
       return
   elif e.kind == yamlAlias:
-    result = cast[ref O](c.refs.getOrDefault(e.aliasTarget).p)
+    let val = c.refs.getOrDefault(e.aliasTarget)
+    if val.tag != yamlTag(O):
+      raise constructionError(s, e.startPos,
+        "alias node refers to object of incompatible type")
+    result = cast[ref O](val.p)
     discard s.next()
     return
   new(result)
   template removeAnchor(anchor: var Anchor) {.dirty.} =
     if anchor != yAnchorNone:
       yAssert(not c.refs.hasKey(anchor))
-      c.refs[anchor] = (0, cast[pointer](result))
+      c.refs[anchor] = (yamlTag(O), cast[pointer](result))
       anchor = yAnchorNone
 
   case e.kind

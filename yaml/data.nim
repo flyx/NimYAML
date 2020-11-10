@@ -272,14 +272,3 @@ proc `$`*(event: Event): string {.raises: [].} =
     of ssFolded: result &= " >"
     result &= yamlTestSuiteEscape(event.scalarContent)
   of yamlAlias: result = "=ALI *" & $event.aliasTarget
-
-type
-  TypeID* = int ## unique ID of a type
-
-var nextTypeID {.compileTime.}: TypeID
-
-proc typeID*(T:typedesc): TypeID =
-  const id = nextTypeID
-  static:
-    inc nextTypeID
-  return id
