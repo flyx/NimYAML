@@ -71,7 +71,7 @@ setTagUri(BetterInt, "!test:BetterInt")
 const yamlDirs = "%YAML 1.2\n%TAG !n! tag:nimyaml.org,2016:\n--- "
 
 proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
-    c: SerializationContext, tag: TagId) {.raises: [].} =
+    c: SerializationContext, tag: Tag) {.raises: [].} =
   var
     val = $value
     i = val.len - 3

@@ -118,7 +118,7 @@ template yieldEvent() {.dirty.} =
     yield curEvent
     inEvent = false
 
-template setTag(t: TagId) {.dirty.} =
+template setTag(t: Tag) {.dirty.} =
   case curEvent.kind
   of yamlStartSeq: curEvent.seqProperties.tag = t
   of yamlStartMap: curEvent.mapProperties.tag = t
@@ -133,8 +133,8 @@ template setAnchor(a: Anchor) {.dirty.} =
   of yamlAlias: curEvent.aliasTarget = a
   else: discard
 
-template curTag(): TagId =
-  var foo: TagId
+template curTag(): Tag =
+  var foo: Tag
   case curEvent.kind
   of yamlStartSeq: foo = curEvent.seqProperties.tag
   of yamlStartMap: foo = curEvent.mapProperties.tag
@@ -143,7 +143,7 @@ template curTag(): TagId =
                            $curEvent.kind & " may not have a tag")
   foo
 
-template setCurTag(val: TagId) =
+template setCurTag(val: Tag) =
   case curEvent.kind
   of yamlStartSeq: curEvent.seqProperties.tag = val
   of yamlStartMap: curEvent.mapProperties.tag = val

@@ -21,7 +21,7 @@ type Level = tuple[node: JsonNode, key: string, expKey: bool]
 proc initLevel(node: JsonNode): Level {.raises: [].} =
   (node: node, key: "", expKey: true)
 
-proc jsonFromScalar(content: string, tag: TagId): JsonNode
+proc jsonFromScalar(content: string, tag: Tag): JsonNode
    {.raises: [YamlConstructionError].}=
   new(result)
   var mappedType: TypeHint

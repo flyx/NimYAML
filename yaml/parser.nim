@@ -212,7 +212,7 @@ proc generateError(c: Context, message: string):
     msg: message, parent: nil, mark: c.lex.curStartPos,
     lineContent: c.lex.currentLine())
 
-proc parseTag(c: Context): TagId =
+proc parseTag(c: Context): Tag =
   let handle = c.lex.fullLexeme()
   var uri = c.resolveHandle(handle)
   if uri == "":
@@ -792,7 +792,7 @@ proc beforeBlockIndentation(c: Context, e: var Event): bool =
     elif c.levels[^1].state == beforeBlockIndentation:
       raise c.generateError("Unexpected double beforeBlockIndentation")
     else:
-      raise c.generateError("Internal error (please report this bug)")
+      raise c.generateError("Internal error (please report this bug): unexpected state at endBlockNode")
     c.popLevel()
   c.popLevel()
   case c.lex.cur

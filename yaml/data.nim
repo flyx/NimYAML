@@ -10,17 +10,8 @@ type
     ## Anchor provides the operator `$` for converting to string, `==` for
     ## comparison, and `hash` for usage in a hashmap.
 
-  TagId* = distinct int ## \
-    ## A ``TagId`` identifies a tag URI, like for example
-    ## ``"tag:yaml.org,2002:str"``. The URI corresponding to a ``TagId`` can
-    ## be queried from the `TagLibrary <#TagLibrary>`_ which was
-    ## used to create this ``TagId``; e.g. when you parse a YAML character
-    ## stream, the ``TagLibrary`` of the parser is the one which generates
-    ## the resulting ``TagId`` s.
-    ##
-    ## URI strings are mapped to ``TagId`` s for efficiency  reasons (you
-    ## do not need to compare strings every time) and to be able to
-    ## discover unknown tag URIs early in the parsing process.
+  Tag* = distinct string ## \
+    ## A ``Tag`` contains an URI, like for example ``"tag:yaml.org,2002:str"``.
 
   ScalarStyle* = enum
     ## Original style of the scalar (for input),
@@ -77,7 +68,21 @@ type
 
   Mark* = tuple[line, column: Positive]
 
-  Properties* = tuple[anchor: Anchor, tag: TagId]
+  Properties* = tuple[anchor: Anchor, tag: Tag]
+
+const
+  yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
+  nimyamlTagRepositoryPrefix* = "tag:nimyaml.org,2016:"
+
+proc defineTag*(uri: string): Tag =
+  ## defines a tag. Use this to optimize away copies of globally defined
+  ## Tags.
+  result = uri.Tag
+  #shallow(result.string) # doesn't work at compile-time
+
+proc defineCoreTag*(name: string): Tag =
+  ## defines a tag in YAML's core namespace, ``tag:yaml.org,2002:``
+  result = defineTag(yamlTagRepositoryPrefix & name)
 
 const
   yAnchorNone*: Anchor = "".Anchor ## \
@@ -86,61 +91,36 @@ const
   defaultMark: Mark = (1.Positive, 1.Positive) ## \
     ## used for events that are not generated from input.
 
-  yTagExclamationMark*: TagId = 0.TagId ## ``!`` non-specific tag
-  yTagQuestionMark*   : TagId = 1.TagId ## ``?`` non-specific tag
+  yTagExclamationMark*: Tag = defineTag("!")
+  yTagQuestionMark*   : Tag = defineTag("?")
 
   # failsafe schema
 
-  yTagString*         : TagId = 2.TagId ## \
-    ## `!!str <http://yaml.org/type/str.html >`_ tag
-  yTagSequence*       : TagId = 3.TagId ## \
-    ## `!!seq <http://yaml.org/type/seq.html>`_ tag
-  yTagMapping*        : TagId = 4.TagId ## \
-    ## `!!map <http://yaml.org/type/map.html>`_ tag
+  yTagString*   = defineCoreTag("str")
+  yTagSequence* = defineCoreTag("seq")
+  yTagMapping*  = defineCoreTag("map")
 
   # json & core schema
 
-  yTagNull*    : TagId = 5.TagId ## \
-    ## `!!null <http://yaml.org/type/null.html>`_ tag
-  yTagBoolean* : TagId = 6.TagId ## \
-    ## `!!bool <http://yaml.org/type/bool.html>`_ tag
-  yTagInteger* : TagId = 7.TagId ## \
-    ## `!!int <http://yaml.org/type/int.html>`_ tag
-  yTagFloat*   : TagId = 8.TagId ## \
-    ## `!!float <http://yaml.org/type/float.html>`_ tag
+  yTagNull*    = defineCoreTag("null")
+  yTagBoolean* = defineCoreTag("bool")
+  yTagInteger* = defineCoreTag("int")
+  yTagFloat*   = defineCoreTag("float")
 
   # other language-independent YAML types (from http://yaml.org/type/ )
 
-  yTagOrderedMap* : TagId = 9.TagId  ## \
-    ## `!!omap <http://yaml.org/type/omap.html>`_ tag
-  yTagPairs*      : TagId = 10.TagId ## \
-    ## `!!pairs <http://yaml.org/type/pairs.html>`_ tag
-  yTagSet*        : TagId = 11.TagId ## \
-    ## `!!set <http://yaml.org/type/set.html>`_ tag
-  yTagBinary*     : TagId = 12.TagId ## \
-    ## `!!binary <http://yaml.org/type/binary.html>`_ tag
-  yTagMerge*      : TagId = 13.TagId ## \
-    ## `!!merge <http://yaml.org/type/merge.html>`_ tag
-  yTagTimestamp*  : TagId = 14.TagId ## \
-    ## `!!timestamp <http://yaml.org/type/timestamp.html>`_ tag
-  yTagValue*      : TagId = 15.TagId ## \
-    ## `!!value <http://yaml.org/type/value.html>`_ tag
-  yTagYaml*       : TagId = 16.TagId ## \
-    ## `!!yaml <http://yaml.org/type/yaml.html>`_ tag
+  yTagOrderedMap* = defineCoreTag("omap")
+  yTagPairs*      = defineCoreTag("pairs")
+  yTagSet*        = defineCoreTag("set")
+  yTagBinary*     = defineCoreTag("binary")
+  yTagMerge*      = defineCoreTag("merge")
+  yTagTimestamp*  = defineCoreTag("timestamp")
+  yTagValue*      = defineCoreTag("value")
+  yTagYaml*       = defineCoreTag("yaml")
 
-  yTagNimField*   : TagId = 100.TagId ## \
-    ## This tag is used in serialization for the name of a field of an
-    ## object. It may contain any string scalar that is a valid Nim symbol.
+  # NimYAML specific tags
 
-  yFirstStaticTagId* : TagId = 1000.TagId ## \
-    ## The first ``TagId`` assigned by the ``setTagId`` templates.
-
-  yFirstCustomTagId* : TagId = 10000.TagId ## \
-    ## The first ``TagId`` which should be assigned to an URI that does not
-    ## exist in the ``YamlTagLibrary`` which is used for parsing.
-
-  yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
-  nimyamlTagRepositoryPrefix* = "tag:nimyaml.org,2016:"
+  yTagNimField*   = defineTag(nimyamlTagRepositoryPrefix & "field")
 
 proc properties*(event: Event): Properties =
   ## returns the tag of the given event
@@ -186,7 +166,7 @@ proc startMapEvent*(style: CollectionStyle, props: Properties,
                  mapStyle: style)
 
 proc startMapEvent*(style: CollectionStyle = csAny,
-                    tag: TagId = yTagQuestionMark,
+                    tag: Tag = yTagQuestionMark,
                     anchor: Anchor = yAnchorNone,
                     startPos, endPos: Mark = defaultMark): Event {.inline.} =
   return startMapEvent(style, (anchor, tag), startPos, endPos)
@@ -204,7 +184,7 @@ proc startSeqEvent*(style: CollectionStyle,
                  seqStyle: style)
 
 proc startSeqEvent*(style: CollectionStyle = csAny,
-                    tag: TagId = yTagQuestionMark,
+                    tag: Tag = yTagQuestionMark,
                     anchor: Anchor = yAnchorNone,
                     startPos, endPos: Mark = defaultMark): Event {.inline.} =
   return startSeqEvent(style, (anchor, tag), startPos, endPos)
@@ -221,7 +201,7 @@ proc scalarEvent*(content: string, props: Properties,
                  kind: yamlScalar, scalarProperties: props,
                  scalarContent: content, scalarStyle: style)
 
-proc scalarEvent*(content: string = "", tag: TagId = yTagQuestionMark,
+proc scalarEvent*(content: string = "", tag: Tag = yTagQuestionMark,
                   anchor: Anchor = yAnchorNone,
                   style: ScalarStyle = ssAny,
                   startPos, endPos: Mark = defaultMark): Event {.inline.} =
@@ -231,34 +211,13 @@ proc aliasEvent*(target: Anchor, startPos, endPos: Mark = defaultMark): Event {.
   ## creates a new event that represents a YAML alias
   result = Event(startPos: startPos, endPos: endPos, kind: yamlAlias, aliasTarget: target)
 
-proc `==`*(left, right: Anchor): bool {.borrow, locks: 0.}
-proc `$`*(id: Anchor): string {.borrow, locks: 0.}
-proc hash*(id: Anchor): Hash {.borrow, locks: 0.}
+proc `==`*(left, right: Anchor): bool {.borrow.}
+proc `$`*(id: Anchor): string {.borrow.}
+proc hash*(id: Anchor): Hash {.borrow.}
 
-proc `==`*(left, right: TagId): bool {.borrow, locks: 0.}
-proc hash*(id: TagId): Hash {.borrow, locks: 0.}
-
-proc `$`*(id: TagId): string {.raises: [].} =
-  case id
-  of yTagQuestionMark: "?"
-  of yTagExclamationMark: "!"
-  of yTagString: "!!str"
-  of yTagSequence: "!!seq"
-  of yTagMapping: "!!map"
-  of yTagNull: "!!null"
-  of yTagBoolean: "!!bool"
-  of yTagInteger: "!!int"
-  of yTagFloat: "!!float"
-  of yTagOrderedMap: "!!omap"
-  of yTagPairs: "!!pairs"
-  of yTagSet: "!!set"
-  of yTagBinary: "!!binary"
-  of yTagMerge: "!!merge"
-  of yTagTimestamp: "!!timestamp"
-  of yTagValue: "!!value"
-  of yTagYaml: "!!yaml"
-  of yTagNimField: "!nim:field"
-  else: "<" & $int(id) & ">"
+proc `==`*(left, right: Tag): bool {.borrow.}
+proc `$`*(tag: Tag): string {.borrow.}
+proc hash*(tag: Tag): Hash {.borrow.}
 
 proc `==`*(left: Event, right: Event): bool {.raises: [].} =
   ## compares all existing fields of the given items
@@ -279,8 +238,8 @@ proc renderAttrs*(props: Properties, isPlain: bool = true): string =
   result = ""
   if props.anchor != yAnchorNone: result &= " &" & $props.anchor
   case props.tag
-  of yTagQuestionmark: discard
-  of yTagExclamationmark:
+  of yTagQuestionMark: discard
+  of yTagExclamationMark:
     if isPlain: result &= " <!>"
   else:
     result &= " <" & $props.tag & ">"
@@ -313,3 +272,14 @@ proc `$`*(event: Event): string {.raises: [].} =
     of ssFolded: result &= " >"
     result &= yamlTestSuiteEscape(event.scalarContent)
   of yamlAlias: result = "=ALI *" & $event.aliasTarget
+
+type
+  TypeID* = int ## unique ID of a type
+
+var nextTypeID {.compileTime.}: TypeID
+
+proc typeID*(T:typedesc): TypeID =
+  const id = nextTypeID
+  static:
+    inc nextTypeID
+  return id

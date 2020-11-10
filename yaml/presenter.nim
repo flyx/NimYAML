@@ -428,7 +428,7 @@ proc writeTagAndAnchor(c: Context, props: Properties) {.raises: [YamlPresenterOu
   let t = c.target
   try:
     if props.tag notin [yTagQuestionMark, yTagExclamationMark]:
-      let tagUri = c.tagLib.uri(props.tag)
+      let tagUri = $props.tag
       let (handle, length) = c.searchHandle(tagUri)
       if length > 0:
         t.append(handle)
