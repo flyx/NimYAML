@@ -125,11 +125,6 @@ proc afterPairValue(c: Context, e: var Event): bool
 proc emitCached(c: Context, e: var Event): bool
 {.pop.}
 
-template debug(message: string) {.dirty.} =
-  when defined(yamlDebug):
-    try: styledWriteLine(stdout, fgBlue, message)
-    except ValueError, IOError: discard
-
 template pushLevel(c: Context, newState: State, newIndent: int) =
   debug("parser: push " & newState.astToStr & ", indent = " & $newIndent)
   c.levels.add(Level(state: newState, indentation: newIndent))
