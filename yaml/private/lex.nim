@@ -167,10 +167,13 @@ proc streamEnd(lex: var Lexer): bool {.raises: [].}
 
 # helpers
 
-template debug(message: string) {.dirty.} =
+template debug*(message: string) =
   when defined(yamlDebug):
-    try: styledWriteLine(stdout, fgBlue, message)
-    except ValueError, IOError: discard
+    when nimvm:
+      echo "yamlDebug: ", message
+    else:
+      try: styledWriteLine(stdout, fgBlue, message)
+      except ValueError, IOError: discard
 
 proc generateError(lex: Lexer, message: string):
     ref LexerError {.raises: [].} =
