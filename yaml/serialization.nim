@@ -318,7 +318,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
 proc representObject*(value: bool, ts: TagStyle, c: SerializationContext,
     tag: Tag)  {.raises: [].} =
   ## represents a bool value as a YAML scalar
-  c.put(scalarEvent(if value: "y" else: "n", tag, yAnchorNone))
+  c.put(scalarEvent(if value: "true" else: "false", tag, yAnchorNone))
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var char)
