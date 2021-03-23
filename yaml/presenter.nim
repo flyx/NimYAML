@@ -109,7 +109,6 @@ type
 
   Context = object
     target: Stream
-    tagLib: TagLibrary
     options: PresentationOptions
     handles: seq[tuple[handle, uriPrefix: string]]
     levels: seq[DumperState]
@@ -730,15 +729,14 @@ proc doPresent(c: var Context, s: var YamlStream) =
       firstDoc = false
 
 proc present*(s: var YamlStream, target: Stream,
-              tagLib: TagLibrary,
               options: PresentationOptions = defaultPresentationOptions)
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].} =
   ## Convert ``s`` to a YAML character stream and write it to ``target``.
-  var c = Context(target: target, tagLib: tagLib, options: options)
+  var c = Context(target: target, options: options)
   doPresent(c, s)
 
-proc present*(s: var YamlStream, tagLib: TagLibrary,
+proc present*(s: var YamlStream,
               options: PresentationOptions = defaultPresentationOptions):
     string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                       YamlStreamError].} =
@@ -746,16 +744,14 @@ proc present*(s: var YamlStream, tagLib: TagLibrary,
 
   var
     ss = newStringStream()
-    c = Context(target: ss, tagLib: tagLib, options: options)
+    c = Context(target: ss, options: options)
   doPresent(c, s)
   return ss.data
 
 proc doTransform(c: var Context, input: Stream,
                  resolveToCoreYamlTags: bool) =
-  var
-    taglib = initExtendedTagLibrary()
-    parser: YamlParser
-  parser.init(tagLib)
+  var parser: YamlParser
+  parser.init()
   var events = parser.parse(input)
   try:
     if c.options.style == psCanonical:

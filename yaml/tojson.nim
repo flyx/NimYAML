@@ -12,7 +12,7 @@
 ## structures provided by Nim's stdlib.
 
 import json, streams, strutils, tables
-import data, taglib, hints, serialization, stream, private/internal, parser
+import data, hints, serialization, stream, private/internal, parser
 
 # represents a single YAML level. The `node` with name `key`.
 # `expKey` is used to indicate that an empty node shall be filled
@@ -170,8 +170,8 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
           raise newException(YamlConstructionError,
               "cannot use alias node as key in JSON")
         else:
-          levels[levels.high].node.fields.add(
-              levels[levels.high].key, anchors.getOrDefault(event.aliasTarget))
+          levels[levels.high].node.fields[
+              levels[levels.high].key] = anchors.getOrDefault(event.aliasTarget)
           levels[levels.high].expKey = true
       else:
         internalError("Unexpected node kind: " & $levels[levels.high].node.kind)
@@ -183,7 +183,7 @@ when not defined(JS):
     ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
     ## from a YAML character stream.
     var parser: YamlParser
-    parser.init(initCoreTagLibrary())
+    parser.init()
     var events = parser.parse(s)
     try:
       return constructJson(events)
@@ -203,7 +203,7 @@ proc loadToJson*(str: string): seq[JsonNode]
   ## `constructJson <#constructJson>`_ to construct an in-memory JSON tree
   ## from a YAML character stream.
   var parser: YamlParser
-  parser.init(initCoreTagLibrary())
+  parser.init()
   var events = parser.parse(str)
   try: return constructJson(events)
   except YamlStreamError:

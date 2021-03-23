@@ -17,14 +17,13 @@ proc echoError(msg: string) =
 
 proc parserTest(path: string, errorExpected : bool): bool =
   var
-    tagLib = initExtendedTagLibrary()
     parser: YamlParser
-  parser.init(tagLib)
+  parser.init()
   var
     actualIn = newFileStream(path / "in.yaml")
     actual = parser.parse(actualIn)
     expectedIn = newFileStream(path / "test.event")
-    expected = parseEventStream(expectedIn, tagLib)
+    expected = parseEventStream(expectedIn)
   defer:
     actualIn.close()
     expectedIn.close()

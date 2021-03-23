@@ -11,7 +11,7 @@ import unittest, json
 proc ensureEqual(yamlIn, jsonIn: string) =
   try:
     var
-      parser = initYamlParser(initCoreTagLibrary(), true)
+      parser = initYamlParser(true)
       s = parser.parse(yamlIn)
       yamlResult = constructJson(s)
       jsonResult = parseJson(jsonIn)

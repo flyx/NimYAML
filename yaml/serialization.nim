@@ -99,10 +99,6 @@ template presentTag*(t: typedesc, ts: TagStyle): Tag =
   ## Get the Tag that represents the given type in the given style
   if ts == tsNone: yTagQuestionMark else: yamlTag(t)
 
-proc lazyLoadTag(uri: string): Tag {.inline, raises: [].} =
-  try: result = serializationTagLibrary.tags[uri]
-  except KeyError: result = serializationTagLibrary.registerUri(uri)
-
 proc safeTagUri(tag: Tag): string {.raises: [].} =
   try:
     var uri = $tag
@@ -402,12 +398,10 @@ proc representObject*(value: Time, ts: TagStyle, c: SerializationContext,
   c.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
 
 proc yamlTag*[I](T: typedesc[seq[I]]): Tag {.inline, raises: [].} =
-  let uri = nimTag("system:seq(" & safeTagUri(yamlTag(I)) & ')')
-  result = lazyLoadTag(uri)
+  return nimTag("system:seq(" & safeTagUri(yamlTag(I)) & ')')
 
 proc yamlTag*[I](T: typedesc[set[I]]): Tag {.inline, raises: [].} =
-  let uri = nimTag("system:set(" & safeTagUri(yamlTag(I)) & ')')
-  result = lazyLoadTag(uri)
+  return nimTag("system:set(" & safeTagUri(yamlTag(I)) & ')')
 
 proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
                          result: var seq[T])
@@ -448,9 +442,8 @@ proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
 
 proc yamlTag*[I, V](T: typedesc[array[I, V]]): Tag {.inline, raises: [].} =
   const rangeName = name(I)
-  let uri = nimTag("system:array(" & rangeName[6..rangeName.high()] & ';' &
+  return nimTag("system:array(" & rangeName[6..rangeName.high()] & ';' &
       safeTagUri(yamlTag(V)) & ')')
-  result = lazyLoadTag(uri)
 
 proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
                          result: var array[I, T])
@@ -478,13 +471,8 @@ proc representObject*[I, T](value: array[I, T], ts: TagStyle,
   c.put(endSeqEvent())
 
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): Tag {.inline, raises: [].} =
-  try:
-    let uri = nimTag("tables:Table(" & safeTagUri(yamlTag(K)) & ';' &
-        safeTagUri(yamlTag(V)) & ")")
-    result = lazyLoadTag(uri)
-  except KeyError:
-    # cannot happen (theoretically, you know)
-    internalError("Unexpected KeyError")
+  return nimTag("tables:Table(" & safeTagUri(yamlTag(K)) & ';' &
+      safeTagUri(yamlTag(V)) & ")")
 
 proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
                             result: var Table[K, V])
@@ -517,13 +505,8 @@ proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
 
 proc yamlTag*[K, V](T: typedesc[OrderedTable[K, V]]): Tag
     {.inline, raises: [].} =
-  try:
-    let uri = nimTag("tables:OrderedTable(" & safeTagUri(yamlTag(K)) & ';' &
-        safeTagUri(yamlTag(V)) & ")")
-    result = lazyLoadTag(uri)
-  except KeyError:
-    # cannot happen (theoretically, you know)
-    internalError("Unexpected KeyError")
+  return nimTag("tables:OrderedTable(" & safeTagUri(yamlTag(K)) & ';' &
+      safeTagUri(yamlTag(V)) & ")")
 
 proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
                             result: var OrderedTable[K, V])
@@ -563,23 +546,20 @@ proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
 
 proc yamlTag*(T: typedesc[object|enum]):
     Tag {.inline, raises: [].} =
-  var uri = nimTag("custom:" & (typetraits.name(type(T))))
-  try: serializationTagLibrary.tags[uri]
-  except KeyError: serializationTagLibrary.registerUri(uri)
+  return nimTag("custom:" & (typetraits.name(type(T))))
 
 proc yamlTag*(T: typedesc[tuple]):
     Tag {.inline, raises: [].} =
   var
     i: T
-    uri = nimTag("tuple(")
+    uri = nimyamlTagRepositoryPrefix & "tuple("
     first = true
   for name, value in fieldPairs(i):
     if first: first = false
     else: uri.add(",")
     uri.add(safeTagUri(yamlTag(type(value))))
   uri.add(")")
-  try: serializationTagLibrary.tags[uri]
-  except KeyError: serializationTagLibrary.registerUri(uri)
+  return Tag(uri)
 
 iterator recListItems(n: NimNode): NimNode =
   if n.kind == nnkRecList:
@@ -1357,7 +1337,7 @@ proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, OSError, YamlParserError].} =
   ## Loads a Nim value from a YAML character stream.
   var
-    parser = initYamlParser(serializationTagLibrary)
+    parser = initYamlParser()
     events = parser.parse(input)
   try:
     var e = events.next()
@@ -1383,7 +1363,7 @@ proc loadAs*[K](input: string): K {.raises:
 
 proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
   var
-    parser = initYamlParser(serializationTagLibrary)
+    parser = initYamlParser()
     events = parser.parse(input)
     e = events.next()
   yAssert(e.kind == yamlStartStream)
@@ -1406,14 +1386,15 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
     else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
-                   a: AnchorStyle = asTidy): YamlStream =
+                   a: AnchorStyle = asTidy,
+                   handles: seq[tuple[handle, uriPrefix: string]] =
+                       @[("!n!", nimyamlTagRepositoryPrefix)]): YamlStream =
   ## Represents a Nim value as ``YamlStream``
-  var bys = newBufferYamlStream()
-  var context = newSerializationContext(a, proc(e: Event) =
-        bys.put(e)
-      )
+  var
+    bys = newBufferYamlStream()
+    context = newSerializationContext(a, proc(e: Event) = bys.put(e))
   bys.put(startStreamEvent())
-  bys.put(startDocEvent(handles = @[("!n!", nimyamlTagRepositoryPrefix)]))
+  bys.put(startDocEvent(handles = handles))
   representChild(value, ts, context)
   bys.put(endDocEvent())
   bys.put(endStreamEvent())
@@ -1430,25 +1411,31 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
 
 proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
-              options: PresentationOptions = defaultPresentationOptions)
+              options: PresentationOptions = defaultPresentationOptions,
+              handles: seq[tuple[handle, uriPrefix: string]] =
+                  @[("!n!", nimyamlTagRepositoryPrefix)])
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
                YamlStreamError].} =
   ## Dump a Nim value as YAML character stream.
+  ## To prevent %TAG directives in the output, give ``handles = @[]``.
   var events = represent(value,
       if options.style == psCanonical: tsAll else: tagStyle,
-      if options.style == psJson: asNone else: anchorStyle)
-  try: present(events, target, serializationTagLibrary, options)
+      if options.style == psJson: asNone else: anchorStyle, handles)
+  try: present(events, target, options)
   except YamlStreamError:
     internalError("Unexpected exception: " & $getCurrentException().name)
 
 proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
-              options: PresentationOptions = defaultPresentationOptions):
+              options: PresentationOptions = defaultPresentationOptions,
+              handles: seq[tuple[handle, uriPrefix: string]] =
+                  @[("!n!", nimyamlTagRepositoryPrefix)]):
     string =
-  ## Dump a Nim value as YAML into a string
+  ## Dump a Nim value as YAML into a string.
+  ## To prevent %TAG directives in the output, give ``handles = @[]``.
   var events = represent(value,
       if options.style == psCanonical: tsAll else: tagStyle,
-      if options.style == psJson: asNone else: anchorStyle)
-  try: result = present(events, serializationTagLibrary, options)
+      if options.style == psJson: asNone else: anchorStyle, handles)
+  try: result = present(events, options)
   except YamlStreamError:
     internalError("Unexpected exception: " & $getCurrentException().name)

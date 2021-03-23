@@ -64,9 +64,9 @@ type
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
 
-setTagUri(TrafficLight, "!tl")
-setTagUri(Node, "!example.net:Node")
-setTagUri(BetterInt, "!test:BetterInt")
+setTag(TrafficLight, Tag("!tl"))
+setTag(Node, Tag("!example.net:Node"))
+setTag(BetterInt, Tag("!test:BetterInt"))
 
 const yamlDirs = "%YAML 1.2\n%TAG !n! tag:nimyaml.org,2016:\n--- "
 
@@ -363,7 +363,7 @@ suite "Serialization":
   test "Dump Tuple":
     let input = (str: "value", i: 42.int32, b: true)
     var output = dump(input, tsNone)
-    assertStringEqual yamlDirs & "\nstr: value\ni: 42\nb: y", output
+    assertStringEqual yamlDirs & "\nstr: value\ni: 42\nb: true", output
 
   test "Load Tuple - unknown field":
     let input = "str: value\nfoo: bar\ni: 42\nb: true"

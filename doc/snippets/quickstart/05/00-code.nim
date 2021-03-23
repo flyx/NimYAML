@@ -3,8 +3,8 @@ type Mob = object
   level, experience: int32
   drops: seq[string]
 
-setTagUri(Mob, "!Mob")
-setTagUri(seq[string], "!Drops")
+setTag(Mob, Tag("!Mob"))
+setTag(seq[string], Tag("!Drops"))
 
 var mob = Mob(level: 42, experience: 1800, drops:
     @["Sword of Mob Slaying"])

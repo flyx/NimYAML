@@ -4,7 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import ../yaml, ../yaml/data, ../yaml/private/internal
+import ../yaml, ../yaml/data
 import lexbase, streams, tables, strutils
 
 type
@@ -181,7 +181,7 @@ template eventStart(k: EventKind) {.dirty.} =
   setAnchor(yAnchorNone)
   inEvent = true
 
-proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
+proc parseEventStream*(input: Stream): YamlStream =
   var backend = iterator(): Event =
     var lex: EventLexer
     lex.open(input)
@@ -215,9 +215,7 @@ proc parseEventStream*(input: Stream, tagLib: TagLibrary): YamlStream =
         if curTag() != yTagQuestionMark:
           raise newException(EventStreamError,
                              "Duplicate tag in " & $curEvent.kind)
-        try:
-          setCurTag(tagLib.tags[lex.content])
-        except KeyError: setCurTag(tagLib.registerUri(lex.content))
+        setCurTag(Tag(lex.content))
       of andAnchor:
         assertInEvent("anchor")
         if curAnchor() != yAnchorNone:

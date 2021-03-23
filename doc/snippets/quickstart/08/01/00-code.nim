@@ -2,12 +2,12 @@ import yaml, yaml/data, streams
 type Person = object
   name: string
 
-setTagUri(Person, nimTag("demo:Person"), yTagPerson)
+setTag(Person, nimTag("demo:Person"), yTagPerson)
 
 var
   s = newFileStream("in.yaml", fmRead)
   context = newConstructionContext()
-  parser = initYamlParser(serializationTagLibrary)
+  parser = initYamlParser()
   events = parser.parse(s)
 
 assert events.next().kind == yamlStartStream

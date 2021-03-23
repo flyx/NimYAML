@@ -12,7 +12,7 @@
 ## non-nil string or Stream object as YAML character stream.
 
 import tables, strutils, macros, streams
-import taglib, stream, private/lex, private/internal, private/escaping, data
+import stream, private/lex, private/internal, private/escaping, data
 
 when defined(nimNoNil):
     {.experimental: "notnil".}
@@ -24,7 +24,6 @@ type
     ## to access anchor names while parsing a YAML character stream, but
     ## only until the document goes out of scope (i.e. until
     ## ``yamlEndDocument`` is yielded).
-    tagLib: TagLibrary
     issueWarnings: bool
 
   State = proc(c: Context, e: var Event): bool {.gcSafe.}
@@ -34,7 +33,6 @@ type
     indentation: int
 
   Context = ref object of YamlStream
-    tagLib: TagLibrary
     handles: seq[tuple[handle, uriPrefix: string]]
     issueWarnings: bool
     lex: Lexer
@@ -165,7 +163,6 @@ proc init[T](c: Context, p: YamlParser, source: T) {.inline.} =
     return true
   c.headerProps = defaultProperties
   c.inlineProps = defaultProperties
-  c.tagLib = p.tagLib
   c.issueWarnings = p.issueWarnings
   c.lex.init(source)
   c.keyCachePos = 0
@@ -173,16 +170,12 @@ proc init[T](c: Context, p: YamlParser, source: T) {.inline.} =
 
 # interface
 
-proc init*(p: var YamlParser, tagLib: TagLibrary = initExtendedTagLibrary(),
-            issueWarnings: bool = false) =
+proc init*(p: var YamlParser, issueWarnings: bool = false) =
   ## Initializes a YAML parser.
-  p.tagLib = tagLib
   p.issueWarnings = issueWarnings
 
-proc initYamlParser*(tagLib: TagLibrary = initExtendedTagLibrary(),
-                     issueWarnings: bool = false): YamlParser =
+proc initYamlParser*(issueWarnings: bool = false): YamlParser =
   ## Creates an initializes YAML parser and returns it
-  result.tagLib = tagLib
   result.issueWarnings = issueWarnings
 
 proc parse*(p: YamlParser, s: Stream): YamlStream =
@@ -216,10 +209,7 @@ proc parseTag(c: Context): Tag =
   if c.lex.cur != Token.Suffix:
     raise c.generateError("unexpected token (expected tag suffix): " & $c.lex.cur)
   uri.add(c.lex.evaluated)
-  try:
-    return c.tagLib.tags[uri]
-  except KeyError:
-    return c.tagLib.registerUri(uri)
+  return Tag(uri)
 
 proc toStyle(t: Token): ScalarStyle =
   return (case t
@@ -458,7 +448,7 @@ proc atBlockIndentationProps(c: Context, e: var Event): bool =
     if c.lex.cur == Token.MapValueInd:
       if c.lex.lastScalarWasMultiline():
         raise c.generateError("Implicit mapping key may not be multiline")
-      c.keyCache.add(move(e))
+      c.keyCache.add(e)
       e = startMapEvent(csBlock, c.headerProps, c.headerStart, headerEnd)
       c.headerProps = defaultProperties
       c.transition(afterImplicitKey)
@@ -512,10 +502,7 @@ proc beforeNodeProperties(c: Context, e: var Event): bool =
   of VerbatimTag:
     if c.inlineProps.tag != yTagQuestionMark:
       raise c.generateError("Only one tag allowed per node")
-    try:
-      c.inlineProps.tag = c.tagLib.tags[c.lex.evaluated]
-    except KeyError:
-      c.inlineProps.tag = c.tagLib.registerUri(c.lex.evaluated)
+    c.inlineProps.tag = Tag(c.lex.evaluated)
   of Token.Anchor:
     if c.inlineProps.anchor != yAnchorNone:
       raise c.generateError("Only one anchor allowed per node")

@@ -33,7 +33,7 @@ type
     ## Represents a node in a ``YamlDocument``.
 
   YamlNodeObj* = object
-    tag*: string
+    tag*: Tag
     case kind*: YamlNodeKind
     of yScalar: content*: string
     of ySequence: elems*: seq[YamlNode]
@@ -98,7 +98,7 @@ proc `==`*(x, y: YamlNode): bool =
   result = eqImpl(x, y, alreadyVisited)
 
 proc `$`*(n: YamlNode): string =
-  result = "!<" & n.tag & "> "
+  result = "!<" & $n.tag & "> "
   case n.kind
   of yScalar: result.add(escape(n.content))
   of ySequence:
@@ -118,22 +118,21 @@ proc `$`*(n: YamlNode): string =
     result.setLen(result.len - 1)
     result[^1] = '}'
 
-proc newYamlNode*(content: string, tag: string = "?"): YamlNode =
+proc newYamlNode*(content: string, tag: Tag = yTagQuestionMark): YamlNode =
   YamlNode(kind: yScalar, content: content, tag: tag)
 
-proc newYamlNode*(elems: openarray[YamlNode], tag: string = "?"):
+proc newYamlNode*(elems: openarray[YamlNode], tag: Tag = yTagQuestionMark):
     YamlNode =
   YamlNode(kind: ySequence, elems: @elems, tag: tag)
 
 proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
-                  tag: string = "?"): YamlNode =
+                  tag: Tag = yTagQuestionMark): YamlNode =
   YamlNode(kind: yMapping, fields: newTable(fields), tag: tag)
 
 proc initYamlDoc*(root: YamlNode): YamlDocument =
   result = YamlDocument(root: root)
 
-proc composeNode(s: var YamlStream, tagLib: TagLibrary,
-                 c: ConstructionContext):
+proc composeNode(s: var YamlStream, c: ConstructionContext):
     YamlNode {.raises: [YamlStreamError, YamlConstructionError].} =
   template addAnchor(c: ConstructionContext, target: Anchor) =
     if target != yAnchorNone:
@@ -146,28 +145,28 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
   try:
     case start.kind
     of yamlStartMap:
-      result = YamlNode(tag: $start.mapProperties.tag,
+      result = YamlNode(tag: start.mapProperties.tag,
                         kind: yMapping,
                         fields: newTable[YamlNode, YamlNode]())
       while s.peek().kind != yamlEndMap:
         let
-          key = composeNode(s, tagLib, c)
-          value = composeNode(s, tagLib, c)
+          key = composeNode(s, c)
+          value = composeNode(s, c)
         if result.fields.hasKeyOrPut(key, value):
           raise newException(YamlConstructionError,
               "Duplicate key: " & $key)
       discard s.next()
       addAnchor(c, start.mapProperties.anchor)
     of yamlStartSeq:
-      result = YamlNode(tag: $start.seqProperties.tag,
+      result = YamlNode(tag: start.seqProperties.tag,
                         kind: ySequence,
                         elems: newSeq[YamlNode]())
       while s.peek().kind != yamlEndSeq:
-        result.elems.add(composeNode(s, tagLib, c))
+        result.elems.add(composeNode(s, c))
       addAnchor(c, start.seqProperties.anchor)
       discard s.next()
     of yamlScalar:
-      result = YamlNode(tag: $start.scalarProperties.tag,
+      result = YamlNode(tag: start.scalarProperties.tag,
                         kind: yScalar)
       shallowCopy(result.content, start.scalarContent)
       addAnchor(c, start.scalarProperties.anchor)
@@ -178,27 +177,26 @@ proc composeNode(s: var YamlStream, tagLib: TagLibrary,
     raise newException(YamlConstructionError,
                        "Wrong tag library: TagId missing")
 
-proc compose*(s: var YamlStream, tagLib: TagLibrary): YamlDocument
+proc compose*(s: var YamlStream): YamlDocument
     {.raises: [YamlStreamError, YamlConstructionError].} =
   var context = newConstructionContext()
   var n: Event
   shallowCopy(n, s.next())
   yAssert n.kind == yamlStartDoc
-  result = YamlDocument(root: composeNode(s, tagLib, context))
+  result = YamlDocument(root: composeNode(s, context))
   n = s.next()
   yAssert n.kind == yamlEndDoc
 
 proc loadDom*(s: Stream | string): YamlDocument
     {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
   var
-    tagLib = initExtendedTagLibrary()
-    parser = initYamlParser(tagLib)
+    parser = initYamlParser()
     events = parser.parse(s)
     e: Event
   try:
     e = events.next()
     yAssert(e.kind == yamlStartStream)
-    result = compose(events, tagLib)
+    result = compose(events)
     e = events.next()
     if e.kind != yamlEndStream:
       raise newYamlConstructionError(events, e.startPos, "stream contains multiple documents")
@@ -215,7 +213,6 @@ proc loadDom*(s: Stream | string): YamlDocument
 proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
     {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
   var
-    tagLib = initExtendedTagLibrary()
     parser = initYamlParser(tagLib)
     events = parser.parse(s)
     e: Event
@@ -236,8 +233,8 @@ proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
       raise (ref OSError)(ex.parent)
     else: internalError("Unexpected exception: " & ex.parent.repr)
 
-proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
-                   tagLib: TagLibrary) {.raises: [].}=
+proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle)
+    {.raises: [].}=
   var anchor = yAnchorNone
   let p = cast[pointer](n)
   if a != asNone and c.refs.hasKey(p):
@@ -249,24 +246,22 @@ proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle,
     anchor = c.nextAnchorId.Anchor
     c.refs[p] = (c.nextAnchorId.Anchor, false)
     nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
-  let tag = if tagLib.tags.hasKey(n.tag): tagLib.tags.getOrDefault(n.tag) else:
-          tagLib.registerUri(n.tag)
 
   case n.kind
-  of yScalar: c.put(scalarEvent(n.content, tag, anchor))
+  of yScalar: c.put(scalarEvent(n.content, n.tag, anchor))
   of ySequence:
-    c.put(startSeqEvent(csBlock, (anchor, tag)))
+    c.put(startSeqEvent(csBlock, (anchor, n.tag)))
     for item in n.elems:
-      serializeNode(item, c, a, tagLib)
+      serializeNode(item, c, a)
     c.put(endSeqEvent())
   of yMapping:
-    c.put(startMapEvent(csBlock, (anchor, tag)))
+    c.put(startMapEvent(csBlock, (anchor, n.tag)))
     for key, value in n.fields.pairs:
-      serializeNode(key, c, a, tagLib)
-      serializeNode(value, c, a, tagLib)
+      serializeNode(key, c, a)
+      serializeNode(value, c, a)
     c.put(endMapEvent())
 
-proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
+proc serialize*(doc: YamlDocument, a: AnchorStyle = asTidy):
     YamlStream {.raises: [].} =
   var
     bys = newBufferYamlStream()
@@ -275,7 +270,7 @@ proc serialize*(doc: YamlDocument, tagLib: TagLibrary, a: AnchorStyle = asTidy):
     )
   c.put(startStreamEvent())
   c.put(startDocEvent())
-  serializeNode(doc.root, c, a, tagLib)
+  serializeNode(doc.root, c, a)
   c.put(endDocEvent())
   c.put(endStreamEvent())
   if a == asTidy:
@@ -297,10 +292,9 @@ proc dumpDom*(doc: YamlDocument, target: Stream,
                YamlStreamError].} =
   ## Dump a YamlDocument as YAML character stream.
   var
-    tagLib = initExtendedTagLibrary()
-    events = serialize(doc, tagLib,
+    events = serialize(doc,
                        if options.style == psJson: asNone else: anchorStyle)
-  present(events, target, tagLib, options)
+  present(events, target, options)
 
 proc `[]`*(node: YamlNode, i: int): YamlNode =
   ## Get the node at index *i* from a sequence. *node* must be a *ySequence*.
@@ -326,10 +320,10 @@ proc `[]`*(node: YamlNode, key: string): YamlNode =
   ## This searches for a scalar key with content *key* and either no explicit
   ## tag or the explicit tag ``!!str``.
   assert node.kind == yMapping
-  var keyNode = YamlNode(kind: yScalar, tag: "!", content: key)
+  var keyNode = YamlNode(kind: yScalar, tag: yTagExclamationMark, content: key)
   result = node.fields.getOrDefault(keyNode)
   if isNil(result):
-    keyNode.tag = "?"
+    keyNode.tag = yTagQuestionMark
     result = node.fields.getOrDefault(keyNode)
     if isNil(result):
       keyNode.tag = nimTag(yamlTagRepositoryPrefix & "str")
