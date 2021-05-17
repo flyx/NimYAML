@@ -38,8 +38,14 @@
 ## * The hints API in `hints <yaml.hints.html>`_ provides a simple proc for
 ##   guessing the type of a scalar value.
 
-import yaml / [dom, hints, parser, presenter, annotations,
+import yaml / [hints, parser, presenter, annotations,
                serialization, stream, taglib, tojson]
 
-export dom, hints, parser, presenter, annotations,
+when not defined(gcArc) or defined(gcOrc):
+  # YAML DOM may contain cycles and therefore will leak memory if used with
+  # ARC but without ORC. In that case it won't be available.
+  import yaml/dom
+  export dom
+
+export hints, parser, presenter, annotations,
        serialization, stream, taglib, tojson

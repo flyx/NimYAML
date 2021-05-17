@@ -23,6 +23,9 @@ import tables, streams, hashes, sets, strutils
 import data, stream, taglib, serialization, private/internal, parser,
        presenter
 
+when defined(gcArc) and not defined(gcOrc):
+  {.error: "NimYAML's DOM API only supports ORC because ARC can't deal with cycles".}
+
 when defined(nimNoNil):
     {.experimental: "notnil".}
 type
