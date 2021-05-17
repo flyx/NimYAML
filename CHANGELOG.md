@@ -1,3 +1,16 @@
+## 0.15.0
+
+Features:
+
+ * Compiles with --gc:arm and --gc:orm
+
+Bugfixes:
+
+ * Parser rewrite: Fixes some test suite errors (including #83)
+ * Fixed problems where a syntax error lead to an invalid state (#39, #90)
+ * Serialize boolean values as ``true`` / ``false`` instead of ``y`` / ``y``
+   to conform to YAML 1.2 spec.
+
 ## 0.14.0
 
 Features:

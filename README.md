@@ -12,7 +12,7 @@ Documentation, examples and an online demo are available [here][1]. Releases are
 available as tags in this repository and can be fetched via nimble:
 
     nimble install yaml
-    
+
 ## Status
 
 The library is fairly stable, I only maintain it and will not add any features due to lack of time and interest. There are few issues with YAML corner cases in the lexer which you are unlikely to encounter unless you're going for them. Fixing them would mean a larger refactor of the lexer which I am not willing to do.
@@ -41,8 +41,9 @@ nim clean # guess
 nim build # build a library
 ```
 
-NimYAML needs at least Nim 0.17.0 in order to compile. Version 0.9.1
-is the last release to support 0.15.x and 0.16.0.
+NimYAML supports Nim 1.4.0 and later.
+Previous versions are untested.
+NimYAML v0.9.1 is the last release to support Nim 0.15.x and 0.16.0.
 
 When debugging crashes in this library, use the `d:debug` compile flag to enable printing of the internal stack traces for calls to `internalError` and `yAssert`.
 
