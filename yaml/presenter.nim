@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## =====================
-## Module yaml.presenter
+## Module yaml/presenter
 ## =====================
 ##
 ## This is the presenter API, used for generating YAML character streams.

@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## =================
-## Module yaml.hints
+## Module yaml/hints
 ## =================
 ##
 ## The hints API enables you to guess the type of YAML scalars.

@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## ==================
-## Module yaml.stream
+## Module yaml/stream
 ## ==================
 ##
 ## The stream API provides the basic data structure on which all low-level APIs

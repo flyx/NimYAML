@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## ===============
-## Module yaml.dom
+## Module yaml/dom
 ## ===============
 ##
 ## This is the DOM API, which enables you to load YAML into a tree-like

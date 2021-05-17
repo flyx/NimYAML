@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## ==================
-## Module yaml.taglib
+## Module yaml/taglib
 ## ==================
 ##
 ## The taglib API enables you to define custom tags for the types you are

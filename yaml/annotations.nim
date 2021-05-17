@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## =======================
-## Module yaml.annotations
+## Module yaml/annotations
 ## =======================
 ##
 ## This module provides annotations for object fields that customize

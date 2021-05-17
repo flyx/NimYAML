@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## ==================
-## Module yaml.parser
+## Module yaml/parser
 ## ==================
 ##
 ## This is the low-level parser API. A ``YamlParser`` enables you to parse any

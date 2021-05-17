@@ -1,4 +1,4 @@
-import yaml.serialization, streams
+import yaml/serialization, streams
 type
   Node = ref NodeObj
   NodeObj = object

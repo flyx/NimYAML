@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## =========================
-## Module yaml.serialization
+## Module yaml/serialization
 ## =========================
 ##
 ## This is the most high-level API of NimYAML. It enables you to parse YAML

@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 ## ==================
-## Module yaml.tojson
+## Module yaml/tojson
 ## ==================
 ##
 ## The tojson API enables you to parser a YAML character stream into the JSON
