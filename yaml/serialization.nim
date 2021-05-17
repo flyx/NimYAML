@@ -414,7 +414,7 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
   while s.peek().kind != yamlEndSeq:
     var item: T
     constructChild(s, c, item)
-    result.add(item)
+    result.add(move(item))
   discard s.next()
 
 proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
@@ -530,7 +530,7 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
       raise s.constructionError(event.startPos, "Expected map end, got " & $event.kind)
     if result.contains(key):
       raise s.constructionError(event.startPos, "Duplicate table key!")
-    result.add(key, value)
+    result[move(key)] = move(value)
   discard s.next()
 
 proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
@@ -1292,7 +1292,6 @@ proc representChild*[T](value: Option[T], ts: TagStyle,
   if value.isSome:
     representChild(value.get(), ts, c)
   else:
-    let childTagStyle = if ts == tsRootOnly: tsNone else: ts
     c.put(scalarEvent("~", yTagNull))
 
 proc representChild*[O](value: O, ts: TagStyle,
@@ -1324,7 +1323,7 @@ proc construct*[T](s: var YamlStream, target: var T)
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
     let cur = getCurrentException()
-    var e = newException(YamlStreamError, cur.msg)
+    var e = newException(YamlStreamError, move(cur.msg))
     e.parent = cur.parent
     raise e
   except Exception:

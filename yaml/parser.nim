@@ -448,7 +448,7 @@ proc atBlockIndentationProps(c: Context, e: var Event): bool =
     if c.lex.cur == Token.MapValueInd:
       if c.lex.lastScalarWasMultiline():
         raise c.generateError("Implicit mapping key may not be multiline")
-      c.keyCache.add(e)
+      c.keyCache.add(move(e))
       e = startMapEvent(csBlock, c.headerProps, c.headerStart, headerEnd)
       c.headerProps = defaultProperties
       c.transition(afterImplicitKey)
@@ -502,7 +502,7 @@ proc beforeNodeProperties(c: Context, e: var Event): bool =
   of VerbatimTag:
     if c.inlineProps.tag != yTagQuestionMark:
       raise c.generateError("Only one tag allowed per node")
-    c.inlineProps.tag = Tag(c.lex.evaluated)
+    c.inlineProps.tag = Tag(move(c.lex.evaluated))
   of Token.Anchor:
     if c.inlineProps.anchor != yAnchorNone:
       raise c.generateError("Only one anchor allowed per node")

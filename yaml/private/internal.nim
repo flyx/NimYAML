@@ -53,7 +53,7 @@ proc nextAnchor*(s: var string, i: int) =
       s[i] = 'a'
       nextAnchor(s, i - 1)
   else:
-    inc(s[i])
+    s[i] = char(int(s[i]) + 1)
 
 template resetHandles*(handles: var seq[tuple[handle, uriPrefix: string]]) {.dirty.} =
   handles.setLen(0)
