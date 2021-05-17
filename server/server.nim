@@ -5,7 +5,7 @@
 #    distribution, for details about the copyright.
 
 import jester, asyncdispatch, json, streams, strutils
-import packages.docutils.rstgen, packages.docutils.highlite, options
+import packages/docutils/rstgen, packages/docutils/highlite, options
 import ../yaml
 
 routes:
@@ -57,7 +57,7 @@ routes:
           of gtNone, gtWhitespace:
             highlighted.add(substr(output.data, g.start, g.length + g.start - 1))
           else:
-            highlighted.addf("<span class=\"$2\">$1</span>", "\\span$2{$1}",
+            highlighted.addf("<span class=\"$2\">$1</span>",
               esc(outHtml, substr(output.data, g.start, g.length+g.start-1)),
               tokenClassToStr[g.kind])
 
