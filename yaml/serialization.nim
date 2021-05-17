@@ -1322,10 +1322,7 @@ proc construct*[T](s: var YamlStream, target: var T)
   except YamlConstructionError:
     raise (ref YamlConstructionError)(getCurrentException())
   except YamlStreamError:
-    let cur = getCurrentException()
-    var e = newException(YamlStreamError, move(cur.msg))
-    e.parent = cur.parent
-    raise e
+    raise (ref YamlStreamError)(getCurrentException())
   except Exception:
     # may occur while calling s()
     var ex = newException(YamlStreamError, "")
@@ -1335,11 +1332,11 @@ proc construct*[T](s: var YamlStream, target: var T)
 proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, OSError, YamlParserError].} =
   ## Loads a Nim value from a YAML character stream.
-  var
-    parser = initYamlParser()
-    events = parser.parse(input)
   try:
-    var e = events.next()
+    var
+      parser = initYamlParser()
+      events = parser.parse(input)
+      e = events.next()
     yAssert(e.kind == yamlStartStream)
     construct(events, target)
     e = events.next()

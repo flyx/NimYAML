@@ -15,13 +15,12 @@ template internalError*(s: string) =
     echo "[NimYAML] Error in file ", ii.filename, " at line ", ii.line, ":"
     echo s
     when not defined(JS):
-      echo "[NimYAML] Stacktrace:"
       try:
-        writeStackTrace()
-        let exc = getCurrentException()
-        if not isNil(exc.parent):
-          echo "Internal stacktrace:"
-          echo getStackTrace(exc.parent)
+        var exc = getCurrentException()
+        while not isNil(exc):
+          echo "… stacktrace [", exc.name, ": ", exc.msg, "]"
+          echo getStackTrace(exc)
+          exc = exc.parent
       except: discard
     echo "[NimYAML] Please report this bug."
     quit 1

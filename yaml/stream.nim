@@ -97,6 +97,8 @@ proc next*(s: YamlStream): Event {.raises: [YamlStreamError], gcSafe.} =
     try:
       while true:
         if s.nextImpl(s, result): break
+    except YamlStreamError:
+      raise (ref YamlStreamError)(getCurrentException())
     except Exception:
       let cur = getCurrentException()
       var e = newException(YamlStreamError, cur.msg)
