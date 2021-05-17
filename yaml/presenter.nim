@@ -805,7 +805,8 @@ proc transform*(input: Stream | string, output: Stream,
   ## while resolving non-specific tags to the ones in the YAML core tag
   ## library. If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
   ## be replaced by specific tags according to the YAML core schema.
-  doTransform(genInput(input), output, options, resolveToCoreYamlTags)
+  var c = Context(target: output, options: options)
+  doTransform(c, genInput(input), resolveToCoreYamlTags)
 
 proc transform*(input: Stream | string,
                 options: PresentationOptions = defaultPresentationOptions,
@@ -817,5 +818,8 @@ proc transform*(input: Stream | string,
   ## YAML string that represents the stream. If ``resolveToCoreYamlTags`` is
   ## ``true``, non-specific tags will be replaced by specific tags according to
   ## the YAML core schema.
-  result = ""
-  doTransform(genInput(input), addr result, options, resolveToCoreYamlTags)
+  var
+    ss = newStringStream()
+    c = Context(target: ss, options: options)
+  doTransform(c, genInput(input), resolveToCoreYamlTags)
+  return ss.data
