@@ -9,6 +9,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
+          - windows-latest
           - macOS-latest
         nim-version:
           - stable
@@ -43,6 +44,5 @@ jobs:
     - name: Test
       run: |
         nim lexerTests
-        nim parserTests
         nim jsonTests
         nim domTests
