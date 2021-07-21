@@ -44,7 +44,6 @@ jobs:
     - name: Test
       run: |
         nim lexerTests
-        nim parserTests
         nim quickstartTests
         nim jsonTests
         nim domTests
