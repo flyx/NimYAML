@@ -17,6 +17,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v2
+      with:
+        submodules: true
 
     - name: Cache choosenim
       id: cache-choosenim
@@ -30,7 +32,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.nimble
-        key: ${{ runner.os }}-nimble-${{ matrix.nim-version}}-${{ hashFiles('prologue.nimble') }}
+        key: ${{ runner.os }}-nimble-${{ matrix.nim-version}}-${{ hashFiles('yaml.nimble') }}
         restore-keys: |
           ${{ runner.os }}-nimble-${{ matrix.nim-version}}-
     - name: Setup nim
@@ -44,6 +46,7 @@ jobs:
     - name: Test
       run: |
         nim lexerTests
+        nim parserTests
         nim quickstartTests
         nim jsonTests
         nim domTests
