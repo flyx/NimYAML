@@ -2,7 +2,7 @@
 
 Features:
 
- * Compiles with --gc:arm and --gc:orm
+ * Compiles with --gc:arc and --gc:orc
 
 Bugfixes:
 
