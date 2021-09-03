@@ -13,7 +13,7 @@ jobs:
           - macOS-latest
         nim-version:
           - stable
-          # - devel
+          - devel
     steps:
     - name: Checkout
       uses: actions/checkout@v2
