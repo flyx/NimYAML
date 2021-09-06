@@ -41,6 +41,10 @@ type
     ## parsing, because otherwise this information is not available to the
     ## costruction proc.
 
+  YamlSerializationError* = object of ValueError
+    ## Exception that may be raised when serializing Nim values into YAML
+    ## stream events.
+
 # forward declares
 
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
@@ -72,7 +76,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   ## node which will be resolved using the ``ConstructionContext``.
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext)
-    {.raises: [].}
+    {.raises: [YamlSerializationError].}
   ## Represents an arbitrary Nim reference value as YAML object. The object
   ## may be represented as alias node if it is already present in the
   ## ``SerializationContext``.
@@ -213,14 +217,14 @@ proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
 
 proc representObject*(value: int, tagStyle: TagStyle,
                       c: SerializationContext, tag: Tag)
-    {.raises: [YamlStreamError], inline.}=
+    {.raises: [YamlSerializationError], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
   ## on 64-bit systems, this may cause a RangeDefect.
 
   # currently, sizeof(int) is at least sizeof(int32).
   try: c.put(scalarEvent($int32(value), tag, yAnchorNone))
   except RangeDefect:
-    var e = newException(YamlStreamError, getCurrentExceptionMsg())
+    var e = newException(YamlSerializationError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
 
@@ -260,12 +264,12 @@ proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
   c.put(scalarEvent($value, tag, yAnchorNone))
 
 proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
-    tag: Tag) {.raises: [YamlStreamError], inline.} =
+    tag: Tag) {.raises: [YamlSerializationError], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
   ## to int32. on 64-bit systems, this may cause a RangeDefect.
   try: c.put(scalarEvent($uint32(value), tag, yAnchorNone))
   except RangeDefect:
-    var e = newException(YamlStreamError, getCurrentExceptionMsg())
+    var e = newException(YamlSerializationError, getCurrentExceptionMsg())
     e.parent = getCurrentException()
     raise e
 
@@ -1411,7 +1415,7 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
               handles: seq[tuple[handle, uriPrefix: string]] =
                   @[("!n!", nimyamlTagRepositoryPrefix)])
     {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-               YamlStreamError].} =
+               YamlSerializationError].} =
   ## Dump a Nim value as YAML character stream.
   ## To prevent %TAG directives in the output, give ``handles = @[]``.
   var events = represent(value,
@@ -1426,7 +1430,8 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               options: PresentationOptions = defaultPresentationOptions,
               handles: seq[tuple[handle, uriPrefix: string]] =
                   @[("!n!", nimyamlTagRepositoryPrefix)]):
-    string =
+    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
+                      YamlSerializationError].} =
   ## Dump a Nim value as YAML into a string.
   ## To prevent %TAG directives in the output, give ``handles = @[]``.
   var events = represent(value,
