@@ -133,13 +133,6 @@ proc isPlainSafe(lex: Lexer): bool {.inline.} =
   of flowIndicators: result = lex.flowDepth == 0
   else: result = true
 
-proc lineWithMarker(lex: Lexer, pos: tuple[line, column: int],
-                    marker: bool): string =
-  if pos.line == lex.source.lineNumber:
-    result = lex.source.getCurrentLine(false)
-    if marker: result.add(spaces(pos.column - 1) & "^\n")
-  else: result = ""
-
 # lexer states
 
 {.push gcSafe, locks: 0.}

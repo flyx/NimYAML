@@ -11,7 +11,7 @@
 ## This is the presenter API, used for generating YAML character streams.
 
 import streams, deques, strutils
-import data, taglib, stream, private/internal, hints, parser, stream
+import data, taglib, stream, private/internal, hints, parser
 
 type
   PresentationStyle* = enum
