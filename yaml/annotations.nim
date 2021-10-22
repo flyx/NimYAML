@@ -27,7 +27,8 @@ template sparse*() {.pragma.}
   ## This annotation can be put on an object type. During deserialization,
   ## the input may omit any field that has an ``Option[T]`` type (for any
   ## concrete ``T``) and that field will be treated as if it had the annotation
-  ## ``{.defaultVal: none(T).}``.
+  ## ``{.defaultVal: none(T).}``. Fields of ``none(T)`` value are omitted
+  ## during serialization.
   ##
   ## Example usage:
   ##
