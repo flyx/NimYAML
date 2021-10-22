@@ -967,18 +967,17 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
         name = $child
         childAccessor = newDotExpr(value, newIdentNode(name))
       result.add(quote do:
-        template representChild =
+        template serializeImpl =
           when bool(`isVO`): c.put(startMapEvent())
           c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
               yTagQuestionMark else: yTagNimField, yAnchorNone))
           representChild(`childAccessor`, `childTagStyle`, c)
           when bool(`isVO`): c.put(endMapEvent())
         when not `childAccessor`.hasCustomPragma(transient):
-          when not hasSparse(`t`) or (hasSparse(`t`) and `child` is not Option):
-            representChild()
-          elif hasSparse(`t`) and `child` is Option:
-            if `childAccessor`.isSome:
-              representChild()
+          when hasSparse(`t`) and `child` is Option:
+            if `childAccessor`.isSome: serializeImpl()
+          else:
+            serializeImpl()
       )
     inc(fieldIndex)
 
