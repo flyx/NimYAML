@@ -10,6 +10,7 @@ import lexbase, streams, tables, strutils
 type
   LexerToken = enum
     plusStr, minusStr, plusDoc, minusDoc, plusMap, minusMap, plusSeq, minusSeq,
+    mapBraces, seqBrackets,
     eqVal, eqAli, chevTag, andAnchor, starAnchor, colonContent, sqContent,
     dqContent, litContent, foContent,
     explDirEnd, explDocEnd, noToken
@@ -89,6 +90,18 @@ proc nextToken(lex: var EventLexer): LexerToken =
       lex.content.add(lex.buf[lex.bufpos])
       lex.bufpos.inc()
     result = starAnchor
+  of '{':
+    lex.bufpos.inc()
+    if lex.buf[lex.bufpos] == '}':
+      result = mapBraces
+    else: raise newException(EventStreamError, "Invalid token: {" & lex.buf[lex.bufpos])
+    lex.bufpos.inc()
+  of '[':
+    lex.bufpos.inc()
+    if lex.buf[lex.bufpos] == ']':
+      result = seqBrackets
+    else: raise newException(EventStreamError, "Invalid token: [" & lex.buf[lex.bufpos])
+    lex.bufpos.inc()
   else:
     lex.content = ""
     while lex.buf[lex.bufpos] notin {' ', '\t', '\r', '\l', EndOfFile}:
@@ -210,6 +223,12 @@ proc parseEventStream*(input: Stream): YamlStream =
       of minusSeq: eventStart(yamlEndSeq)
       of eqVal: eventStart(yamlScalar)
       of eqAli: eventStart(yamlAlias)
+      of mapBraces:
+        assertInEvent("braces")
+        curEvent.mapStyle = csFlow
+      of seqBrackets:
+        assertInEvent("brackets")
+        curEvent.seqStyle = csFlow
       of chevTag:
         assertInEvent("tag")
         if curTag() != yTagQuestionMark:

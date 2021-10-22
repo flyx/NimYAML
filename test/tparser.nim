@@ -73,7 +73,7 @@ macro genTests(): untyped =
 
   let errorTests = toHashSet(staticExec("cd " & (absolutePath / "tags" / "error") &
                          " && ls -1d *").splitLines())
-  var ignored = toHashSet([".git", "name", "tags", "meta", "G5U8"]) # G5U8 seems wrong
+  var ignored = toHashSet([".git", "name", "tags", "meta"])
 
   result = newStmtList()
   # walkDir for some crude reason does not work with travis build

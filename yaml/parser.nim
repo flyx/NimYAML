@@ -267,6 +267,8 @@ proc beforeDoc(c: Context, e: var Event): bool =
       c.pushLevel(afterDirectivesEnd, -1)
       return true
     of StreamEnd:
+      if seenDirectives:
+        raise c.generateError("Missing `---` after directives")
       c.popLevel()
       return false
     of Indentation:
