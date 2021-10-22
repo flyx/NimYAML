@@ -316,7 +316,7 @@ proc afterDirectivesEnd(c: Context, e: var Event): bool =
     c.transition(atBlockIndentation)
     c.pushLevel(beforeBlockIndentation)
     return false
-  of DocumentEnd:
+  of DocumentEnd, DirectivesEnd, StreamEnd:
     e = scalarEvent("", c.inlineProps, ssPlain, c.lex.curStartPos, c.lex.curEndPos)
     c.popLevel()
     return true

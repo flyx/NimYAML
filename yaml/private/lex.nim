@@ -398,6 +398,18 @@ proc readPlainScalar(lex: var Lexer) =
             if lex.currentIndentation() <= lex.indentation:
               lex.state = afterNewlineState
               break multilineLoop
+            if lex.c == '\t':
+              while lex.c in space: lex.advance()
+              case lex.c:
+              of '#':
+                lex.endLine()
+                lex.state = lineStart
+                break multilineLoop
+              of '\l', '\c':
+                lex.endLine()
+                newlines += 1
+                continue
+              else: discard
             break newlineLoop
           of lsDirectivesEndMarker:
             lex.state = lineDirEnd
@@ -890,7 +902,9 @@ proc lineStart(lex: var Lexer): bool =
   of lsDocumentEndMarker: lex.lineDocEnd()
   of lsComment, lsNewline: lex.endLine(); false
   of lsStreamEnd: lex.state = streamEnd; false
-  of lsContent: lex.lineIndentation()
+  of lsContent:
+    if lex.flowDepth == 0: lex.lineIndentation()
+    else: lex.flowLineIndentation()
 
 proc flowLineStart(lex: var Lexer): bool =
   var indent: int
@@ -1042,6 +1056,11 @@ proc insideLine(lex: var Lexer): bool =
     lex.readAnchorName()
     lex.endToken()
     lex.cur = Token.Alias
+  of ' ', '\t':
+    while true:
+      lex.advance()
+      if lex.c notin space: break
+    return false
   of '@', '`':
     raise lex.generateError("Reserved character may not start any token")
   else:
