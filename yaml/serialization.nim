@@ -627,13 +627,6 @@ proc checkDuplicate(s: NimNode, tName: string, name: string, i: int,
       newLit("While constructing " & tName & ": Duplicate field: " &
       escape(name))))))
 
-proc addDefaultOr(tName: string, i: int, o: NimNode,
-    field, elseBranch: NimNode): NimNode {.compileTime.} =
-  result = quote do:
-    when `o`.`field`.hasCustomPragma(defaultVal):
-      `o`.`field` = `o`.`field`.getCustomPragmaVal(defaultVal)
-    else: `elseBranch`
-
 proc hasSparse(t: typedesc): bool {.compileTime.} =
   when compiles(t.hasCustomPragma(sparse)):
     return t.hasCustomPragma(sparse)

@@ -1,6 +1,6 @@
 # NimYAML - YAML implementation for Nim
 
-[![Build Status](https://travis-ci.org/flyx/NimYAML.svg?branch=devel)](https://travis-ci.org/flyx/NimYAML)
+![Test Status](https://github.com/flyx/NimYAML/actions/workflows/action.yml/badge.svg)
 
 NimYAML is a pure Nim YAML implementation without any dependencies other than
 Nim's standard library. It enables you to serialize Nim objects to a YAML stream
@@ -15,7 +15,8 @@ available as tags in this repository and can be fetched via nimble:
 
 ## Status
 
-The library is fairly stable, I only maintain it and will not add any features due to lack of time and interest. There are few issues with YAML corner cases in the lexer which you are unlikely to encounter unless you're going for them. Fixing them would mean a larger refactor of the lexer which I am not willing to do.
+The library is fairly stable, I only maintain it and will not add any features due to lack of time and interest. NimYAML passes all tests of the current YAML
+test suite which makes it 100% conformant with YAML 1.2.
 
 PRs for bugs are welcome. If you want to add a feature, you are free to; but be aware that I will not maintain it and am unlikely to review it in depth, so if I accept it, you will be co-maintainer.
 
@@ -50,6 +51,10 @@ When debugging crashes in this library, use the `d:debug` compile flag to enable
 ## License
 
 [MIT][2]
+
+## Support this Project
+
+If you like this project and want to give something back, you can check out GitHub's Sponsor button to the right. This is just an option I provide, not something I request you to do, and I will never nag about it.
 
  [1]: http://flyx.github.io/NimYAML/
  [2]: copying.txt

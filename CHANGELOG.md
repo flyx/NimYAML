@@ -1,3 +1,14 @@
+## 0.16.0
+
+Features:
+
+ * dumping ``sparse`` objects now omits empty ``Option`` fields (#100).
+
+Bugfixes:
+
+ * Fixed several parser errors that emerged from updates on the test suite.
+ * Fixed ``raises`` annotations which could lead to compilation errors (#99).
+
 ## 0.15.0
 
 Features:
