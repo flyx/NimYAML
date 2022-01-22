@@ -326,7 +326,7 @@ proc writeFolded(c: Context, scalar: string, indentation, indentStep: int,
         t.append(newline & newline)
         t.append(repeat(' ', indentation + indentStep))
         curPos = indentation + indentStep
-      elif curPos + (word.finish - word.start) > 80:
+      elif curPos + (word.finish - word.start + 1) > 80:
         t.append(newline)
         t.append(repeat(' ', indentation + indentStep))
         curPos = indentation + indentStep
