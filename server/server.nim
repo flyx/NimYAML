@@ -4,14 +4,14 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import jester, asyncdispatch, json, streams, strutils
+import jester, cligen, asyncdispatch, json, streams, strutils
 import packages/docutils/rstgen, packages/docutils/highlite, options
-import ../yaml
+import ../yaml, server_cfg
 
-routes:
-  get "/":
+router nyRouter:
+  get "/webservice/":
     resp(Http200, [("Content-Type", "text/plain")], "I am a friendly NimYAML parser webservice.")
-  post "/":
+  post "/webservice/":
     var
       style: PresentationStyle
       resultNode = newJObject()
@@ -85,4 +85,11 @@ routes:
       contentType = "text/plain;charset=utf-8"
     headers.add(("Content-Type", contentType))
     resp retStatus, headers, msg
-runForever()
+
+proc main(port = 5000, address = "127.0.0.1") =
+  let settings = newSettings(port=port.Port, bindAddr=address, staticDir=shareDir())
+  var jester = initJester(nyrouter, settings=settings)
+  jester.serve()
+
+when isMainModule:
+  dispatch(main)

@@ -17,7 +17,7 @@
 ## available as source files for automatic testing. This way, we can make sure
 ## that the code in the docs actually works.
 
-import parseopt2, streams, tables, strutils, os, options
+import parseopt2, streams, tables, strutils, os, options, algorithm
 
 var
   infile = ""
@@ -78,10 +78,13 @@ proc outputExamples(curPath: string, level: int = 0) =
 
   # process content files under this directory
 
+  var subdirs = newSeq[string]()
   var codeFiles = newSeq[string]()
   for kind, filePath in walkDir(curPath, true):
     if kind == pcFile:
       if filePath != "title": codeFiles.add(filePath)
+    elif kind == pcDir:
+      subdirs.add(filePath)
   case codeFiles.len
   of 0: discard
   of 1:
@@ -110,9 +113,9 @@ proc outputExamples(curPath: string, level: int = 0) =
 
   # process child directories
 
-  for kind, dirPath in walkDir(curPath):
-    if kind == pcDir:
-      outputExamples(dirPath, level + 1)
+  subdirs.sort()
+  for dirPath in subdirs:
+    outputExamples(curPath / dirPath, level + 1)
 
 var lineNum = 0
 for line in infile.lines():

@@ -35,8 +35,6 @@ nim lexerTests # run lexer tests
 nim parserTests # run parser tests (git-clones yaml-dev-kit)
 nim serializationTests # runs serialization tests
 nim quickstartTests # run tests for quickstart snippets from documentation
-nim documentation # builds documentation to folder docout
-nim server # builds the REST server used for the testing ground
 nim bench # runs benchmarks, requires libyaml
 nim clean # guess
 nim build # build a library
@@ -48,6 +46,20 @@ NimYAML v0.9.1 is the last release to support Nim 0.15.x and 0.16.0.
 
 When debugging crashes in this library, use the `d:debug` compile flag to enable printing of the internal stack traces for calls to `internalError` and `yAssert`.
 
+### Web Documentation
+
+The online documentation on [nimyaml.org](https://nimyaml.org), including the
+testing ground, is generated via [Nix Flake][3] and easily deployable on NixOS.
+Just include the NixOS module in the flake and do
+
+```nix
+services.nimyaml-webdocs.enable = true;
+```
+
+This will run the documentation server locally at `127.0.0.1:5000`. You can
+change the `address` setting to make it public, but I suggest proxying via nginx
+to get HTTPS.
+
 ## License
 
 [MIT][2]
@@ -58,3 +70,4 @@ If you like this project and want to give something back, you can check out GitH
 
  [1]: http://flyx.github.io/NimYAML/
  [2]: copying.txt
+ [3]: https://nixos.wiki/wiki/Flakes

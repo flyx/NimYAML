@@ -74,7 +74,7 @@ updated as you type.
       var params = "style=" + encodeURIComponent(document.querySelector(
         "input[name=style]:checked").value) + "&input=" + encodeURIComponent(
         document.getElementById("yaml-input").value);
-      r.open("POST", "https://nimyaml.org/webservice/", true);
+      r.open("POST", "/webservice/", true);
       r.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
       r.onreadystatechange = function() {
         if (r.readyState == 4) {
