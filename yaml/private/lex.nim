@@ -572,11 +572,10 @@ proc readBlockScalar(lex: var Lexer) =
 
     let markerFollows = lex.currentIndentation() == 0 and
         (lex.dirEndFollows() or lex.docEndFollows())
-    if lex.currentIndentation() > lex.indentation and not markerFollows:
-      if lex.c == '#':
-        lex.state = expectLineEnd
-      else:
-        raise lex.generateError("This line #" & $lex.curStartPos.line & " at " & escape("" & lex.c) & " is less indented than necessary")
+    if lex.c == '#':
+      lex.state = expectLineEnd
+    elif lex.currentIndentation() > lex.indentation and not markerFollows:
+      raise lex.generateError("This line #" & $lex.curStartPos.line & " at " & escape("" & lex.c) & " is less indented than necessary")
     elif lex.currentIndentation() == 0:
       lex.state = lineStart
     else:
