@@ -101,7 +101,7 @@
   in systemDependent // {
     nixosModule = {config, lib, pkg, ...}: with lib; let
       cfg = config.services.nimyaml-webdocs;
-      webdocs = systemDependents.packages.${config.nixpkgs.system}.webdocs;
+      webdocs = systemDependent.packages.${config.nixpkgs.system}.webdocs;
     in {
       options.services.nimyaml-webdocs = {
         enable = mkEnableOption "NimYAML webdocs server";
