@@ -85,6 +85,7 @@ proc outputExamples(curPath: string, level: int = 0) =
       if filePath != "title": codeFiles.add(filePath)
     elif kind == pcDir:
       subdirs.add(filePath)
+  codeFiles.sort()
   case codeFiles.len
   of 0: discard
   of 1:
