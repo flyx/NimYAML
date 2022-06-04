@@ -117,7 +117,7 @@
         };
       };
       config = mkIf cfg.enable {
-        systemd.services.dsa41generator = {
+        systemd.services.nimyaml-webdocs = {
           wantedBy = ["multi-user.target"];
           after = ["network.target"];
           serviceConfig.ExecStart = ''${webdocs}/bin/server --address "${cfg.address}" --port ${toString cfg.port}'';
