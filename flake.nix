@@ -120,7 +120,7 @@
         systemd.services.dsa41generator = {
           wantedBy = ["multi-user.target"];
           after = ["network.target"];
-          serviceConfig.ExecStart = ''${webdocs}/bin/server --address "${cfg.address}" --port ${cfg.port}'';
+          serviceConfig.ExecStart = ''${webdocs}/bin/server --address "${cfg.address}" --port ${toString cfg.port}'';
         };
       };
     };
