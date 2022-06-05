@@ -32,7 +32,7 @@ type
   YamlNodeKind* = enum
     yScalar, yMapping, ySequence
 
-  YamlNode* = ref YamlNodeObj not nil
+  YamlNode* = ref YamlNodeObj
     ## Represents a node in a ``YamlDocument``.
 
   YamlNodeObj* = object
@@ -44,6 +44,7 @@ type
       # compiler does not like Table[YamlNode, YamlNode]
 
   YamlDocument* = object
+    {.deprecated: "use YamlNode with serialization API instead".}
     ## Represents a YAML document.
     root*: YamlNode
 
@@ -135,8 +136,9 @@ proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
 proc initYamlDoc*(root: YamlNode): YamlDocument =
   result = YamlDocument(root: root)
 
-proc composeNode(s: var YamlStream, c: ConstructionContext):
-    YamlNode {.raises: [YamlStreamError, YamlConstructionError].} =
+proc constructChild*(s: var YamlStream, c: ConstructionContext,
+                     result: var YamlNode)
+    {.raises: [YamlStreamError, YamlConstructionError].} =
   template addAnchor(c: ConstructionContext, target: Anchor) =
     if target != yAnchorNone:
       yAssert(not c.refs.hasKey(target))
@@ -144,77 +146,55 @@ proc composeNode(s: var YamlStream, c: ConstructionContext):
 
   var start: Event
   shallowCopy(start, s.next())
-  new(result)
-  try:
-    case start.kind
-    of yamlStartMap:
-      result = YamlNode(tag: start.mapProperties.tag,
-                        kind: yMapping,
-                        fields: newTable[YamlNode, YamlNode]())
-      while s.peek().kind != yamlEndMap:
-        let
-          key = composeNode(s, c)
-          value = composeNode(s, c)
-        if result.fields.hasKeyOrPut(key, value):
-          raise newException(YamlConstructionError,
-              "Duplicate key: " & $key)
-      discard s.next()
-      addAnchor(c, start.mapProperties.anchor)
-    of yamlStartSeq:
-      result = YamlNode(tag: start.seqProperties.tag,
-                        kind: ySequence,
-                        elems: newSeq[YamlNode]())
-      while s.peek().kind != yamlEndSeq:
-        result.elems.add(composeNode(s, c))
-      addAnchor(c, start.seqProperties.anchor)
-      discard s.next()
-    of yamlScalar:
-      result = YamlNode(tag: start.scalarProperties.tag,
-                        kind: yScalar)
-      shallowCopy(result.content, start.scalarContent)
-      addAnchor(c, start.scalarProperties.anchor)
-    of yamlAlias:
-      result = cast[YamlNode](c.refs[start.aliasTarget].p)
-    else: internalError("Malformed YamlStream")
-  except KeyError:
-    raise newException(YamlConstructionError,
-                       "Wrong tag library: TagId missing")
+
+  case start.kind
+  of yamlStartMap:
+    result = YamlNode(tag: start.mapProperties.tag,
+                      kind: yMapping,
+                      fields: newTable[YamlNode, YamlNode]())
+    while s.peek().kind != yamlEndMap:
+      var
+        key: YamlNode = nil
+        value: YamlNode = nil
+      constructChild(s, c, key)
+      constructChild(s, c, value)
+      if result.fields.hasKeyOrPut(key, value):
+        raise newException(YamlConstructionError,
+            "Duplicate key: " & $key)
+    discard s.next()
+    addAnchor(c, start.mapProperties.anchor)
+  of yamlStartSeq:
+    result = YamlNode(tag: start.seqProperties.tag,
+                      kind: ySequence,
+                      elems: newSeq[YamlNode]())
+    while s.peek().kind != yamlEndSeq:
+      var item: YamlNode = nil
+      constructChild(s, c, item)
+      result.elems.add(item)
+    addAnchor(c, start.seqProperties.anchor)
+    discard s.next()
+  of yamlScalar:
+    result = YamlNode(tag: start.scalarProperties.tag,
+                      kind: yScalar)
+    shallowCopy(result.content, start.scalarContent)
+    addAnchor(c, start.scalarProperties.anchor)
+  of yamlAlias:
+    result = cast[YamlNode](c.refs.getOrDefault(start.aliasTarget).p)
+  else: internalError("Malformed YamlStream")
 
 proc compose*(s: var YamlStream): YamlDocument
-    {.raises: [YamlStreamError, YamlConstructionError].} =
-  var context = newConstructionContext()
-  var n: Event
-  shallowCopy(n, s.next())
-  yAssert n.kind == yamlStartDoc
-  result = YamlDocument(root: composeNode(s, context))
-  n = s.next()
-  yAssert n.kind == yamlEndDoc
+    {.raises: [YamlStreamError, YamlConstructionError],
+      deprecated: "use construct(s, root) instead".} =
+  construct(s, result.root)
 
 proc loadDom*(s: Stream | string): YamlDocument
-    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
-  var
-    parser = initYamlParser()
-    events = parser.parse(s)
-    e: Event
-  try:
-    e = events.next()
-    yAssert(e.kind == yamlStartStream)
-    result = compose(events)
-    e = events.next()
-    if e.kind != yamlEndStream:
-      raise newYamlConstructionError(events, e.startPos, "stream contains multiple documents")
-  except YamlStreamError:
-    let ex = getCurrentException()
-    if ex.parent of YamlParserError:
-      raise (ref YamlParserError)(ex.parent)
-    elif ex.parent of IOError:
-      raise (ref IOError)(ex.parent)
-    elif ex.parent of OSError:
-      raise (ref OSError)(ex.parent)
-    else: internalError("Unexpected exception: " & ex.parent.repr)
+    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError]
+      deprecated: "use loadAs[YamlNode](s) instead".} =
+  load(s, result.root)
 
 proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
-    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError].} =
+    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError]
+      deprecated: "use loadMultiDoc[YamlNode](s, target) instead".} =
   var
     parser = initYamlParser(tagLib)
     events = parser.parse(s)
@@ -236,68 +216,33 @@ proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
       raise (ref OSError)(ex.parent)
     else: internalError("Unexpected exception: " & ex.parent.repr)
 
-proc serializeNode(n: YamlNode, c: SerializationContext, a: AnchorStyle)
-    {.raises: [].}=
-  var anchor = yAnchorNone
-  let p = cast[pointer](n)
-  if a != asNone and c.refs.hasKey(p):
-    anchor = c.refs.getOrDefault(p).a
-    c.refs[p] = (anchor, true)
-    c.put(aliasEvent(anchor))
-    return
-  if a != asNone:
-    anchor = c.nextAnchorId.Anchor
-    c.refs[p] = (c.nextAnchorId.Anchor, false)
-    nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
-
-  case n.kind
-  of yScalar: c.put(scalarEvent(n.content, n.tag, anchor))
+proc representChild*(value: YamlNodeObj, ts: TagStyle,
+                     c: SerializationContext) =
+  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+  case value.kind
+  of yScalar: c.put(scalarEvent(value.content, value.tag))
   of ySequence:
-    c.put(startSeqEvent(csBlock, (anchor, n.tag)))
-    for item in n.elems:
-      serializeNode(item, c, a)
+    c.put(startSeqEvent(tag = value.tag))
+    for item in value.elems: representChild(item, childTagStyle, c)
     c.put(endSeqEvent())
   of yMapping:
-    c.put(startMapEvent(csBlock, (anchor, n.tag)))
-    for key, value in n.fields.pairs:
-      serializeNode(key, c, a)
-      serializeNode(value, c, a)
+    c.put(startMapEvent(tag = value.tag))
+    for key, value in value.fields.pairs:
+      representChild(key, childTagStyle, c)
+      representChild(value, childTagStyle, c)
     c.put(endMapEvent())
 
-proc serialize*(doc: YamlDocument, a: AnchorStyle = asTidy):
-    YamlStream {.raises: [].} =
-  var
-    bys = newBufferYamlStream()
-    c = newSerializationContext(a, proc(e: Event) {.raises: [].} =
-      bys.put(e)
-    )
-  c.put(startStreamEvent())
-  c.put(startDocEvent())
-  serializeNode(doc.root, c, a)
-  c.put(endDocEvent())
-  c.put(endStreamEvent())
-  if a == asTidy:
-    var ctx = initAnchorContext()
-    for event in bys.mitems():
-      case event.kind
-      of yamlScalar: ctx.process(event.scalarProperties, c.refs)
-      of yamlStartMap: ctx.process(event.mapProperties, c.refs)
-      of yamlStartSeq: ctx.process(event.seqProperties, c.refs)
-      of yamlAlias:
-        event.aliasTarget = ctx.map(event.aliasTarget)
-      else: discard
-  result = bys
+proc serialize*(doc: YamlDocument, a: AnchorStyle = asTidy): YamlStream
+    {.deprecated: "use represent[YamlNode] instead".} =
+  result = represent(doc.root, tsAll, a = a, handles = @[])
 
 proc dumpDom*(doc: YamlDocument, target: Stream,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions)
-    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-               YamlStreamError].} =
+    {.deprecated: "use dump[YamlNode] instead".} =
   ## Dump a YamlDocument as YAML character stream.
-  var
-    events = serialize(doc,
-                       if options.style == psJson: asNone else: anchorStyle)
-  present(events, target, options)
+  dump(doc.root, target, tsAll, anchorStyle = anchorStyle, options = options,
+       handles = @[])
 
 proc `[]`*(node: YamlNode, i: int): YamlNode =
   ## Get the node at index *i* from a sequence. *node* must be a *ySequence*.

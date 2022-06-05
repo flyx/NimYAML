@@ -1340,6 +1340,8 @@ proc load*[K](input: Stream | string, target: var K)
       events = parser.parse(input)
       e = events.next()
     yAssert(e.kind == yamlStartStream)
+    if events.peek().kind != yamlStartDoc:
+      raise constructionError(events, e.startPos, "stream contains no documents")
     construct(events, target)
     e = events.next()
     if e.kind != yamlEndStream:

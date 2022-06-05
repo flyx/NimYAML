@@ -1,3 +1,17 @@
+## 1.0.0 (upcoming)
+
+Features:
+
+ * ``YamlNode`` can now be used with the serialization API (``load`` / ``dump``)
+   and can be used to hold substructures that should not be deserialized to
+   native types (#48).
+
+Bufgixes:
+
+ * Raise a proper exception when a stream contains no documents but one is
+   expected (#108)
+ * Comments after a block scalar do not lead to a crash anymore (#106)
+
 ## 0.16.0
 
 Features:

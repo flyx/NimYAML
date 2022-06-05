@@ -95,3 +95,29 @@ suite "DOM":
            scalarEvent("a", anchor = "b".Anchor),
            scalarEvent("b", anchor="c".Anchor), aliasEvent("b".Anchor),
            endSeqEvent(), endDocEvent(), endStreamEvent())
+  test "Deserialize parts of the input into YamlNode":
+    let
+      input = "a: b\nc: [d, e]"
+    type Root = object
+      a: string
+      c: YamlNode
+    var result = loadAs[Root](input)
+    assert result.a == "b"
+    assert result.c.kind == ySequence
+    assert result.c.len == 2
+    assert result.c[0].kind == yScalar
+    assert result.c[0].content == "d"
+    assert result.c[1].kind == yScalar
+    assert result.c[1].content == "e"
+  test "Serialize value that contains a YamlNode":
+    type Root = object
+      a: string
+      c: YamlNode
+    let value = Root(
+      a: "b",
+      c: newYamlNode([newYamlNode("d"), newYamlNode("e")]))
+    var result = represent(value, tsNone, handles = @[])
+    ensure(result, startStreamEvent(), startDocEvent(), startMapEvent(),
+      scalarEvent("a"), scalarEvent("b"), scalarEvent("c"), startSeqEvent(),
+      scalarEvent("d"), scalarEvent("e"), endSeqEvent(), endMapEvent(),
+      endDocEvent(), endStreamEvent())
