@@ -551,7 +551,7 @@ proc readBlockScalar(lex: var Lexer) =
             break body
           else:
             if lex.currentIndentation() < indent or
-                (indent == 0 and lex.dirEndFollows() or lex.docEndFollows()):
+                (indent == 0 and (lex.dirEndFollows() or lex.docEndFollows())):
               break content
             if lex.cur == Token.Folded and lex.c in space:
               moreIndented = true
