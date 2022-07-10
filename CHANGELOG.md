@@ -1,4 +1,4 @@
-## 1.0.0 (upcoming)
+## 1.0.0
 
 Features:
 
@@ -6,11 +6,13 @@ Features:
    and can be used to hold substructures that should not be deserialized to
    native types (#48).
 
-Bufgixes:
+Bugfixes:
 
  * Raise a proper exception when a stream contains no documents but one is
    expected (#108)
  * Comments after a block scalar do not lead to a crash anymore (#106)
+ * Fixed an error with parsing document end markers (#115)
+ * Fixed an error when serializing block scalars (#105)
 
 ## 0.16.0
 
