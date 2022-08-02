@@ -26,6 +26,10 @@ import data, stream, taglib, serialization, private/internal, parser,
 when defined(gcArc) and not defined(gcOrc):
   {.error: "NimYAML's DOM API only supports ORC because ARC can't deal with cycles".}
 
+const
+  defaultMark: Mark = (1.Positive, 1.Positive) ## \
+    ## used for events that are not generated from input.
+
 when defined(nimNoNil):
     {.experimental: "notnil".}
 type
@@ -37,10 +41,17 @@ type
 
   YamlNodeObj* = object
     tag*: Tag
+    startPos*, endPos*: Mark
     case kind*: YamlNodeKind
-    of yScalar: content*: string
-    of ySequence: elems*: seq[YamlNode]
-    of yMapping: fields*: TableRef[YamlNode, YamlNode]
+    of yScalar:
+      content*    : string
+      scalarStyle*: ScalarStyle
+    of ySequence:
+      elems*   : seq[YamlNode]
+      seqStyle*: CollectionStyle
+    of yMapping:
+      fields*  : TableRef[YamlNode, YamlNode]
+      mapStyle*: CollectionStyle
       # compiler does not like Table[YamlNode, YamlNode]
 
   YamlDocument* = object
@@ -122,16 +133,23 @@ proc `$`*(n: YamlNode): string =
     result.setLen(result.len - 1)
     result[^1] = '}'
 
-proc newYamlNode*(content: string, tag: Tag = yTagQuestionMark): YamlNode =
-  YamlNode(kind: yScalar, content: content, tag: tag)
+proc newYamlNode*(content: string, tag: Tag = yTagQuestionMark,
+    style: ScalarStyle = ssAny,
+    startPos, endPos: Mark = defaultMark): YamlNode =
+  YamlNode(kind: yScalar, content: content, tag: tag,
+      startPos: startPos, endPos: endPos)
 
-proc newYamlNode*(elems: openarray[YamlNode], tag: Tag = yTagQuestionMark):
-    YamlNode =
-  YamlNode(kind: ySequence, elems: @elems, tag: tag)
+proc newYamlNode*(elems: openarray[YamlNode], tag: Tag = yTagQuestionMark,
+    style: CollectionStyle = csAny,
+    startPos, endPos: Mark = defaultMark): YamlNode =
+  YamlNode(kind: ySequence, elems: @elems, tag: tag,
+      startPos: startPos, endPos: endPos)
 
 proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
-                  tag: Tag = yTagQuestionMark): YamlNode =
-  YamlNode(kind: yMapping, fields: newTable(fields), tag: tag)
+    tag: Tag = yTagQuestionMark, style: CollectionStyle = csAny,
+    startPos, endPos: Mark = defaultMark): YamlNode =
+  YamlNode(kind: yMapping, fields: newTable(fields), tag: tag,
+      startPos: startPos, endPos: endPos)
 
 proc initYamlDoc*(root: YamlNode): YamlDocument =
   result = YamlDocument(root: root)
@@ -151,7 +169,9 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
   of yamlStartMap:
     result = YamlNode(tag: start.mapProperties.tag,
                       kind: yMapping,
-                      fields: newTable[YamlNode, YamlNode]())
+                      fields: newTable[YamlNode, YamlNode](),
+                      mapStyle: start.mapStyle,
+                      startPos: start.startPos, endPos: start.endPos)
     while s.peek().kind != yamlEndMap:
       var
         key: YamlNode = nil
@@ -166,7 +186,9 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
   of yamlStartSeq:
     result = YamlNode(tag: start.seqProperties.tag,
                       kind: ySequence,
-                      elems: newSeq[YamlNode]())
+                      elems: newSeq[YamlNode](),
+                      seqStyle: start.seqStyle,
+                      startPos: start.startPos, endPos: start.endPos)
     while s.peek().kind != yamlEndSeq:
       var item: YamlNode = nil
       constructChild(s, c, item)
@@ -175,7 +197,8 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
     discard s.next()
   of yamlScalar:
     result = YamlNode(tag: start.scalarProperties.tag,
-                      kind: yScalar)
+                      kind: yScalar, scalarStyle: start.scalarStyle,
+                      startPos: start.startPos, endPos: start.endPos)
     shallowCopy(result.content, start.scalarContent)
     addAnchor(c, start.scalarProperties.anchor)
   of yamlAlias:
@@ -220,13 +243,17 @@ proc representChild*(value: YamlNodeObj, ts: TagStyle,
                      c: SerializationContext) =
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   case value.kind
-  of yScalar: c.put(scalarEvent(value.content, value.tag))
+  of yScalar:
+    c.put(scalarEvent(value.content, value.tag, style = value.scalarStyle,
+        startPos = value.startPos, endPos = value.endPos))
   of ySequence:
-    c.put(startSeqEvent(tag = value.tag))
+    c.put(startSeqEvent(tag = value.tag, style = value.seqStyle,
+        startPos = value.startPos, endPos = value.endPos))
     for item in value.elems: representChild(item, childTagStyle, c)
     c.put(endSeqEvent())
   of yMapping:
-    c.put(startMapEvent(tag = value.tag))
+    c.put(startMapEvent(tag = value.tag, style = value.mapStyle,
+        startPos = value.startPos, endPos = value.endPos))
     for key, value in value.fields.pairs:
       representChild(key, childTagStyle, c)
       representChild(value, childTagStyle, c)
