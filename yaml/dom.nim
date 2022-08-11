@@ -54,8 +54,7 @@ type
       mapStyle*: CollectionStyle
       # compiler does not like Table[YamlNode, YamlNode]
 
-  YamlDocument* = object
-    {.deprecated: "use YamlNode with serialization API instead".}
+  YamlDocument* {.deprecated: "use YamlNode with serialization API instead".} = object
     ## Represents a YAML document.
     root*: YamlNode
 
