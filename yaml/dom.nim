@@ -162,7 +162,10 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
       c.refs[target] = (tag: yamlTag(YamlNode), p: cast[pointer](result))
 
   var start: Event
-  shallowCopy(start, s.next())
+  when defined(gcArc) or defined(gcOrc):
+    start = s.next()
+  else:
+    shallowCopy(start, s.next())
 
   case start.kind
   of yamlStartMap:
@@ -198,7 +201,10 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
     result = YamlNode(tag: start.scalarProperties.tag,
                       kind: yScalar, scalarStyle: start.scalarStyle,
                       startPos: start.startPos, endPos: start.endPos)
-    shallowCopy(result.content, start.scalarContent)
+    when defined(gcArc) or defined(gcOrc):
+      result.content = move start.scalarContent
+    else:
+      shallowCopy(result.content, start.scalarContent)
     addAnchor(c, start.scalarProperties.anchor)
   of yamlAlias:
     result = cast[YamlNode](c.refs.getOrDefault(start.aliasTarget).p)
