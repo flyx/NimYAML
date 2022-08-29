@@ -105,14 +105,14 @@ proc next*(s: YamlStream): Event {.raises: [YamlStreamError], gcSafe.} =
       e.parent = cur
       raise e
 
-proc peek*(s: YamlStream): Event {.raises: [YamlStreamError].} =
+proc peek*(s: YamlStream): lent Event {.raises: [YamlStreamError].} =
   ## Get the next item of the stream without advancing the stream.
   ## Requires ``finished(s) == true``. Handles exceptions of the backend like
   ## ``next()``.
   if not s.peeked:
     s.cached = s.next()
     s.peeked = true
-  shallowCopy(result, s.cached)
+  result = s.cached
 
 proc `peek=`*(s: YamlStream, value: Event) {.raises: [].} =
   ## Set the next item of the stream. Will replace a previously peeked item,

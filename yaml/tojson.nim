@@ -21,7 +21,7 @@ type Level = tuple[node: JsonNode, key: string, expKey: bool]
 proc initLevel(node: JsonNode): Level {.raises: [].} =
   (node: node, key: "", expKey: true)
 
-proc jsonFromScalar(content: string, tag: Tag): JsonNode
+proc jsonFromScalar(content: sink string, tag: Tag): JsonNode
    {.raises: [YamlConstructionError].}=
   new(result)
   var mappedType: TypeHint
@@ -66,7 +66,10 @@ proc jsonFromScalar(content: string, tag: Tag): JsonNode
       result = JsonNode(kind: JNull)
     else:
       result = JsonNode(kind: JString)
-      shallowCopy(result.str, content)
+      when defined(gcArc) or defined(gcOrc):
+        result.str = content
+      else:
+        shallowCopy(result.str, content)
   except ValueError:
     var e = newException(YamlConstructionError, "Cannot parse numeric value")
     e.parent = getCurrentException()
