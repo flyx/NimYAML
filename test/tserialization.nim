@@ -147,7 +147,7 @@ suite "Serialization":
   test "Dump integer without fixed length":
     var input = -4247
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\n\"-4247\"", output
+    assertStringEqual yamlDirs & "\n\"-4247\"\n", output
 
     when sizeof(int) == sizeof(int64):
       input = int(int32.high) + 1
@@ -232,7 +232,7 @@ suite "Serialization":
   test "Dump string sequence":
     var input = @["a", "b"]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\n- a\n- b", output
+    assertStringEqual yamlDirs & "\n- a\n- b\n", output
 
   test "Load char set":
     let input = "- a\n- b"
@@ -245,7 +245,7 @@ suite "Serialization":
   test "Dump char set":
     var input = {'a', 'b'}
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\n- a\n- b", output
+    assertStringEqual yamlDirs & "\n- a\n- b\n", output
 
   test "Load array":
     let input = "- 23\n- 42\n- 47"
@@ -258,7 +258,7 @@ suite "Serialization":
   test "Dump array":
     let input = [23'i32, 42'i32, 47'i32]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\n- 23\n- 42\n- 47", output
+    assertStringEqual yamlDirs & "\n- 23\n- 42\n- 47\n", output
 
   test "Load Option":
     let input = "- Some\n- !!null ~"
@@ -271,7 +271,7 @@ suite "Serialization":
   test "Dump Option":
     let input = [none(int32), some(42'i32), none(int32)]
     let output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\n- !!null ~\n- 42\n- !!null ~", output
+    assertStringEqual yamlDirs & "\n- !!null ~\n- 42\n- !!null ~\n", output
 
   test "Load Table[int, string]":
     let input = "23: dreiundzwanzig\n42: zweiundvierzig"
@@ -286,7 +286,7 @@ suite "Serialization":
     input[23] = "dreiundzwanzig"
     input[42] = "zweiundvierzig"
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual(yamlDirs & "\n23: dreiundzwanzig\n42: zweiundvierzig",
+    assertStringEqual(yamlDirs & "\n23: dreiundzwanzig\n42: zweiundvierzig\n",
         output)
 
   test "Load OrderedTable[tuple[int32, int32], string]":
@@ -321,7 +321,7 @@ suite "Serialization":
         "  ? \n" &
         "    a: 13\n" &
         "    b: 47\n" &
-        "  : dreizehnsiebenundvierzig", output)
+        "  : dreizehnsiebenundvierzig\n", output)
 
   test "Load Sequences in Sequence":
     let input = " - [1, 2, 3]\n - [4, 5]\n - [6]"
@@ -335,7 +335,7 @@ suite "Serialization":
   test "Dump Sequences in Sequence":
     let input = @[@[1.int32, 2.int32, 3.int32], @[4.int32, 5.int32], @[6.int32]]
     var output = dump(input, tsNone)
-    assertStringEqual yamlDirs & "\n- [1, 2, 3]\n- [4, 5]\n- [6]", output
+    assertStringEqual yamlDirs & "\n- [1, 2, 3]\n- [4, 5]\n- [6]\n", output
 
   test "Load Enum":
     let input =
@@ -350,7 +350,7 @@ suite "Serialization":
   test "Dump Enum":
     let input = @[tlRed, tlGreen, tlYellow]
     var output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\n- tlRed\n- tlGreen\n- tlYellow", output
+    assertStringEqual yamlDirs & "\n- tlRed\n- tlGreen\n- tlYellow\n", output
 
   test "Load Tuple":
     let input = "str: value\ni: 42\nb: true"
@@ -363,7 +363,7 @@ suite "Serialization":
   test "Dump Tuple":
     let input = (str: "value", i: 42.int32, b: true)
     var output = dump(input, tsNone)
-    assertStringEqual yamlDirs & "\nstr: value\ni: 42\nb: true", output
+    assertStringEqual yamlDirs & "\nstr: value\ni: 42\nb: true\n", output
 
   test "Load Tuple - unknown field":
     let input = "str: value\nfoo: bar\ni: 42\nb: true"
@@ -410,7 +410,7 @@ suite "Serialization":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
-        "\nfirstnamechar: P\nsurname: Pan\nage: 12", output)
+        "\nfirstnamechar: P\nsurname: Pan\nage: 12\n", output)
 
   test "Load custom object - unknown field":
     let input = "  firstnamechar: P\n  surname: Pan\n  age: 12\n  occupation: free"
@@ -442,7 +442,7 @@ suite "Serialization":
     let input = @["one", "two"]
     var output = dump(input, tsAll, asTidy, blockOnly)
     assertStringEqual(yamlDirs & "!n!system:seq(" &
-        "tag:yaml.org;2002:str) \n- !!str one\n- !!str two", output)
+        "tag:yaml.org;2002:str) \n- !!str one\n- !!str two\n", output)
 
   test "Load custom object with explicit root tag":
     let input =
@@ -457,7 +457,7 @@ suite "Serialization":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
-        "!n!custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12", output)
+        "!n!custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12\n", output)
 
   test "Load custom variant object":
     let input =
@@ -491,7 +491,7 @@ suite "Serialization":
         "  - \n" &
         "    kind: akDog\n" &
         "  - \n" &
-        "    barkometer: 13", output
+        "    barkometer: 13\n", output
 
   test "Load custom variant object - missing field":
     let input = "[{name: Bastet}, {kind: akCat}]"
@@ -517,7 +517,7 @@ suite "Serialization":
   test "Dump non-variant object with transient fields":
     let input = NonVariantWithTransient(a: "a", b: "b", c: "c", d: "d")
     let output = dump(input, tsNone, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "\nb: b\nd: d", output
+    assertStringEqual yamlDirs & "\nb: b\nd: d\n", output
 
   test "Load variant object with transient fields":
     let input = "[[gStorable: gs, kind: deA, cStorable: cs], [gStorable: a, kind: deC]]"
@@ -554,7 +554,7 @@ suite "Serialization":
         "  - \n" &
         "    gStorable: a\n" &
         "  - \n" &
-        "    kind: deC", output
+        "    kind: deC\n", output
 
   test "Load object with ignored key":
     let input = "[{x: 1, y: 2}, {x: 3, z: 4, y: 5}, {z: [1, 2, 3], x: 4, y: 5}]"
@@ -590,7 +590,7 @@ suite "Serialization":
           "  value: b\n" &
           "  next: \n" &
           "    value: c\n" &
-          "    next: *a", output
+          "    next: *a\n", output
 
     test "Load cyclic data structure":
       let input = yamlDirs & """!n!system:seq(example.net:Node)
@@ -652,4 +652,4 @@ suite "Serialization":
     assertStringEqual yamlDirs & "!n!system:seq(test:BetterInt) \n" &
         "- !test:BetterInt 1\n" &
         "- !test:BetterInt 9_998_887\n" &
-        "- !test:BetterInt 98_312", output
+        "- !test:BetterInt 98_312\n", output

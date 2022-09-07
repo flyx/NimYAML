@@ -10,7 +10,7 @@
 ##
 ## This is the presenter API, used for generating YAML character streams.
 
-import streams, deques, strutils
+import std / [streams, deques, strutils, options]
 import data, taglib, stream, private/internal, hints, parser
 
 type
@@ -85,6 +85,7 @@ type
     indentationStep*: int
     newlines*: NewLineStyle
     outputVersion*: OutputYamlVersion
+    maxLineLength*: Option[int]
 
   YamlPresenterJsonError* = object of ValueError
     ## Exception that may be raised by the YAML presenter when it is
@@ -116,17 +117,19 @@ type
 const
   defaultPresentationOptions* =
     PresentationOptions(style: psDefault, indentationStep: 2,
-                            newlines: nlOSDefault)
+                        newlines: nlOSDefault, maxLineLength: some(80))
 
 proc defineOptions*(style: PresentationStyle = psDefault,
                     indentationStep: int = 2,
                     newlines: NewLineStyle = nlOSDefault,
-                    outputVersion: OutputYamlVersion = ov1_2):
+                    outputVersion: OutputYamlVersion = ov1_2,
+                    maxLineLength: Option[int] = some(80)):
     PresentationOptions {.raises: [].} =
   ## Define a set of options for presentation. Convenience proc that requires
   ## you to only set those values that should not equal the default.
   PresentationOptions(style: style, indentationStep: indentationStep,
-                      newlines: newlines, outputVersion: outputVersion)
+                      newlines: newlines, outputVersion: outputVersion,
+                      maxLineLength: maxLineLength)
 
 proc state(c: Context): DumperState = c.levels[^1]
 
@@ -147,7 +150,8 @@ proc searchHandle(c: Context, tag: string):
         result.handle = item.handle
 
 proc inspect(scalar: string, indentation: int,
-             words, lines: var seq[tuple[start, finish: int]]):
+             words, lines: var seq[tuple[start, finish: int]],
+             lineLength: Option[int]):
     ScalarStyle {.raises: [].} =
   var
     inLine = false
@@ -177,7 +181,8 @@ proc inspect(scalar: string, indentation: int,
     of '\l':
       canUsePlain = false     # we don't use multiline plain scalars
       curWord.finish = i - 1
-      if curWord.finish - curWord.start + 1 > 80 - indentation:
+      if lineLength.isSome and
+         curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
         return if canUsePlain: sPlain else: sDoubleQuoted
       words.add(curWord)
       inWord = false
@@ -186,7 +191,8 @@ proc inspect(scalar: string, indentation: int,
       if not inLine: curLine.start = i
       inLine = false
       curLine.finish = i - 1
-      if curLine.finish - curLine.start + 1 > 80 - indentation:
+      if lineLength.isSome and
+         curLine.finish - curLine.start + 1 > lineLength.get() - indentation:
         canUseLiteral = false
       lines.add(curLine)
     else:
@@ -197,7 +203,8 @@ proc inspect(scalar: string, indentation: int,
         inLine = true
       if not inWord:
         if not multipleSpaces:
-          if curWord.finish - curWord.start + 1 > 80 - indentation:
+          if lineLength.isSome and
+             curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
             return if canUsePlain: sPlain else: sDoubleQuoted
           words.add(curWord)
         curWord.start = i
@@ -205,15 +212,17 @@ proc inspect(scalar: string, indentation: int,
         multipleSpaces = false
   if inWord:
     curWord.finish = scalar.len - 1
-    if curWord.finish - curWord.start + 1 > 80 - indentation:
+    if lineLength.isSome and
+       curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
       return if canUsePlain: sPlain else: sDoubleQuoted
     words.add(curWord)
   if inLine:
     curLine.finish = scalar.len - 1
-    if curLine.finish - curLine.start + 1 > 80 - indentation:
+    if lineLength.isSome and
+       curLine.finish - curLine.start + 1 > lineLength.get() - indentation:
       canUseLiteral = false
     lines.add(curLine)
-  if scalar.len <= 80 - indentation:
+  if lineLength.isNone or scalar.len <= lineLength.get() - indentation:
     result = if canUsePlain: sPlain else: sDoubleQuoted
   elif canUseLiteral: result = sLiteral
   elif canUseFolded: result = sFolded
@@ -227,7 +236,7 @@ template append(target: ptr[string], val: string | char) =
   target[].add(val)
 
 proc writeDoubleQuoted(c: Context, scalar: string, indentation: int,
-                       newline: string)
+                       newline: string, lineLength: Option[int])
             {.raises: [YamlPresenterOutputError].} =
   var curPos = indentation
   let t = c.target
@@ -235,7 +244,7 @@ proc writeDoubleQuoted(c: Context, scalar: string, indentation: int,
     t.append('"')
     curPos.inc()
     for c in scalar:
-      if curPos == 79:
+      if lineLength.isSome and curPos == lineLength.get() - 1:
         t.append('\\')
         t.append(newline)
         t.append(repeat(' ', indentation))
@@ -316,17 +325,19 @@ proc writeFolded(c: Context, scalar: string, indentation, indentStep: int,
                  newline: string)
     {.raises: [YamlPresenterOutputError].} =
   let t = c.target
+  let lineLength = (
+    if c.options.maxLineLength.isSome: c.options.maxLineLength.get() else: 1024)
   try:
     t.append(">")
     if scalar[^1] != '\l': t.append('-')
     if scalar[0] in [' ', '\t']: t.append($indentStep)
-    var curPos = 80
+    var curPos = lineLength
     for word in words:
       if word.start > 0 and scalar[word.start - 1] == '\l':
         t.append(newline & newline)
         t.append(repeat(' ', indentation + indentStep))
         curPos = indentation + indentStep
-      elif curPos + (word.finish - word.start + 1) > 80:
+      elif curPos + (word.finish - word.start + 1) > lineLength:
         t.append(newline)
         t.append(repeat(' ', indentation + indentStep))
         curPos = indentation + indentStep
@@ -528,18 +539,21 @@ proc doPresent(c: var Context, s: var YamlStream) =
         else: c.writeDoubleQuotedJson(item.scalarContent)
       elif c.options.style == psCanonical:
         c.writeDoubleQuoted(item.scalarContent,
-                          indentation + c.options.indentationStep, newline)
+                          indentation + c.options.indentationStep, newline,
+                          c.options.maxLineLength)
       else:
         var words, lines = newSeq[tuple[start, finish: int]]()
         case item.scalarContent.inspect(
-            indentation + c.options.indentationStep, words, lines)
+            indentation + c.options.indentationStep, words, lines,
+            c.options.maxLineLength)
         of sLiteral: c.writeLiteral(item.scalarContent, indentation,
                         c.options.indentationStep, lines, newline)
         of sFolded: c.writeFolded(item.scalarContent, indentation,
                         c.options.indentationStep, words, newline)
         of sPlain: c.safeWrite(item.scalarContent)
         of sDoubleQuoted: c.writeDoubleQuoted(item.scalarContent,
-                        indentation + c.options.indentationStep, newline)
+                        indentation + c.options.indentationStep, newline,
+                        c.options.maxLineLength)
     of yamlAlias:
       if c.options.style == psJson:
         raise newException(YamlPresenterJsonError,
@@ -727,6 +741,7 @@ proc doPresent(c: var Context, s: var YamlStream) =
       indentation -= c.options.indentationStep
     of yamlEndDoc:
       firstDoc = false
+      c.safeWrite(newline)
 
 proc present*(s: var YamlStream, target: Stream,
               options: PresentationOptions = defaultPresentationOptions)
