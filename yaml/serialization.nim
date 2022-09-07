@@ -16,7 +16,7 @@
 ## type. Please consult the serialization guide on the NimYAML website for more
 ## information.
 
-import tables, typetraits, strutils, macros, streams, times, parseutils, options
+import std / [tables, typetraits, strutils, macros, streams, times, parseutils, options]
 import data, parser, taglib, presenter, stream, private/internal, hints, annotations
 export data, stream, macros, annotations, options
   # *something* in here needs externally visible `==`(x,y: AnchorId),
@@ -1251,21 +1251,26 @@ proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("~", yTagNull))
-  elif c.style == asNone: representChild(value[], ts, c)
   else:
-    var val: tuple[a: Anchor, referenced: bool]
     let p = cast[pointer](value)
-    if c.refs.hasKey(p):
-      val = c.refs.getOrDefault(p)
-      yAssert(val.a != yAnchorNone)
-      if not val.referenced:
-        c.refs[p] = (val.a, true)
-      c.put(aliasEvent(val.a))
-      return
-    if c.style != asNone:
-      val = (c.nextAnchorId.Anchor, false)
-      c.refs[p] = val
-      nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
+    # when c.style == asNone, `referenced` is used as indicator that we are
+    # currently in the process of serializing this node. This enables us to
+    # detect cycles and raise an error.
+    var val = c.refs.getOrDefault(p, (c.nextAnchorId.Anchor, c.style == asNone))
+    if val.a != c.nextAnchorId.Anchor:
+      if c.style == asNone:
+        if val.referenced:
+          raise newException(YamlSerializationError,
+              "tried to serialize cyclic graph with asNone")
+      else:
+        val = c.refs.getOrDefault(p)
+        yAssert(val.a != yAnchorNone)
+        if not val.referenced:
+          c.refs[p] = (val.a, true)
+        c.put(aliasEvent(val.a))
+        return
+    c.refs[p] = val
+    nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
     let
       childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
       origPut = c.put
@@ -1273,19 +1278,20 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
       var ex = e
       case ex.kind
       of yamlStartMap:
-        ex.mapProperties.anchor = val.a
+        if c.style != asNone: ex.mapProperties.anchor = val.a
         if ts == tsNone: ex.mapProperties.tag = yTagQuestionMark
       of yamlStartSeq:
-        ex.seqProperties.anchor = val.a
+        if c.style != asNone: ex.seqProperties.anchor = val.a
         if ts == tsNone: ex.seqProperties.tag = yTagQuestionMark
       of yamlScalar:
-        ex.scalarProperties.anchor = val.a
+        if c.style != asNone: ex.scalarProperties.anchor = val.a
         if ts == tsNone and guessType(ex.scalarContent) != yTypeNull:
           ex.scalarProperties.tag = yTagQuestionMark
       else: discard
       c.put = origPut
       c.put(ex)
     representChild(value[], childTagStyle, c)
+    if c.style == asNone: c.refs[p] = (val.a, false)
 
 proc representChild*[T](value: Option[T], ts: TagStyle,
     c: SerializationContext) =

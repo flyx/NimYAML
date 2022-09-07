@@ -19,7 +19,7 @@
 ## The ``YamlNode`` objects in the DOM can be used similarly to the ``JsonNode``
 ## objects of Nim's `json module <http://nim-lang.org/docs/json.html>`_.
 
-import tables, streams, hashes, sets, strutils
+import std / [tables, streams, hashes, sets, strutils]
 import data, stream, taglib, serialization, private/internal, parser,
        presenter
 
@@ -174,6 +174,7 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
                       fields: newTable[YamlNode, YamlNode](),
                       mapStyle: start.mapStyle,
                       startPos: start.startPos, endPos: start.endPos)
+    addAnchor(c, start.mapProperties.anchor)
     while s.peek().kind != yamlEndMap:
       var
         key: YamlNode = nil
@@ -184,28 +185,27 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
         raise newException(YamlConstructionError,
             "Duplicate key: " & $key)
     discard s.next()
-    addAnchor(c, start.mapProperties.anchor)
   of yamlStartSeq:
     result = YamlNode(tag: start.seqProperties.tag,
                       kind: ySequence,
                       elems: newSeq[YamlNode](),
                       seqStyle: start.seqStyle,
                       startPos: start.startPos, endPos: start.endPos)
+    addAnchor(c, start.seqProperties.anchor)
     while s.peek().kind != yamlEndSeq:
       var item: YamlNode = nil
       constructChild(s, c, item)
       result.elems.add(item)
-    addAnchor(c, start.seqProperties.anchor)
     discard s.next()
   of yamlScalar:
     result = YamlNode(tag: start.scalarProperties.tag,
                       kind: yScalar, scalarStyle: start.scalarStyle,
                       startPos: start.startPos, endPos: start.endPos)
+    addAnchor(c, start.scalarProperties.anchor)
     when defined(gcArc) or defined(gcOrc):
       result.content = move start.scalarContent
     else:
       shallowCopy(result.content, start.scalarContent)
-    addAnchor(c, start.scalarProperties.anchor)
   of yamlAlias:
     result = cast[YamlNode](c.refs.getOrDefault(start.aliasTarget).p)
   else: internalError("Malformed YamlStream")
@@ -342,3 +342,26 @@ iterator mpairs*(node: var YamlNode):
   ## *yMapping*. Values can be modified.
   doAssert node.kind == yMapping
   for key, value in node.fields.mpairs: yield (key, value)
+
+proc loadFlattened*[K](input: Stream | string, target: var K)
+    {.raises: [YamlConstructionError, YamlSerializationError, IOError, OSError,
+               YamlParserError].} =
+  ## Replaces all aliases with the referenced nodes in the input, then loads
+  ## the resulting YAML into K. Can be used when anchors & aliases are used like
+  ## variables in the input, to avoid having to define `ref` types for the
+  ## anchored data.
+  var node: YamlNode
+  load(input, node)
+  var stream = represent(node, tsNone, asNone)
+  try:
+    var e = stream.next()
+    yAssert(e.kind == yamlStartStream)
+    construct(stream, target)
+    e = stream.next()
+    yAssert(e.kind == yamlEndStream)
+  except YamlStreamError:
+    let e = (ref YamlStreamError)(getCurrentException())
+    if e.parent of IOError: raise (ref IOError)(e.parent)
+    if e.parent of OSError: raise (ref OSError)(e.parent)
+    elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
+    else: internalError("Unexpected exception: " & $e.parent.name)

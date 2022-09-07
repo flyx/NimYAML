@@ -46,10 +46,10 @@ type
   AnchorStyle* = enum
     ## How ref object should be serialized.
     ##
-    ## - ``asNone``: No anchors will be outputted. Values present at
+    ## - ``asNone``: No anchors will be written. Values present at
     ##   multiple places in the content that should be serialized will be
     ##   fully serialized at every occurence. If the content is cyclic, this
-    ##   will lead to an endless loop!
+    ##   will raise a YamlSerializationError.
     ## - ``asTidy``: Anchors will only be generated for objects that
     ##   actually occur more than once in the content to be serialized.
     ##   This is a bit slower and needs more memory than ``asAlways``.
