@@ -183,16 +183,26 @@ proc parseOctal[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
       raise s.constructionError(mark, "Invalid character in hex: " &
           escape("" & val[i]))
 
+type NumberStyle = enum
+  nsHex
+  nsOctal
+  nsDecimal
+
+proc numberStyle(item: Event): NumberStyle =
+  if item.scalarContent[0] == '0' and item.scalarContent.len > 1:
+    if item.scalarContent[1] in {'x', 'X' }: return nsHex
+    if item.scalarContent[1] in {'o', 'O'}: return nsOctal
+  return nsDecimal
+
 proc constructObject*[T: int8|int16|int32|int64](
     s: var YamlStream, c: ConstructionContext, result: var T)
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs an integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    if item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'x', 'X' }:
-      result = parseHex[T](s, item.startPos, item.scalarContent)
-    elif item.scalarContent[0] == '0' and item.scalarContent.len > 1 and item.scalarContent[1] in {'o', 'O'}:
-      result = parseOctal[T](s, item.startPos, item.scalarContent)
-    else:
+    case item.numberStyle
+    of nsHex: result = parseHex[T](s, item.startPos, item.scalarContent)
+    of nsOctal: result = parseOctal[T](s, item.startPos, item.scalarContent)
+    of nsDecimal:
       let nInt = parseBiggestInt(item.scalarContent)
       if nInt <= T.high:
         # make sure we don't produce a range error
@@ -238,11 +248,17 @@ proc constructObject*[T: DefiniteUIntTypes](
     {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct an unsigned integer value from a YAML scalar
   constructScalarItem(s, item, T):
-    if item.scalarContent[0] == '0' and item.scalarContent[1] in {'x', 'X'}:
-      result = parseHex[T](s, item.startPos, item.scalarContent)
-    elif item.scalarContent[0] == '0' and item.scalarContent[1] in {'o', 'O'}:
-      result = parseOctal[T](s, item.startPos, item.scalarContent)
-    else: result = T(parseBiggestUInt(item.scalarContent))
+    case item.numberStyle
+    of nsHex: result = parseHex[T](s, item.startPos, item.scalarContent)
+    of nsOctal: result = parseOctal[T](s, item.startPos, item.scalarContent)
+    else:
+      let nUInt = parseBiggestUInt(item.scalarContent)
+      if nUInt <= T.high:
+        # make sure we don't produce a range error
+        result = T(nUInt)
+      else:
+        raise s.constructionError(item.startPos, "Cannot construct uint; out of range: " &
+          $nUInt & " for type " & T.name & " with max of: " & $T.high)
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var uint)
