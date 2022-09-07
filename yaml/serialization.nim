@@ -875,7 +875,7 @@ proc constructObjectDefault*[O: object|tuple](
             case s.next().kind
             of yamlStartMap, yamlStartSeq: inc(depth)
             of yamlEndMap, yamlEndSeq: dec(depth)
-            of yamlScalar: discard
+            of yamlScalar, yamlAlias: discard
             else: internalError("Unexpected event kind.")
       else:
         constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
@@ -1123,6 +1123,9 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         raise s.constructionError(item.startPos,
             "Complex value of implicit variant object type must have a tag.")
       possibleTags.add(item.seqProperties.tag)
+    of yamlAlias:
+      raise s.constructionError(item.startPos,
+          "cannot load non-ref value from alias node")
     else: internalError("Unexpected item kind: " & $item.kind)
     constructImplicitVariantObject(s, item.startPos, c, result, possibleTags, T)
   else:
@@ -1143,6 +1146,9 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
       elif item.seqProperties.anchor != yAnchorNone:
         raise s.constructionError(item.startPos, "Anchor on non-ref type")
+    of yamlAlias:
+      raise s.constructionError(item.startPos,
+          "cannot load non-ref value from alias node")
     else: internalError("Unexpected item kind: " & $item.kind)
     constructObject(s, c, result)
 
@@ -1208,7 +1214,10 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
       discard s.next()
       return
   elif e.kind == yamlAlias:
-    let val = c.refs.getOrDefault(e.aliasTarget)
+    let val = c.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
+    if val.p == nil:
+      raise constructionError(s, e.startPos,
+        "alias node refers to anchor in ignored scope")
     if val.tag != yamlTag(O):
       raise constructionError(s, e.startPos,
         "alias node refers to object of incompatible type")
