@@ -297,9 +297,13 @@ proc constructObject*[T: float|float32|float64](
     let hint = guessType(item.scalarContent)
     case hint
     of yTypeFloat:
-      discard parseBiggestFloat(item.scalarContent, result)
+      var res: BiggestFloat
+      discard parseBiggestFloat(item.scalarContent, res)
+      result = res
     of yTypeInteger:
-      discard parseBiggestFloat(item.scalarContent, result)
+      var res: BiggestFloat
+      discard parseBiggestFloat(item.scalarContent, res)
+      result = res
     of yTypeFloatInf:
         if item.scalarContent[0] == '-': result = NegInf
         else: result = Inf
