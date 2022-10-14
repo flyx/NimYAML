@@ -245,7 +245,7 @@ proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
     else: internalError("Unexpected exception: " & ex.parent.repr)
 
 proc representChild*(value: YamlNodeObj, ts: TagStyle,
-                     c: SerializationContext) =
+                     c: SerializationContext) {.raises: [YamlSerializationError].} =
   let childTagStyle = if ts == tsRootOnly: tsNone else: ts
   case value.kind
   of yScalar:
