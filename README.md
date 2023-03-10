@@ -15,7 +15,7 @@ available as tags in this repository and can be fetched via nimble:
 
 This library is stable.
 I only maintain it and will not add any features due to lack of time and interest.
-NimYAML passes almost all tests of the current YAML 1.2 test suite and is currently lacking in few exotic edge-cases.
+NimYAML passes all tests of the current YAML 1.2 test suite.
 See [the official YAML test matrix][4] for details.
 
 PRs for bugs are welcome. If you want to add a feature, you are free to; but be aware that I will not maintain it and am unlikely to review it in depth, so if I accept it, you will be co-maintainer.

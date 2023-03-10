@@ -1,3 +1,28 @@
+## 1.1.0
+
+Features:
+
+ * ``YamlNode`` now contains node styles and preserves them
+   when serializing to YAML again
+ * Added ``maxLineLength`` to ``PresentationOptions``. (#119)
+ * Added ``loadFlattened`` to resolve aliases while loading,
+   instead of deserializing them into pointers. (#117)
+
+Bugfixes
+
+ * Fixed problems with ARC/ORC (#120)
+ * Fixes some edge cases around whitespace while parsing
+ * Fixed a problem that made ``{.ignore: [].}`` fail when trying
+   to ignore collection values. (#127)
+ * Always write a newline character at the end of output, as required
+   by POSIX for text files.
+ * Fixed an error with loading recursive nodes into YamlNodes.
+ * Fixed an error where ``0`` could not be loaded into an unsigned
+   integer lvalue. (#123)
+ * Fixed an error where `float32` values could not properly
+   be deserialized. (#124)
+ * Fixed a compiler error concerning stricteffects. (#125)
+
 ## 1.0.0
 
 Features:
