@@ -733,6 +733,16 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
       result.add(checkMissing(s, t, tName, child, field, matched, o, m))
     inc(field)
 
+proc skipOverValue(s: var YamlStream) =
+    var e = s.next()
+    var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
+    while depth > 0:
+      case s.next().kind
+      of yamlStartMap, yamlStartSeq: inc(depth)
+      of yamlEndMap, yamlEndSeq: dec(depth)
+      of yamlScalar, yamlAlias: discard
+      else: internalError("Unexpected event kind.")
+
 macro constructFieldValue(t: typedesc, stream: untyped,
                           context: untyped, name: untyped, o: untyped,
                           matched: untyped, failOnUnknown: bool, m: untyped) =
@@ -818,7 +828,10 @@ macro constructFieldValue(t: typedesc, stream: untyped,
       newNimNode(nnkRaiseStmt).add(
         newCall(bindSym("constructionError"), stream, m,
         infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
-        newCall(bindSym("escape"), name))))))))
+        newCall(bindSym("escape"), name)))))
+  ).add(newNimNode(nnkElse).add(
+    newCall(bindSym("skipOverValue"), stream)
+  ))))
   result.add(caseStmt)
 
 proc isVariantObject(t: NimNode): bool {.compileTime.} =
@@ -889,14 +902,7 @@ proc constructObjectDefault*[O: object|tuple](
         if name notin ignoredKeyList:
           constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
         else:
-          e = s.next()
-          var depth = int(e.kind in {yamlStartMap, yamlStartSeq})
-          while depth > 0:
-            case s.next().kind
-            of yamlStartMap, yamlStartSeq: inc(depth)
-            of yamlEndMap, yamlEndSeq: dec(depth)
-            of yamlScalar, yamlAlias: discard
-            else: internalError("Unexpected event kind.")
+          skipOverValue(s)
       else:
         constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
     when isVariantObject(getType(O)):
