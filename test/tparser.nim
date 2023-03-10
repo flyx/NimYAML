@@ -71,23 +71,36 @@ macro genTests(): untyped =
   echo "[tparser] Generating tests from " & absolutePath
   discard staticExec("git submodule init && git submodule update --remote")
 
-  let errorTests = toHashSet(staticExec("cd " & (absolutePath / "tags" / "error") &
-                         " && ls -1d *").splitLines())
   var ignored = toHashSet([".git", "name", "tags", "meta"])
-
+  
+  proc genTest(target: var NimNode, dirPath: string, testId: string) {.compileTime.} =
+    let title = slurp(dirPath / "===")
+    
+    target.add(newCall("test",
+        newLit(strip(title) & " [" &
+        testId & ']'), newCall("doAssert", newCall("parserTest",
+        newLit(dirPath), newLit(fileExists(dirPath / "error"))))))
+  
   result = newStmtList()
+  
   # walkDir for some crude reason does not work with travis build
   let dirItems = staticExec("ls -1d " & absolutePath / "*")
   for dirPath in dirItems.splitLines():
     if dirPath.strip.len == 0: continue
     let testId = dirPath[^4..^1]
     if ignored.contains(testId): continue
-    let title = slurp(dirPath / "===")
-
-    result.add(newCall("test",
-        newLit(strip(title) & " [" &
-        testId & ']'), newCall("doAssert", newCall("parserTest",
-        newLit(dirPath), newLit(errorTests.contains(testId))))))
+    if fileExists(dirPath / "==="):
+      genTest(result, dirPath, testId)
+    else:
+      let testItems = staticExec("ls -1d " & dirPath / "*")
+      var start = len(dirPath) + 1
+      for itemPath in testItems.splitLines():
+        if itemPath.strip.len == 0: continue
+        let testItemId = testId / itemPath[start..^1]
+        if fileExists(itemPath / "==="):
+          genTest(result, itemPath, testItemId)
+        
+    
   result = newCall("suite", newLit("Parser Tests (from yaml-test-suite)"), result)
 
 genTests()

@@ -303,6 +303,15 @@ proc startLine(lex: var Lexer): LineStartType =
            else: lsContent
   else:
     while lex.c == ' ': lex.advance()
+    if lex.c == '\t':
+      var peek = lex.source.bufpos
+      while lex.source.buf[peek] in space:
+        peek += 1
+      if lex.source.buf[peek] in commentOrLineEnd:
+        lex.source.bufpos = peek + 1
+        lex.c = lex.source.buf[peek]
+      else:
+        return lsContent
     return case lex.c
     of '#': lsComment
     of '\l', '\c': lsNewline
@@ -448,6 +457,7 @@ proc readBlockScalar(lex: var Lexer) =
     indent = 0
     separationLines = 0
     contentStart: int
+    hasBody = true
   lex.startToken()
   lex.cur = if lex.c == '>': Token.Folded else: Token.Literal
   lex.evaluated.setLen(0)
@@ -476,7 +486,10 @@ proc readBlockScalar(lex: var Lexer) =
         raise lex.generateError("Illegal character after block scalar header: " &
             escape("" & lex.c))
       break
-    of lineEnd: break
+    of EndOfFile:
+      hasBody = false
+      break
+    of '\l', '\c': break
     else:
       raise lex.generateError("Illegal character in block scalar header: " &
           escape("" & lex.c))
@@ -503,6 +516,7 @@ proc readBlockScalar(lex: var Lexer) =
       of EndOfFile:
         lex.state = streamEnd
         lex.streamEndAfterBlock()
+        if lex.source.getColNumber(lex.source.bufpos) > 1 and hasBody: separationLines += 1
         break body
       else:
         if indent == 0:
@@ -586,8 +600,7 @@ proc readBlockScalar(lex: var Lexer) =
   case chomp
   of ctStrip: discard
   of ctClip:
-    if len(lex.evaluated) > 0:
-      lex.evaluated.add('\l')
+    if len(lex.evaluated) > 0: lex.evaluated.add('\l')
   of ctKeep:
     for i in countup(0, separationLines - 1):
       lex.evaluated.add('\l')
@@ -813,6 +826,14 @@ proc outsideDoc(lex: var Lexer): bool =
     if lex.c in commentOrLineEnd:
       lex.state = expectLineEnd
       return false
+    if lex.c == '\t':
+      var peek = lex.source.bufpos
+      while lex.source.buf[peek] in space:
+        peek += 1
+      if lex.source.buf[peek] in commentOrLineEnd:
+        lex.state = expectLineEnd
+        lex.source.bufpos = peek
+        return false
     lex.endToken()
     lex.cur = Token.Indentation
     lex.indentation = -1
@@ -914,6 +935,9 @@ proc flowLineStart(lex: var Lexer): bool =
     while lex.c == ' ': lex.advance()
     indent = lex.source.bufpos - lineStart
     while lex.c in space: lex.advance()
+  if lex.c in commentOrLineEnd:
+    lex.state = expectLineEnd
+    return false
   if indent <= lex.indentation:
     raise lex.generateError("Too few indentation spaces (must surpass surrounding block level)")
   lex.state = insideLine

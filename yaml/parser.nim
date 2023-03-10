@@ -492,6 +492,11 @@ proc atBlockIndentationProps(c: Context, e: var Event): bool =
     c.lex.next()
     c.transition(atBlockIndentation)
     return false
+  of StreamEnd, DocumentEnd, DirectivesEnd:
+    e = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curStartPos)
+    c.inlineProps = defaultProperties
+    c.popLevel()
+    return true
   else:
     raise c.generateError("Unexpected token (expected block content): " & $c.lex.cur)
 
@@ -558,11 +563,6 @@ proc afterCompactParentProps(c: Context, e: var Event): bool =
     c.transition(atBlockIndentation, c.levels[^3].indentation)
     c.pushLevel(beforeBlockIndentation)
     return false
-  of StreamEnd, DocumentEnd, DirectivesEnd:
-    e = scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curStartPos)
-    c.inlineProps = defaultProperties
-    c.popLevel()
-    return true
   of MapValueInd:
     c.keyCache.add(scalarEvent("", c.inlineProps, ssPlain, c.inlineStart, c.lex.curStartPos))
     c.inlineProps = defaultProperties
@@ -599,7 +599,7 @@ proc afterCompactParentProps(c: Context, e: var Event): bool =
     else:
       c.popLevel()
     return true
-  of MapStart, SeqStart:
+  of MapStart, SeqStart, StreamEnd, DocumentEnd, DirectivesEnd:
     c.transition(atBlockIndentationProps)
     return false
   else:
