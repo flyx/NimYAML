@@ -29,12 +29,10 @@ type
     propertyIndentation: int
 
   LexerError* = object of ValueError
-    line*, column*: int
+    line*, column*: Positive
     lineContent*: string
 
-  # temporarily missing .raises: [LexerError]
-  # due to https://github.com/nim-lang/Nim/issues/13905
-  State = proc(lex: var Lexer): bool {.locks: 0, gcSafe, nimcall.}
+  State = proc(lex: var Lexer): bool {.locks: 0, gcSafe, nimcall, raises: [LexerError].}
 
   Token* {.pure.} = enum
     YamlDirective,    # `%YAML`
@@ -170,10 +168,9 @@ template debug*(message: string) =
 
 proc generateError(lex: Lexer, message: string):
     ref LexerError {.raises: [].} =
-  result = newException(LexerError, message)
-  result.line = lex.lineNumber()
-  result.column = lex.columnNumber()
-  result.lineContent = lex.currentLine()
+  result = (ref LexerError)(
+    msg: message, line: lex.lineNumber(), column: lex.columnNumber(),
+    lineContent: lex.currentLine())
 
 proc startToken(lex: var Lexer) {.inline.} =
   lex.curStartPos = (line: lex.lineNumber(), column: lex.columnNumber())
@@ -759,7 +756,7 @@ proc fullLexeme*(lex: Lexer): string {.locks: 0.} =
 proc currentLine*(lex: Lexer): string {.locks: 0.} =
   return lex.source.getCurrentLine(false)
 
-proc next*(lex: var Lexer) =
+proc next*(lex: var Lexer) {.raises: [LexerError].}=
   while not lex.state(lex): discard
   debug("lexer -> [" & $lex.curStartPos.line & "," & $lex.curStartPos.column &
       "-" & $lex.curEndPos.line & "," & $lex.curEndPos.column & "] " & $lex.cur)

@@ -3,8 +3,8 @@ import unittest
 
 type
   Config = ref object
-    docs_root* {.defaultVal: "~/.example".}: string
-    drafts_root*: string
+    docsRoot* {.defaultVal: "~/.example".}: string
+    draftsRoot*: string
 
   Stuff = ref object
     a {.transient.}: string
@@ -32,11 +32,11 @@ type
 
 suite "Serialization Annotations":
   test "load default value":
-    let input = "drafts_root: foo"
+    let input = "draftsRoot: foo"
     var result: Config
     load(input, result)
-    assert result.docs_root == "~/.example", "docs_root is " & result.docs_root
-    assert result.drafts_root == "foo", "drafts_root is " & result.drafts_root
+    assert result.docsRoot == "~/.example", "docsRoot is " & result.docsRoot
+    assert result.draftsRoot == "foo", "draftsRoot is " & result.draftsRoot
 
   test "load into object with transient fields":
     let input = "b: warbl"

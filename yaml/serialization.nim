@@ -417,7 +417,7 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
           escape(item.scalarContent))
 
 proc representObject*(value: Time, ts: TagStyle, c: SerializationContext,
-                      tag: Tag) {.raises: [ValueError].} =
+                      tag: Tag) {.raises: [].} =
   let tmp = value.utc()
   c.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
 
@@ -986,7 +986,7 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
         name = $child
         childAccessor = newDotExpr(value, newIdentNode(name))
       result.add(quote do:
-        template serializeImpl =
+        template serializeImpl {.used.} =
           when bool(`isVO`): c.put(startMapEvent())
           c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
               yTagQuestionMark else: yTagNimField, yAnchorNone))
@@ -1397,7 +1397,7 @@ proc load*[K](input: Stream | string, target: var K)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
-proc loadAs*[K](input: string): K {.raises:
+proc loadAs*[K](input: Stream | string): K {.raises:
     [YamlConstructionError, IOError, OSError, YamlParserError].} =
   ## Loads the given YAML input to a value of the type K and returns it
   load(input, result)

@@ -37,7 +37,7 @@ type
     yScalar, yMapping, ySequence
 
   YamlNode* = ref YamlNodeObj
-    ## Represents a node in a ``YamlDocument``.
+    ## Represents a node in a YAML document
 
   YamlNodeObj* = object
     tag*: Tag
@@ -150,8 +150,10 @@ proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
   YamlNode(kind: yMapping, fields: newTable(fields), tag: tag,
       startPos: startPos, endPos: endPos)
 
+{.push warning[Deprecated]: off.}
 proc initYamlDoc*(root: YamlNode): YamlDocument =
   result = YamlDocument(root: root)
+{.pop.}
 
 proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var YamlNode)
@@ -210,6 +212,7 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
     result = cast[YamlNode](c.refs.getOrDefault(start.aliasTarget).p)
   else: internalError("Malformed YamlStream")
 
+{.push warning[Deprecated]: off.}
 proc compose*(s: var YamlStream): YamlDocument
     {.raises: [YamlStreamError, YamlConstructionError],
       deprecated: "use construct(s, root) instead".} =
@@ -243,6 +246,7 @@ proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
     elif ex.parent of OSError:
       raise (ref OSError)(ex.parent)
     else: internalError("Unexpected exception: " & ex.parent.repr)
+{.pop.}
 
 proc representChild*(value: YamlNodeObj, ts: TagStyle,
                      c: SerializationContext) {.raises: [YamlSerializationError].} =
@@ -264,6 +268,7 @@ proc representChild*(value: YamlNodeObj, ts: TagStyle,
       representChild(value, childTagStyle, c)
     c.put(endMapEvent())
 
+{.push warning[Deprecated]: off.}
 proc serialize*(doc: YamlDocument, a: AnchorStyle = asTidy): YamlStream
     {.deprecated: "use represent[YamlNode] instead".} =
   result = represent(doc.root, tsAll, a = a, handles = @[])
@@ -275,6 +280,7 @@ proc dumpDom*(doc: YamlDocument, target: Stream,
   ## Dump a YamlDocument as YAML character stream.
   dump(doc.root, target, tsAll, anchorStyle = anchorStyle, options = options,
        handles = @[])
+{.pop.}
 
 proc `[]`*(node: YamlNode, i: int): YamlNode =
   ## Get the node at index *i* from a sequence. *node* must be a *ySequence*.
