@@ -28,15 +28,18 @@ router nyRouter:
       of "json": style = psJson
       of "block": style = psBlockOnly
       of "tokens":
-        var
-          output = "+STR\n"
-          parser = initYamlParser(false)
-          events = parser.parse(newStringStream(@"input"))
-        for event in events: output.add(parser.display(event) & "\n")
-        output &= "-STR"
-        resultNode["code"] = %0
-        resultNode["output"] = %output
-        msg = resultNode.pretty
+        try:
+          var
+            output = "+STR\n"
+            parser = initYamlParser(false)
+            events = parser.parse(newStringStream(@"input"))
+          for event in events: output.add(parser.display(event) & "\n")
+          output &= "-STR"
+          resultNode["code"] = %0
+          resultNode["output"] = %output
+          msg = resultNode.pretty
+        except YamlStreamError as e:
+          raise e.parent
       else:
         retStatus = Http400
         msg = "Invalid style: " & escape(@"style")

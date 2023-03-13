@@ -94,7 +94,7 @@
                 proc shareDir*(): string =
                   result = "$out/share"
                 EOF
-                ${pkgs.nim}/bin/nim c --d:release --d:yamlScalarRepInd -p:"${nim-jester}/lib" -p:"${nim-httpbeast}/lib" -p:"${nim-cligen}/lib" --nimcache:.cache server/server
+                ${pkgs.nim}/bin/nim c --d:release --stackTrace -p:"${nim-jester}/lib" -p:"${nim-httpbeast}/lib" -p:"${nim-cligen}/lib" --nimcache:.cache server/server
               '';
               installPhase = ''
                 mkdir -p $out/{bin,share}

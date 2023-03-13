@@ -72,7 +72,7 @@ task clean, "Remove all generated files":
 
 task server, "Compile server daemon":
   --d:release
-  --d:yamlScalarRepInd
+  --stackTrace
   setCommand "c", "server/server"
 
 task testSuiteEvents, "Compile the testSuiteEvents tool":
