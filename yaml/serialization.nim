@@ -635,8 +635,13 @@ proc fieldCount(t: NimNode): int {.compiletime.} =
 
 
 macro matchMatrix(t: typedesc): untyped =
-  result = newNimNode(nnkBracket)
   let numFields = fieldCount(t)
+  if numFields == 0:
+    result = quote do:
+      (seq[bool])(@[])
+    return
+  
+  result = newNimNode(nnkBracket)
   for i in 0..<numFields:
     result.add(newLit(false))
 
@@ -1199,6 +1204,16 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
       raise s.constructionError(item.startPos, "Anchor on non-ref type")
   constructObject(s, c, result)
 
+proc constructChild*[I, T](s: var YamlStream, c: ConstructionContext,
+                           result: var array[I, T]) =
+  let item = s.peek()
+  if item.kind == yamlStartSeq:
+    if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(array[I, T])]:
+      raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(array[I, T]))
+    elif item.seqProperties.anchor != yAnchorNone:
+      raise s.constructionError(item.startPos, "Anchor on non-ref type")
+  constructObject(s, c, result)
+
 proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
     result: var Option[T]) =
   ## constructs an optional value. A value with a !!null tag will be loaded
@@ -1281,6 +1296,9 @@ proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
 
 proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
   representObject(value, ts, c, presentTag(seq[T], ts))
+
+proc representChild*[I, T](value: array[I, T], ts: TagStyle, c: SerializationContext) =
+  representObject(value, ts, c, presentTag(array[I, T], ts))
 
 proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("~", yTagNull))
