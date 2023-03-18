@@ -52,12 +52,11 @@ proc parserTest(path: string, errorExpected : bool): bool =
     result = not errorExpected
     if not result:
       echo "Expected error, but parsed without error."
-  except:
+  except CatchableError as e:
     result = errorExpected
     if not result:
       echoError("Caught an exception at event #" & $i &
                 " test was not successful")
-      let e = getCurrentException()
       if e.parent of YamlParserError:
         let pe = (ref YamlParserError)(e.parent)
         echo "line ", pe.mark.line, ", column ", pe.mark.column, ": ", pe.msg

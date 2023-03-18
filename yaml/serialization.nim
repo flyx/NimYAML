@@ -138,12 +138,12 @@ template constructScalarItem*(s: var YamlStream, i: untyped,
     raise constructionError(s, i.startPos, "Expected scalar")
   try: content
   except YamlConstructionError as e: raise e
-  except Exception:
-    var e = constructionError(s, i.startPos,
+  except CatchableError as e:
+    var ce = constructionError(s, i.startPos,
         "Cannot construct to " & name(t) & ": " & item.scalarContent &
-        "; error: " & getCurrentExceptionMsg())
-    e.parent = getCurrentException()
-    raise e
+        "; error: " & e.msg)
+    ce.parent = e
+    raise ce
 
 proc yamlTag*(T: typedesc[string]): Tag {.inline, noSideEffect, raises: [].} =
   yTagString
@@ -233,9 +233,9 @@ proc representObject*(value: int, tagStyle: TagStyle,
 
   # currently, sizeof(int) is at least sizeof(int32).
   try: c.put(scalarEvent($int32(value), tag, yAnchorNone))
-  except RangeDefect:
-    var e = newException(YamlSerializationError, getCurrentExceptionMsg())
-    e.parent = getCurrentException()
+  except RangeDefect as rd:
+    var e = newException(YamlSerializationError, rd.msg)
+    e.parent = rd
     raise e
 
 when defined(JS):
@@ -284,9 +284,9 @@ proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
   ## represent an unsigned integer of architecture-defined length by casting it
   ## to int32. on 64-bit systems, this may cause a RangeDefect.
   try: c.put(scalarEvent($uint32(value), tag, yAnchorNone))
-  except RangeDefect:
-    var e = newException(YamlSerializationError, getCurrentExceptionMsg())
-    e.parent = getCurrentException()
+  except RangeDefect as rd:
+    var e = newException(YamlSerializationError, rd.msg)
+    e.parent = rd
     raise e
 
 proc constructObject*[T: float|float32|float64](
@@ -1030,10 +1030,10 @@ proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
   if e.kind != yamlScalar:
     raise s.constructionError(e.startPos, "Expected scalar, got " & $e.kind)
   try: result = parseEnum[O](e.scalarContent)
-  except ValueError:
+  except ValueError as ve:
     var ex = s.constructionError(e.startPos, "Cannot parse '" &
         escape(e.scalarContent) & "' as " & type(O).name)
-    ex.parent = getCurrentException()
+    ex.parent = ve
     raise ex
 
 proc representObject*[O: enum](value: O, ts: TagStyle,
@@ -1264,13 +1264,11 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   else: internalError("Unexpected event kind: " & $e.kind)
   s.peek = e
   try: constructChild(s, c, result[])
-  except YamlConstructionError as e:
-    raise e
-  except YamlStreamError as e:
-    raise e
-  except Exception:
-    var e = newException(YamlStreamError, getCurrentExceptionMsg())
-    e.parent = getCurrentException()
+  except YamlConstructionError as e: raise e
+  except YamlStreamError as e: raise e
+  except CatchableError as ce:
+    var e = newException(YamlStreamError, ce.msg)
+    e.parent = ce
     raise e
 
 proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
@@ -1362,14 +1360,12 @@ proc construct*[T](s: var YamlStream, target: var T)
     constructChild(s, context, target)
     e = s.next()
     yAssert(e.kind == yamlEndDoc)
-  except YamlConstructionError:
-    raise (ref YamlConstructionError)(getCurrentException())
-  except YamlStreamError:
-    raise (ref YamlStreamError)(getCurrentException())
-  except Exception:
+  except YamlConstructionError as e: raise e
+  except YamlStreamError as e: raise e
+  except CatchableError as ce:
     # may occur while calling s()
-    var ex = newException(YamlStreamError, "")
-    ex.parent = getCurrentException()
+    var ex = newException(YamlStreamError, "error occurred while constructing")
+    ex.parent = ce
     raise ex
 
 proc load*[K](input: Stream | string, target: var K)
@@ -1390,8 +1386,7 @@ proc load*[K](input: Stream | string, target: var K)
         mark: e.startPos, msg: "stream contains multiple documents")
       discard events.getLastTokenContext(ex.lineContent)
       raise ex
-  except YamlStreamError:
-    let e = (ref YamlStreamError)(getCurrentException())
+  except YamlStreamError as e:
     if e.parent of IOError: raise (ref IOError)(e.parent)
     if e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
@@ -1415,12 +1410,10 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
       target.add(item)
     e = events.next()
     yAssert(e.kind == yamlEndStream)
-  except YamlConstructionError:
-    var e = (ref YamlConstructionError)(getCurrentException())
+  except YamlConstructionError as e:
     discard events.getLastTokenContext(e.lineContent)
     raise e
-  except YamlStreamError:
-    let e = (ref YamlStreamError)(getCurrentException())
+  except YamlStreamError as e:
     if e.parent of IOError: raise (ref IOError)(e.parent)
     elif e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
@@ -1463,9 +1456,10 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
       if options.style == psCanonical: tsAll else: tagStyle,
       if options.style == psJson: asNone else: anchorStyle, handles)
   try: present(events, target, options)
-  except YamlStreamError:
-    internalError("Unexpected exception: " & $getCurrentException().name)
+  except YamlStreamError as e:
+    internalError("Unexpected exception: " & $e.name)
 
+{.push hint[XCannotRaiseY]: off.}
 proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
               anchorStyle: AnchorStyle = asTidy,
               options: PresentationOptions = defaultPresentationOptions,
@@ -1479,5 +1473,6 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
       if options.style == psCanonical: tsAll else: tagStyle,
       if options.style == psJson: asNone else: anchorStyle, handles)
   try: result = present(events, options)
-  except YamlStreamError:
-    internalError("Unexpected exception: " & $getCurrentException().name)
+  except YamlStreamError as e:
+    internalError("Unexpected exception: " & $e.name)
+{.pop.}

@@ -18,6 +18,11 @@ when defined(nimNoNil):
     {.experimental: "notnil".}
 
 type
+  YamlStreamError* = object of ValueError
+    ## Exception that may be raised by a ``YamlStream`` when the underlying
+    ## backend raises an exception. The error that has occurred is
+    ## available from ``parent``.
+
   YamlStream* = ref object of RootObj ## \
     ## A ``YamlStream`` is an iterator-like object that yields a
     ## well-formed stream of ``YamlStreamEvents``. Well-formed means that
@@ -31,16 +36,11 @@ type
     ## and is not required to check for it. The procs in this module will
     ## always yield a well-formed ``YamlStream`` and expect it to be
     ## well-formed if they take it as input parameter.
-    nextImpl*: proc(s: YamlStream, e: var Event): bool {.gcSafe.}
+    nextImpl*: proc(s: YamlStream, e: var Event): bool {.gcSafe, raises: [CatchableError] .}
     lastTokenContextImpl*:
         proc(s: YamlStream, lineContent: var string): bool {.raises: [].}
     peeked: bool
     cached: Event
-
-  YamlStreamError* = object of ValueError
-    ## Exception that may be raised by a ``YamlStream`` when the underlying
-    ## backend raises an exception. The error that has occurred is
-    ## available from ``parent``.
 
 proc noLastContext(s: YamlStream, lineContent: var string): bool {.raises: [].} =
   result = false
@@ -55,15 +55,15 @@ proc basicInit*(s: YamlStream, lastTokenContextImpl:
 
 when not defined(JS):
   type IteratorYamlStream = ref object of YamlStream
-    backend: iterator(): Event {.gcSafe.}
+    backend: iterator(): Event {.gcSafe, raises: [CatchableError].}
 
-  proc initYamlStream*(backend: iterator(): Event {.gcSafe.}): YamlStream
+  proc initYamlStream*(backend: iterator(): Event {.gcSafe, raises: [CatchableError].}): YamlStream
       {.raises: [].} =
     ## Creates a new ``YamlStream`` that uses the given iterator as backend.
     result = new(IteratorYamlStream)
     result.basicInit()
     IteratorYamlStream(result).backend = backend
-    result.nextImpl = proc(s: YamlStream, e: var Event): bool {.gcSafe.} =
+    result.nextImpl = proc(s: YamlStream, e: var Event): bool {.gcSafe, raises: [CatchableError].} =
       e = IteratorYamlStream(s).backend()
       result = true
 
@@ -97,12 +97,10 @@ proc next*(s: YamlStream): Event {.raises: [YamlStreamError], gcSafe.} =
     try:
       while true:
         if s.nextImpl(s, result): break
-    except YamlStreamError:
-      raise (ref YamlStreamError)(getCurrentException())
-    except Exception:
-      let cur = getCurrentException()
-      var e = newException(YamlStreamError, cur.msg)
-      e.parent = cur
+    except YamlStreamError as e: raise e
+    except CatchableError as ce:
+      var e = newException(YamlStreamError, ce.msg)
+      e.parent = ce
       raise e
 
 proc peek*(s: YamlStream): lent Event {.raises: [YamlStreamError].} =

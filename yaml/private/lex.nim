@@ -100,19 +100,17 @@ proc advance(lex: var Lexer, step: int = 1) {.inline.} =
 
 template lexCR(lex: var Lexer) =
   try: lex.source.bufpos = lex.source.handleCR(lex.source.bufpos - 1)
-  except:
-    var e = lex.generateError("Encountered stream error: " &
-        getCurrentExceptionMsg())
-    e.parent = getCurrentException()
+  except CatchableError as ce:
+    var e = lex.generateError("Encountered stream error: " & ce.msg)
+    e.parent = ce
     raise e
   lex.advance()
 
 template lexLF(lex: var Lexer) =
   try: lex.source.bufpos = lex.source.handleLF(lex.source.bufpos - 1)
-  except:
-    var e = generateError(lex, "Encountered stream error: " &
-        getCurrentExceptionMsg())
-    e.parent = getCurrentException()
+  except CatchableError as ce:
+    var e = generateError(lex, "Encountered stream error: " & ce.msg)
+    e.parent = ce
     raise e
   lex.advance()
 
@@ -768,7 +766,7 @@ proc init*(lex: var Lexer, source: Stream) {.raises: [IOError, OSError].} =
 proc init*(lex: var Lexer, source: string) {.raises: [].} =
   try:
     lex.source.open(newStringStream(source))
-  except:
+  except CatchableError:
     discard # can never happen with StringStream
   lex.basicInit()
 

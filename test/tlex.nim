@@ -64,8 +64,7 @@ proc assertEquals(input: string, expected: varargs[TokenWithValue]) =
             "Wrong indentation length at #" & $i & ": Expected " &
             $expectedToken.indentation & ", got " & $lex.currentIndentation()
       else: discard
-    except LexerError:
-      let e = (ref LexerError)(getCurrentException())
+    except LexerError as e:
       echo "Error at line", e.line, ", column", e.column, ":", e.msg
       echo e.lineContent
       assert false

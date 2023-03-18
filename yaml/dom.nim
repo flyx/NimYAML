@@ -237,8 +237,7 @@ proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
       result.add(compose(events, tagLib))
     e = events.next()
     yAssert(e.kind != yamlEndStream)
-  except YamlStreamError:
-    let ex = getCurrentException()
+  except YamlStreamError as ex:
     if ex.parent of YamlParserError:
       raise (ref YamlParserError)(ex.parent)
     elif ex.parent of IOError:
@@ -365,8 +364,7 @@ proc loadFlattened*[K](input: Stream | string, target: var K)
     construct(stream, target)
     e = stream.next()
     yAssert(e.kind == yamlEndStream)
-  except YamlStreamError:
-    let e = (ref YamlStreamError)(getCurrentException())
+  except YamlStreamError as e:
     if e.parent of IOError: raise (ref IOError)(e.parent)
     if e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)

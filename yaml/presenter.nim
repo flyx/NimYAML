@@ -273,10 +273,10 @@ proc writeDoubleQuoted(c: Context, scalar: string, indentation: int,
           t.append(c)
           curPos.inc()
     t.append('"')
-  except:
+  except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
-    e.parent = getCurrentException()
+    e.parent = ce
     raise e
 
 proc writeDoubleQuotedJson(c: Context, scalar: string)
@@ -314,10 +314,10 @@ proc writeLiteral(c: Context, scalar: string, indentation, indentStep: int,
       t.append(repeat(' ', indentation + indentStep))
       if line.finish >= line.start:
         t.append(scalar[line.start .. line.finish])
-  except:
+  except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
-    e.parent = getCurrentException()
+    e.parent = ce
     raise e
 
 proc writeFolded(c: Context, scalar: string, indentation, indentStep: int,
@@ -346,17 +346,17 @@ proc writeFolded(c: Context, scalar: string, indentation, indentStep: int,
         curPos.inc()
       t.append(scalar[word.start .. word.finish])
       curPos += word.finish - word.start + 1
-  except:
+  except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
-    e.parent = getCurrentException()
+    e.parent = ce
     raise e
 
 template safeWrite(c: Context, s: string or char) =
   try: c.target.append(s)
-  except:
+  except CatchableError as ce:
     var e = newException(YamlPresenterOutputError, "")
-    e.parent = getCurrentException()
+    e.parent = ce
     raise e
 
 proc startItem(c: var Context, indentation: int, isObject: bool,
@@ -429,9 +429,9 @@ proc startItem(c: var Context, indentation: int, isObject: bool,
         t.append(',' & newline)
         t.append(repeat(' ', indentation))
       of psBlockOnly: discard # can never happen
-  except:
+  except CatchableError as ce:
     var e = newException(YamlPresenterOutputError, "")
-    e.parent = getCurrentException()
+    e.parent = ce
     raise e
 
 proc writeTagAndAnchor(c: Context, props: Properties) {.raises: [YamlPresenterOutputError].} =
@@ -452,9 +452,9 @@ proc writeTagAndAnchor(c: Context, props: Properties) {.raises: [YamlPresenterOu
       t.append("&")
       t.append($props.anchor)
       t.append(' ')
-  except:
+  except CatchableError as ce:
     var e = newException(YamlPresenterOutputError, "")
-    e.parent = getCurrentException()
+    e.parent = ce
     raise e
 
 proc nextItem(c: var Deque, s: var YamlStream):
@@ -503,9 +503,9 @@ proc doPresent(c: var Context, s: var YamlStream) =
             else:
               c.target.append("%TAG " & v.handle & ' ' & v.uriPrefix & newline)
           c.target.append("--- ")
-        except:
+        except CatchableError as ce:
           var e = newException(YamlPresenterOutputError, "")
-          e.parent = getCurrentException()
+          e.parent = ce
           raise e
     of yamlScalar:
       if c.levels.len == 0:
@@ -563,9 +563,9 @@ proc doPresent(c: var Context, s: var YamlStream) =
       try:
         c.target.append('*')
         c.target.append($item.aliasTarget)
-      except:
+      except CatchableError as ce:
         var e = newException(YamlPresenterOutputError, "")
-        e.parent = getCurrentException()
+        e.parent = ce
         raise e
     of yamlStartSeq:
       var nextState: DumperState
@@ -692,9 +692,9 @@ proc doPresent(c: var Context, s: var YamlStream) =
             c.target.append(newline)
             c.target.append(repeat(' ', indentation))
             c.target.append(']')
-          except:
+          except CatchableError as ce:
             var e = newException(YamlPresenterOutputError, "")
-            e.parent = getCurrentException()
+            e.parent = ce
             raise e
           if c.levels.len == 0 or c.state notin
               [dBlockExplicitMapKey, dBlockMapValue,
@@ -722,9 +722,9 @@ proc doPresent(c: var Context, s: var YamlStream) =
             c.target.append(newline)
             c.target.append(repeat(' ', indentation))
             c.target.append('}')
-          except:
+          except CatchableError as ce:
             var e = newException(YamlPresenterOutputError, "")
-            e.parent = getCurrentException()
+            e.parent = ce
             raise e
           if c.levels.len == 0 or c.state notin
               [dBlockExplicitMapKey, dBlockMapValue,
@@ -800,13 +800,13 @@ proc doTransform(c: var Context, input: Stream,
       doPresent(c, bys)
     else:
       doPresent(c, events)
-  except YamlStreamError:
-    var e = getCurrentException()
-    while e.parent of YamlStreamError: e = e.parent
-    if e.parent of IOError: raise (ref IOError)(e.parent)
-    elif e.parent of OSError: raise (ref OSError)(e.parent)
-    elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: internalError("Unexpected exception: " & e.parent.repr)
+  except YamlStreamError as e:
+    var curE: ref Exception = e
+    while curE.parent of YamlStreamError: curE = curE.parent
+    if curE.parent of IOError: raise (ref IOError)(curE.parent)
+    elif curE.parent of OSError: raise (ref OSError)(curE.parent)
+    elif curE.parent of YamlParserError: raise (ref YamlParserError)(curE.parent)
+    else: internalError("Unexpected exception: " & curE.parent.repr)
 
 proc genInput(input: Stream): Stream = input
 proc genInput(input: string): Stream = newStringStream(input)

@@ -18,8 +18,8 @@ proc ensureEqual(yamlIn, jsonIn: string) =
     assert yamlResult.len == 1
     assert(jsonResult == yamlResult[0], "Expected: " & $jsonResult & ", got: " &
         $yamlResult[0])
-  except YamlStreamError:
-    let e = (ref YamlParserError)(getCurrentException().parent)
+  except YamlStreamError as se:
+    let e = (ref YamlParserError)(se.parent)
     echo "error occurred: " & e.msg
     echo "line: ", e.mark.line, ", column: ", e.mark.column
     echo e.lineContent

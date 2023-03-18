@@ -21,7 +21,7 @@ template internalError*(s: string) =
           echo "… stacktrace [", exc.name, ": ", exc.msg, "]"
           echo getStackTrace(exc)
           exc = exc.parent
-      except: discard
+      except CatchableError: discard
     echo "[NimYAML] Please report this bug."
     quit 1
 
@@ -39,7 +39,7 @@ template yAssert*(e: typed) =
           if not isNil(exc.parent):
             echo "Internal stacktrace:"
             echo getStackTrace(exc.parent)
-        except: discard
+        except CatchableError: discard
       echo "[NimYAML] Please report this bug."
       quit 1
 

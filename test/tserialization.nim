@@ -117,8 +117,7 @@ template expectConstructionError(li, co: int, message: string, body: typed) =
     body
     echo "Expected YamlConstructionError, but none was raised!"
     fail()
-  except YamlConstructionError:
-    let e = (ref YamlConstructionError)(getCurrentException())
+  except YamlConstructionError as e:
     doAssert li == e.mark.line, "Expected error line " & $li & ", was " & $e.mark.line
     doAssert co == e.mark.column, "Expected error column " & $co & ", was " & $e.mark.column
     doAssert message == e.msg, "Expected error message \n" & escape(message) &

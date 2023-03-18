@@ -25,26 +25,7 @@ type
     ## only until the document goes out of scope (i.e. until
     ## ``yamlEndDocument`` is yielded).
     issueWarnings: bool
-
-  State = proc(c: Context, e: var Event): bool {.gcSafe.}
-
-  Level = object
-    state: State
-    indentation: int
-
-  Context = ref object of YamlStream
-    handles: seq[tuple[handle, uriPrefix: string]]
-    issueWarnings: bool
-    lex: Lexer
-    levels: seq[Level]
-    keyCache: seq[Event]
-    keyCachePos: int
-    caching: bool
-
-    headerProps, inlineProps: Properties
-    headerStart, inlineStart: Mark
-    blockIndentation: int
-
+  
   YamlLoadingError* = object of ValueError
     ## Base class for all exceptions that may be raised during the process
     ## of loading a YAML character stream.
@@ -53,7 +34,7 @@ type
       ## content of the line where the error was encountered. Includes a
       ## second line with a marker ``^`` at the position where the error
       ## was encountered.
-
+  
   YamlParserError* = object of YamlLoadingError
     ## A parser error is raised if the character stream that is parsed is
     ## not a valid YAML character stream. This stream cannot and will not be
@@ -85,11 +66,30 @@ type
     ## Some elements in this list are vague. For a detailed description of a
     ## valid YAML character stream, see the YAML specification.
 
+  State = proc(c: Context, e: var Event): bool {.gcSafe, raises: [CatchableError].}
+
+  Level = object
+    state: State
+    indentation: int
+
+  Context = ref object of YamlStream
+    handles: seq[tuple[handle, uriPrefix: string]]
+    issueWarnings: bool
+    lex: Lexer
+    levels: seq[Level]
+    keyCache: seq[Event]
+    keyCachePos: int
+    caching: bool
+
+    headerProps, inlineProps: Properties
+    headerStart, inlineStart: Mark
+    blockIndentation: int
+
 const defaultProperties = (yAnchorNone, yTagQuestionMark)
 
 # parser states
 
-{.push gcSafe, .}
+{.push gcSafe, raises: [CatchableError], hint[XCannotRaiseY]: off.}
 proc atStreamStart(c: Context, e: var Event): bool
 proc atStreamEnd(c: Context, e : var Event): bool
 proc beforeDoc(c: Context, e: var Event): bool
@@ -155,7 +155,7 @@ proc resolveHandle(c: Context, handle: string): string {.raises: [].} =
 
 proc init[T](c: Context, p: YamlParser, source: T) {.inline.} =
   c.pushLevel(atStreamStart, -2)
-  c.nextImpl = proc(s: YamlStream, e: var Event): bool =
+  c.nextImpl = proc(s: YamlStream, e: var Event): bool {.raises: [CatchableError].} =
     let c = Context(s)
     return c.levels[^1].state(c, e)
   c.lastTokenContextImpl = proc(s: YamlStream, lineContent: var string): bool =

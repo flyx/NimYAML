@@ -70,9 +70,9 @@ proc jsonFromScalar(content: sink string, tag: Tag): JsonNode
         result.str = content
       else:
         shallowCopy(result.str, content)
-  except ValueError:
+  except ValueError as ve:
     var e = newException(YamlConstructionError, "Cannot parse numeric value")
-    e.parent = getCurrentException()
+    e.parent = ve
     raise e
 
 proc constructJson*(s: var YamlStream): seq[JsonNode]
@@ -190,8 +190,7 @@ when not defined(JS):
     var events = parser.parse(s)
     try:
       return constructJson(events)
-    except YamlStreamError:
-      let e = getCurrentException()
+    except YamlStreamError as e:
       if e.parent of IOError:
         raise (ref IOError)(e.parent)
       elif e.parent of OSError:
@@ -209,8 +208,7 @@ proc loadToJson*(str: string): seq[JsonNode]
   parser.init()
   var events = parser.parse(str)
   try: return constructJson(events)
-  except YamlStreamError:
-    let e = getCurrentException()
+  except YamlStreamError as e:
     if e.parent of YamlParserError:
       raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & e.parent.repr)

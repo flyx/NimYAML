@@ -67,21 +67,18 @@ router nyRouter:
         resultNode["code"] = %0
         resultNode["output"] = %highlighted
         msg = resultNode.pretty
-    except YamlParserError:
-      let e = (ref YamlParserError)(getCurrentException())
+    except YamlParserError as e:
       resultNode["code"] = %1
       resultNode["line"] = %e.mark.line
       resultNode["column"] = %e.mark.column
       resultNode["message"] = %e.msg
       resultNode["detail"] = %e.lineContent
       msg = resultNode.pretty
-    except YamlPresenterJsonError:
-      let e = getCurrentException()
+    except YamlPresenterJsonError as e:
       resultNode["code"] = %2
       resultNode["message"] = %e.msg
       msg = resultNode.pretty
-    except:
-      let e = getCurrentException()
+    except CatchableError as e:
       msg = "Name: " & $e.name & "\nMessage: " & e.msg &
           "\nTrace:\n" & e.getStackTrace
       retStatus = Http500
