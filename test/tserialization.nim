@@ -61,6 +61,11 @@ type
   WithIgnoredField {.ignore: ["z"].} = object
     x, y: int
 
+  Parent = object of RootObj
+    i*: int
+  Child = object of Parent
+    s*: string
+
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
 
@@ -457,6 +462,14 @@ suite "Serialization":
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
         "!n!custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12\n", output)
+
+  test "Load object with inherited fields":
+    let input =
+      "i: 4\ns: hello"
+    var result: Child
+    load(input, result)
+    assert result.i == 4
+    assert result.s == "hello"
 
   test "Load custom variant object":
     let input =

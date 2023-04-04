@@ -598,41 +598,65 @@ proc recListNode(n: NimNode): NimNode {.compileTime.} =
   if n.kind == nnkRecList: result = n[0]
   else: result = n
 
-proc fieldCount(t: NimNode): int {.compiletime.} =
-   result = 0
-   let tDesc = getType(getType(t)[1])
-   if tDesc.kind == nnkBracketExpr:
-      # tuple
-      result = tDesc.len - 1
-   else:
-      # object
-      for child in tDesc[2].children:
-         inc(result)
-         if child.kind == nnkRecCase:
-            for bIndex in 1..<len(child):
-               var increment = 0
-               case child[bIndex].kind
-               of nnkOfBranch:
-                  let content = child[bIndex][len(child[bIndex])-1]
-                  # We cannot assume that child[bIndex][1] is a RecList due to
-                  # a one-liner like 'of akDog: barkometer' not resulting in a
-                  # RecList but in an Ident node.
-                  case content.kind
-                  of nnkRecList:
-                     increment = len(content)
-                  else:
-                     increment = 1
-               of nnkElse:
-                  # Same goes for the else branch.
-                  case child[bIndex][0].kind
-                  of nnkRecList:
-                     increment = len(child[bIndex][0])
-                  else:
-                     increment = 1
-               else:
-                  internalError("Unexpected child kind: " & $child[bIndex].kind)
-               inc(result, increment)
+proc parentType(tDesc: NimNode): NimNode {.compileTime.} =
+  var name: NimNode
+  case tDesc[1].kind
+  of nnkEmpty: return nil
+  of nnkBracketExpr:
+    # happens when parent type is `ref X`
+    name = tDesc[1][1]
+  of nnkObjectTy, nnkSym:
+    name = tDesc[1]
+  else:
+    return nil
+  result = newNimNode(nnkBracketExpr)
+  result.add(bindSym("typeDesc"))
+  result.add(name)
 
+proc fieldCount(t: NimNode): int {.compiletime.} =
+  result = 0
+  var tTypedesc: NimNode
+  if t.kind == nnkSym:
+    tTypedesc = getType(t)
+  else:
+    tTypedesc = t
+
+  let tDesc = getType(tTypedesc[1])
+  if tDesc.kind == nnkBracketExpr:
+    # tuple
+    result = tDesc.len - 1
+  else:
+    # object
+    let tParent = parentType(tDesc)
+    if tParent != nil:
+      # inherited fields
+      result += fieldCount(tParent)
+    for child in tDesc[2].children:
+      inc(result)
+      if child.kind == nnkRecCase:
+        for bIndex in 1..<len(child):
+          var increment = 0
+          case child[bIndex].kind
+          of nnkOfBranch:
+            let content = child[bIndex][len(child[bIndex])-1]
+            # We cannot assume that child[bIndex][1] is a RecList due to
+            # a one-liner like 'of akDog: barkometer' not resulting in a
+            # RecList but in an Ident node.
+            case content.kind
+            of nnkRecList:
+              increment = len(content)
+            else:
+              increment = 1
+          of nnkElse:
+            # Same goes for the else branch.
+            case child[bIndex][0].kind
+            of nnkRecList:
+              increment = len(child[bIndex][0])
+            else:
+              increment = 1
+          else:
+            internalError("Unexpected child kind: " & $child[bIndex].kind)
+          inc(result, increment)
 
 macro matchMatrix(t: typedesc): untyped =
   let numFields = fieldCount(t)
@@ -703,18 +727,18 @@ proc ifNotTransient(o, field: NimNode,
       when not `o`.`field`.hasCustomPragma(transient):
         `stmts`
 
-macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
-                             matched: typed, m: Mark) =
-  result = newStmtList()
-  let
-    tDecl = getType(t)
-    tName = $tDecl[1]
+proc recEnsureAllFieldsPresent(
+    s: NimNode, tDecl: NimNode, o: NimNode, matched: NimNode, m: NimNode,
+    tName: string, field: var int, stmt: NimNode) {.compileTime.} =
+  var
     tDesc = getType(tDecl[1])
-  var field = 0
+    tParent = parentType(tDesc)
+  if tParent != nil:
+    recEnsureAllFieldsPresent(s, tParent, o, matched, m, tName, field, stmt)
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
-      result.add(checkMissing(
-          s, t, tName, child[0], field, matched, o, m))
+      stmt.add(checkMissing(
+          s, tDecl, tName, child[0], field, matched, o, m))
       for bIndex in 1 .. len(child) - 1:
         let discChecks = newStmtList()
         var
@@ -731,12 +755,21 @@ macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
         for item in child[bIndex][recListIndex].recListItems:
           inc(field)
           discChecks.add(checkMissing(
-              s, t, tName, item, field, matched, o, m))
-        result.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
+              s, tDecl, tName, item, field, matched, o, m))
+        stmt.add(newIfStmt((infix(newDotExpr(o, newIdentNode($child[0])),
             "in", curValues), discChecks)))
     else:
-      result.add(checkMissing(s, t, tName, child, field, matched, o, m))
+      stmt.add(checkMissing(s, tDecl, tName, child, field, matched, o, m))
     inc(field)
+
+macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
+                             matched: typed, m: Mark) =
+  result = newStmtList()
+  let
+    tDecl = getType(t)
+    tName = $tDecl[1]
+  var field = 0
+  recEnsureAllFieldsPresent(s, tDecl, o, matched, m, tName, field, result)
 
 proc skipOverValue(s: var YamlStream) =
     var e = s.next()
@@ -748,16 +781,15 @@ proc skipOverValue(s: var YamlStream) =
       of yamlScalar, yamlAlias: discard
       else: internalError("Unexpected event kind.")
 
-macro constructFieldValue(t: typedesc, stream: untyped,
-                          context: untyped, name: untyped, o: untyped,
-                          matched: untyped, failOnUnknown: bool, m: untyped) =
-  let
-    tDecl = getType(t)
-    tName = $tDecl[1]
+proc addFieldCases(
+    tDecl: NimNode, stream: NimNode, context: NimNode, name: NimNode, o: NimNode,
+    matched: NimNode, failOnUnknown: NimNode, m: NimNode, tName: string, caseStmt: NimNode,
+    fieldIndex: var int) {.compileTime.} =
+  var
     tDesc = getType(tDecl[1])
-  result = newStmtList()
-  var caseStmt = newNimNode(nnkCaseStmt).add(name)
-  var fieldIndex = 0
+    tParent = parentType(tDesc)
+  if tParent != nil:
+    addFieldCases(tParent, stream, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
@@ -828,6 +860,18 @@ macro constructFieldValue(t: typedesc, stream: untyped,
           markAsFound(fieldIndex, matched)], true, stream, m, tName, $child))
       caseStmt.add(ob)
     inc(fieldIndex)
+
+macro constructFieldValue(t: typedesc, stream: untyped,
+                          context: untyped, name: untyped, o: untyped,
+                          matched: untyped, failOnUnknown: bool, m: untyped) =
+  let
+    tDecl = getType(t)
+    tName = $tDecl[1]
+    tDesc = getType(tDecl[1])
+  result = newStmtList()
+  var caseStmt = newNimNode(nnkCaseStmt).add(name)
+  var fieldIndex = 0
+  addFieldCases(tDecl, stream, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
   caseStmt.add(newNimNode(nnkElse).add(newNimNode(nnkWhenStmt).add(
     newNimNode(nnkElifBranch).add(failOnUnknown,
       newNimNode(nnkRaiseStmt).add(
@@ -853,6 +897,11 @@ proc hasIgnore(t: typedesc): bool {.compileTime.} =
     return t.hasCustomPragma(ignore)
   else:
     return false
+
+proc constructObjectDefault*(
+    s: var YamlStream, c: ConstructionContext, result: var RootObj) =
+  # specialization of generic proc for RootObj, doesn't do anything
+  return
 
 proc constructObjectDefault*[O: object|tuple](
     s: var YamlStream, c: ConstructionContext, result: var O)
