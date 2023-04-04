@@ -884,10 +884,21 @@ macro constructFieldValue(t: typedesc, stream: untyped,
   result.add(caseStmt)
 
 proc isVariantObject(t: NimNode): bool {.compileTime.} =
-  var tDesc = getType(t)
-  if tDesc.kind == nnkBracketExpr: tDesc = getType(tDesc[1])
-  if tDesc.kind != nnkObjectTy:
-    return false
+  var
+    tResolved: NimNode
+    tDesc: NimNode
+  if t.kind == nnkSym:
+    tResolved = getType(t)
+  else:
+    tResolved = t
+  if tResolved.kind == nnkBracketExpr and tResolved[0].strVal == "typeDesc":
+    tDesc = getType(tResolved[1])
+  else:
+    tDesc = tResolved
+  if tDesc.kind != nnkObjectTy: return false
+  let tParent = parentType(tDesc)
+  if tParent != nil:
+    if isVariantObject(tParent): return true
   for child in tDesc[2].children:
     if child.kind == nnkRecCase: return true
   return false
@@ -980,13 +991,13 @@ proc constructObject*[O: object|tuple](
   ## Overridable default implementation for custom object and tuple types
   constructObjectDefault(s, c, result)
 
-macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
-  result = newStmtList()
+proc recGenFieldRepresenters(
+    tDecl, value, childTagStyle: NimNode, isVO: bool, fieldIndex: var int16, result: NimNode) {.compileTime.} =
   let
-    tDecl = getType(t)
     tDesc = getType(tDecl[1])
-    isVO  = isVariantObject(t)
-  var fieldIndex = 0'i16
+    tParent = parentType(tDesc)
+  if tParent != nil:
+    recGenFieldRepresenters(tParent, value, childTagStyle, isVO, fieldIndex, result)
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
@@ -1047,12 +1058,20 @@ macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
           representChild(`childAccessor`, `childTagStyle`, c)
           when bool(`isVO`): c.put(endMapEvent())
         when not `childAccessor`.hasCustomPragma(transient):
-          when hasSparse(`t`) and `child` is Option:
+          when hasSparse(`tDecl`) and `child` is Option:
             if `childAccessor`.isSome: serializeImpl()
           else:
             serializeImpl()
       )
     inc(fieldIndex)
+
+macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
+  result = newStmtList()
+  let
+    tDecl = getType(t)
+    isVO  = isVariantObject(t)
+  var fieldIndex = 0'i16
+  recGenFieldRepresenters(tDecl, value, childTagStyle, isVO, fieldIndex, result)
 
 proc representObject*[O: object](value: O, ts: TagStyle,
     c: SerializationContext, tag: Tag) =
