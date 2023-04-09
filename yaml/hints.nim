@@ -45,22 +45,17 @@ type
     ythInitial,
     ythF, ythFA, ythFAL, ythFALS, ythFALSE,
     ythN, ythNU, ythNUL, ythNULL,
-          ythNO,
-    ythO, ythON,
-          ythOF, ythOFF,
     ythT, ythTR, ythTRU, ythTRUE,
-    ythY, ythYE, ythYES,
 
     ythPoint, ythPointI, ythPointIN, ythPointINF,
               ythPointN, ythPointNA, ythPointNAN,
 
-    ythLowerFA, ythLowerFAL, ythLowerFALS,
-    ythLowerNU, ythLowerNUL,
-    ythLowerOF,
-    ythLowerTR, ythLowerTRU,
-    ythLowerYE,
+    ythLowerF, ythLowerFA, ythLowerFAL, ythLowerFALS,
+    ythLowerN, ythLowerNU, ythLowerNUL,
+    ythLowerT, ythLowerTR, ythLowerTRU,
 
-    ythPointLowerIN, ythPointLowerN, ythPointLowerNA,
+    ythPointLowerI, ythPointLowerIN,
+    ythPointLowerN, ythPointLowerNA,
 
     ythMinus, ythPlus, ythInt1, ythInt2, ythInt3, ythInt4, ythInt,
     ythDecimal, ythNumE, ythNumEPlusMinus, ythExponent,
@@ -159,9 +154,9 @@ template advanceTypeHint(ch: char) {.dirty.} =
     ythPoint                          => ythDecimal
     [ythInt, ythDecimal, ythExponent, ythFraction] => nil
   of 'a':
-    ythF           => ythLowerFA
-    ythPointN      => ythPointNA
-    ythPointLowerN => ythPointLowerNA
+    [ythF, ythLowerF] => ythLowerFA
+    ythPointN         => ythPointNA
+    ythPointLowerN    => ythPointLowerNA
   of 'A':
     ythF      => ythFA
     ythPointN => ythPointNA
@@ -170,24 +165,19 @@ template advanceTypeHint(ch: char) {.dirty.} =
       ythInt1, ythInt2, ythInt3, ythInt4] => ythNumE
     ythLowerFALS => ythFALSE
     ythLowerTRU  => ythTRUE
-    ythY         => ythLowerYE
   of 'E':
     [ythInt, ythDecimal,
       ythInt1, ythInt2, ythInt3, ythInt4] => ythNumE
     ythFALS => ythFALSE
     ythTRU  => ythTRUE
-    ythY    => ythYE
   of 'f':
-    ythInitial      => ythF
-    ythO            => ythLowerOF
-    ythLowerOF      => ythOFF
+    ythInitial      => ythLowerF
     ythPointLowerIN => ythPointINF
   of 'F':
     ythInitial => ythF
-    ythO       => ythOF
-    ythOF      => ythOFF
     ythPointIN => ythPointINF
-  of 'i', 'I': ythPoint => ythPointI
+  of 'i': ythPoint => ythPointLowerI
+  of 'I': ythPoint => ythPointI
   of 'l':
     ythLowerNU  => ythLowerNUL
     ythLowerNUL => ythNULL
@@ -197,38 +187,33 @@ template advanceTypeHint(ch: char) {.dirty.} =
     ythNUL => ythNULL
     ythFA  => ythFAL
   of 'n':
-    ythInitial      => ythN
-    ythO            => ythON
+    ythInitial      => ythLowerN
     ythPoint        => ythPointLowerN
-    ythPointI       => ythPointLowerIN
+    [ythPointI, ythPointLowerI] => ythPointLowerIN
     ythPointLowerNA => ythPointNAN
   of 'N':
     ythInitial => ythN
-    ythO       => ythON
     ythPoint   => ythPointN
     ythPointI  => ythPointIN
     ythPointNA => ythPointNAN
-  of 'o', 'O':
-    ythInitial => ythO
-    ythN       => ythNO
-  of 'r': ythT => ythLowerTR
+  of 'r': [ythT, ythLowerT] => ythLowerTR
   of 'R': ythT => ythTR
   of 's':
     ythLowerFAL => ythLowerFALS
-    ythLowerYE  => ythYES
   of 'S':
     ythFAL => ythFALS
-    ythYE  => ythYES
-  of 't', 'T':
+  of 't':
+    ythInitial         => ythLowerT
+    [ythDay1, ythDay2, ythDay1NoYmd, ythDay2NoYmd] => ythAfterDayT
+  of 'T':
     ythInitial         => ythT
     [ythDay1, ythDay2, ythDay1NoYmd, ythDay2NoYmd] => ythAfterDayT
   of 'u':
-    ythN       => ythLowerNU
-    ythLowerTR => ythLowerTRU
+    [ythN, ythLowerN]  => ythLowerNU
+    ythLowerTR         => ythLowerTRU
   of 'U':
     ythN  => ythNU
     ythTR => ythTRU
-  of 'y', 'Y': ythInitial => ythY
   of 'Z': [ythSecond2, ythFraction, ythAfterTimeSpace] => ythAfterTimeZ
   of ' ', '\t':
     [ythSecond2, ythFraction] => ythAfterTimeSpace
@@ -242,8 +227,8 @@ proc guessType*(scalar: string): TypeHint {.raises: [].} =
   for c in scalar: advanceTypeHint(c)
   case typeHintState
   of ythNULL, ythInitial: result = yTypeNull
-  of ythTRUE, ythON, ythYES, ythY: result = yTypeBoolTrue
-  of ythFALSE, ythOFF, ythNO, ythN: result = yTypeBoolFalse
+  of ythTRUE: result = yTypeBoolTrue
+  of ythFALSE: result = yTypeBoolFalse
   of ythInt1, ythInt2, ythInt3, ythInt4, ythInt: result = yTypeInteger
   of ythDecimal, ythExponent: result = yTypeFloat
   of ythPointINF: result = yTypeFloatInf

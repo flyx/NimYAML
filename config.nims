@@ -38,6 +38,11 @@ task quickstartTests, "Run quickstart tests":
   --verbosity:0
   setCommand "c", "test/tquickstart"
 
+task hintsTests, "Run hints tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/thints"
+
 task documentation, "Generate documentation":
   exec "mkdir -p docout"
   withDir "doc":
