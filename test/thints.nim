@@ -9,7 +9,7 @@ suite "Hints":
     assert guessType("10") == yTypeInteger
     assert guessType("248") == yTypeInteger
     assert guessType("-4248") == yTypeInteger
-    assert guessType("+4248") == yTypeInteger
+    assert guessType("+42489") == yTypeInteger
 
   test "Non-Int":
     assert guessType("0+0") != yTypeInteger
@@ -225,6 +225,9 @@ suite "Hints":
   test "Non-Inf":
     assert guessType(".InF") != yTypeFloatInf
     assert guessType(".INf") != yTypeFloatInf
+    assert guessType("inf") != yTypeFloatInf
+    assert guessType("Inf") != yTypeFloatInf
+    assert guessType("INF") != yTypeFloatInf
 
   test "NaN":
     # ``\.nan | \.NaN | \.NAN``
@@ -236,6 +239,9 @@ suite "Hints":
     assert guessType(".nAn") != yTypeFloatNaN
     assert guessType(".Nan") != yTypeFloatNaN
     assert guessType(".nAN") != yTypeFloatNaN
+    assert guessType("nan") != yTypeFloatNaN
+    assert guessType("NaN") != yTypeFloatNaN
+    assert guessType("NAN") != yTypeFloatNaN
 
   test "Null":
     # ``null | Null | NULL | ~``
@@ -250,3 +256,7 @@ suite "Hints":
     assert guessType("NULl") != yTypeNull
     assert guessType("nULL") != yTypeNull
     assert guessType("~~") != yTypeNull
+    assert guessType(".null") != yTypeNull
+    assert guessType(".Null") != yTypeNull
+    assert guessType(".NULL") != yTypeNull
+    assert guessType(".~") != yTypeNull
