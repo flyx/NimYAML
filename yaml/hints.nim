@@ -23,6 +23,8 @@ type
     ## You can use it to determine the type of YAML scalars that have a '?'
     ## non-specific tag, but using this feature is completely optional.
     ##
+    ## See also: https://yaml.org/spec/1.2.2/#103-core-schema
+    ##
     ## ================== =========================
     ## Name               RegEx
     ## ================== =========================
@@ -30,9 +32,9 @@ type
     ## ``yTypeFloat``     ``[-+]? ( \. [0-9]+ | [0-9]+ ( \. [0-9]* )? ) ( [eE] [-+]? [0-9]+ )?``
     ## ``yTypeFloatInf``  ``[-+]? ( \.inf | \.Inf | \.INF )``
     ## ``yTypeFloatNaN``  ``\.nan | \.NaN | \.NAN``
-    ## ``yTypeBoolTrue``  ``y|Y|yes|Yes|YES|true|True|TRUE|on|On|ON`` (and all upper/lower variants)
-    ## ``yTypeBoolFalse`` ``n|N|no|No|NO|false|False|FALSE|off|Off|OFF``  (and all upper/lower variants)
-    ## ``yTypeNull``      ``~ | null | Null | NULL`` (and all upper/lower variants)
+    ## ``yTypeBoolTrue``  ``true | True | TRUE``
+    ## ``yTypeBoolFalse`` ``false | False | FALSE``
+    ## ``yTypeNull``      ``null | Null | NULL | ~``
     ## ``yTypeTimestamp`` see `here <http://yaml.org/type/timestamp.html>`_.
     ## ``yTypeUnknown``   ``*``
     ## ================== =========================
@@ -112,119 +114,119 @@ template advanceTypeHint(ch: char) {.dirty.} =
   of '.':
     [ythInt1, ythInt2, ythInt3, ythInt4, ythInt] => ythDecimal
     [ythInitial, ythMinus, ythPlus] => ythPoint
-    ythSecond2 => ythFraction
+    ythSecond2                      => ythFraction
   of '+':
-    ythInitial => ythPlus
-    ythNumE => ythNumEPlusMinus
+    ythInitial                => ythPlus
+    ythNumE                   => ythNumEPlusMinus
     [ythFraction, ythSecond2] => ythAfterTimePlusMinus
   of '-':
-    ythInitial => ythMinus
-    ythNumE => ythNumEPlusMinus
-    ythInt4 => ythYearMinus
-    ythMonth1 => ythMonthMinusNoYmd
-    ythMonth2 => ythMonthMinus
+    ythInitial                => ythMinus
+    ythNumE                   => ythNumEPlusMinus
+    ythInt4                   => ythYearMinus
+    ythMonth1                 => ythMonthMinusNoYmd
+    ythMonth2                 => ythMonthMinus
     [ythFraction, ythSecond2] => ythAfterTimePlusMinus
   of '_':
     [ythInt1, ythInt2, ythInt3, ythInt4] => ythInt
-    [ythInt, ythDecimal] => nil
+    [ythInt, ythDecimal]      => nil
   of ':':
-    [ythHour1, ythHour2] => ythHourColon
-    ythMinute2 => ythMinuteColon
-    [ythTzHour1, ythTzHour2] => ythTzHourColon
+    [ythHour1, ythHour2]      => ythHourColon
+    ythMinute2                => ythMinuteColon
+    [ythTzHour1, ythTzHour2]  => ythTzHourColon
   of '0'..'9':
-    ythInitial => ythInt1
-    ythInt1 => ythInt2
-    ythInt2 => ythInt3
-    ythInt3 => ythInt4
-    [ythInt4, ythMinus, ythPlus] => ythInt
-    [ythNumE, ythNumEPlusMinus] => ythExponent
-    ythYearMinus => ythMonth1
-    ythMonth1 => ythMonth2
-    ythMonthMinus => ythDay1
-    ythMonthMinusNoYmd => ythDay1NoYmd
-    ythDay1 => ythDay2
-    ythDay1NoYmd => ythDay2NoYmd
-    [ythAfterDaySpace, ythAfterDayT] => ythHour1
-    ythHour1 => ythHour2
-    ythHourColon => ythMinute1
-    ythMinute1 => ythMinute2
-    ythMinuteColon => ythSecond1
-    ythSecond1 => ythSecond2
-    ythAfterTimePlusMinus => ythTzHour1
-    ythTzHour1 => ythTzHour2
-    ythTzHourColon => ythTzMinute1
-    ythTzMinute1 => ythTzMinute2
-    ythPoint => ythDecimal
+    ythInitial                        => ythInt1
+    ythInt1                           => ythInt2
+    ythInt2                           => ythInt3
+    ythInt3                           => ythInt4
+    [ythInt4, ythMinus, ythPlus]      => ythInt
+    [ythNumE, ythNumEPlusMinus]       => ythExponent
+    ythYearMinus                      => ythMonth1
+    ythMonth1                         => ythMonth2
+    ythMonthMinus                     => ythDay1
+    ythMonthMinusNoYmd                => ythDay1NoYmd
+    ythDay1                           => ythDay2
+    ythDay1NoYmd                      => ythDay2NoYmd
+    [ythAfterDaySpace, ythAfterDayT]  => ythHour1
+    ythHour1                          => ythHour2
+    ythHourColon                      => ythMinute1
+    ythMinute1                        => ythMinute2
+    ythMinuteColon                    => ythSecond1
+    ythSecond1                        => ythSecond2
+    ythAfterTimePlusMinus             => ythTzHour1
+    ythTzHour1                        => ythTzHour2
+    ythTzHourColon                    => ythTzMinute1
+    ythTzMinute1                      => ythTzMinute2
+    ythPoint                          => ythDecimal
     [ythInt, ythDecimal, ythExponent, ythFraction] => nil
   of 'a':
-    ythF => ythLowerFA
-    ythPointN => ythPointNA
+    ythF           => ythLowerFA
+    ythPointN      => ythPointNA
     ythPointLowerN => ythPointLowerNA
   of 'A':
-    ythF => ythFA
+    ythF      => ythFA
     ythPointN => ythPointNA
   of 'e':
     [ythInt, ythDecimal,
       ythInt1, ythInt2, ythInt3, ythInt4] => ythNumE
     ythLowerFALS => ythFALSE
-    ythLowerTRU => ythTRUE
-    ythY => ythLowerYE
+    ythLowerTRU  => ythTRUE
+    ythY         => ythLowerYE
   of 'E':
     [ythInt, ythDecimal,
       ythInt1, ythInt2, ythInt3, ythInt4] => ythNumE
     ythFALS => ythFALSE
-    ythTRU => ythTRUE
-    ythY => ythYE
+    ythTRU  => ythTRUE
+    ythY    => ythYE
   of 'f':
-    ythInitial => ythF
-    ythO => ythLowerOF
-    ythLowerOF => ythOFF
+    ythInitial      => ythF
+    ythO            => ythLowerOF
+    ythLowerOF      => ythOFF
     ythPointLowerIN => ythPointINF
   of 'F':
     ythInitial => ythF
-    ythO => ythOF
-    ythOF => ythOFF
+    ythO       => ythOF
+    ythOF      => ythOFF
     ythPointIN => ythPointINF
   of 'i', 'I': ythPoint => ythPointI
   of 'l':
-    ythLowerNU => ythLowerNUL
+    ythLowerNU  => ythLowerNUL
     ythLowerNUL => ythNULL
-    ythLowerFA => ythLowerFAL
+    ythLowerFA  => ythLowerFAL
   of 'L':
-    ythNU => ythNUL
+    ythNU  => ythNUL
     ythNUL => ythNULL
-    ythFA => ythFAL
+    ythFA  => ythFAL
   of 'n':
-    ythInitial => ythN
-    ythO => ythON
-    ythPoint => ythPointLowerN
-    ythPointI => ythPointLowerIN
+    ythInitial      => ythN
+    ythO            => ythON
+    ythPoint        => ythPointLowerN
+    ythPointI       => ythPointLowerIN
     ythPointLowerNA => ythPointNAN
   of 'N':
     ythInitial => ythN
-    ythO => ythON
-    ythPoint => ythPointN
-    ythPointI => ythPointIN
+    ythO       => ythON
+    ythPoint   => ythPointN
+    ythPointI  => ythPointIN
     ythPointNA => ythPointNAN
   of 'o', 'O':
     ythInitial => ythO
-    ythN => ythNO
+    ythN       => ythNO
   of 'r': ythT => ythLowerTR
   of 'R': ythT => ythTR
   of 's':
     ythLowerFAL => ythLowerFALS
-    ythLowerYE => ythYES
+    ythLowerYE  => ythYES
   of 'S':
     ythFAL => ythFALS
-    ythYE => ythYES
+    ythYE  => ythYES
   of 't', 'T':
-    ythInitial => ythT
+    ythInitial         => ythT
     [ythDay1, ythDay2, ythDay1NoYmd, ythDay2NoYmd] => ythAfterDayT
   of 'u':
-    ythN => ythLowerNU
+    ythN       => ythLowerNU
     ythLowerTR => ythLowerTRU
   of 'U':
-    ythN => ythNU
+    ythN  => ythNU
     ythTR => ythTRU
   of 'y', 'Y': ythInitial => ythY
   of 'Z': [ythSecond2, ythFraction, ythAfterTimeSpace] => ythAfterTimeZ
