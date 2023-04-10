@@ -46,7 +46,7 @@ Numbers, bools, special values:
  - true
  - ~
  - 42.23
- - no
+ - FALSE
 """, """{
 "Foo": [
     [ "a", "b", "c"],
