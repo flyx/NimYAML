@@ -1,6 +1,6 @@
 %YAML 1.2
 %TAG !n! tag:nimyaml.org,2016:
---- !Mob 
+--- !Mob
 !n!field level: !n!system:int32 42
 !n!field experience: !n!system:int32 1800
 !n!field drops: !Drops [!!str Sword of Mob Slaying]

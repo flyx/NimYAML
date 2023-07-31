@@ -6,6 +6,7 @@
 
 import "../yaml"
 import unittest, strutils, tables, times, math, options
+import commonTestUtils
 
 type
   MyTuple = tuple
@@ -73,7 +74,7 @@ setTag(TrafficLight, Tag("!tl"))
 setTag(Node, Tag("!example.net:Node"))
 setTag(BetterInt, Tag("!test:BetterInt"))
 
-const yamlDirs = "%YAML 1.2\n%TAG !n! tag:nimyaml.org,2016:\n--- "
+const yamlDirs = "%YAML 1.2\n%TAG !n! tag:nimyaml.org,2016:\n---"
 
 proc representObject*(value: BetterInt, ts: TagStyle = tsNone,
     c: SerializationContext, tag: Tag) {.raises: [].} =
@@ -90,32 +91,6 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
     {.raises: [YamlConstructionError, YamlStreamError].} =
   constructScalarItem(s, item, BetterInt):
     result = BetterInt(parseBiggestInt(item.scalarContent) + 1)
-
-template assertStringEqual(expected, actual: string) =
-  if expected != actual:
-    # if they are unequal, walk through the strings and check each
-    # character for a better error message
-    if expected.len != actual.len:
-      echo "Expected and actual string's length differs.\n"
-      echo "Expected length: ", expected.len, "\n"
-      echo "Actual length: ", actual.len, "\n"
-    # check length up to smaller of the two strings
-    for i in countup(0, min(expected.high, actual.high)):
-      if expected[i] != actual[i]:
-        echo "string mismatch at character #", i, "(expected:\'",
-         expected[i], "\', was \'", actual[i], "\'):\n"
-        echo "expected:\n", expected, "\nactual:\n", actual, "\n"
-        assert(false)
-    # if we haven't raised an assertion error here, the problem is that
-    # one string is longer than the other
-    let minInd = min(expected.len, actual.len) # len instead of high to continue
-                                               # after shorter string
-    if expected.high > actual.high:
-      echo "Expected continues with: '", expected[minInd .. ^1], "'"
-      assert false
-    else:
-      echo "Actual continues with: '", actual[minInd .. ^1], "'"
-      assert false
 
 template expectConstructionError(li, co: int, message: string, body: typed) =
   try:
@@ -315,15 +290,11 @@ suite "Serialization":
     input[(a: 13'i32, b: 47'i32)] = "dreizehnsiebenundvierzig"
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
-        "!n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str) \n" &
-        "- \n" &
-        "  ? \n" &
-        "    a: 23\n" &
+        " !n!tables:OrderedTable(tag:nimyaml.org;2016:tuple(tag:nimyaml.org;2016:system:int32;tag:nimyaml.org;2016:system:int32);tag:yaml.org;2002:str)\n" &
+        "- ? a: 23\n" &
         "    b: 42\n" &
         "  : dreiundzwanzigzweiundvierzig\n" &
-        "- \n" &
-        "  ? \n" &
-        "    a: 13\n" &
+        "- ? a: 13\n" &
         "    b: 47\n" &
         "  : dreizehnsiebenundvierzig\n", output)
 
@@ -435,7 +406,7 @@ suite "Serialization":
       load(input, result)
 
   test "Load sequence with explicit tags":
-    let input = yamlDirs & "!n!system:seq(" &
+    let input = yamlDirs & " !n!system:seq(" &
         "tag:yaml.org;2002:str)\n- !!str one\n- !!str two"
     var result: seq[string]
     load(input, result)
@@ -445,8 +416,8 @@ suite "Serialization":
   test "Dump sequence with explicit tags":
     let input = @["one", "two"]
     var output = dump(input, tsAll, asTidy, blockOnly)
-    assertStringEqual(yamlDirs & "!n!system:seq(" &
-        "tag:yaml.org;2002:str) \n- !!str one\n- !!str two\n", output)
+    assertStringEqual(yamlDirs & " !n!system:seq(" &
+        "tag:yaml.org;2002:str)\n- !!str one\n- !!str two\n", output)
 
   test "Load custom object with explicit root tag":
     let input =
@@ -461,7 +432,7 @@ suite "Serialization":
     let input = Person(firstnamechar: 'P', surname: "Pan", age: 12)
     var output = dump(input, tsRootOnly, asTidy, blockOnly)
     assertStringEqual(yamlDirs &
-        "!n!custom:Person \nfirstnamechar: P\nsurname: Pan\nage: 12\n", output)
+        " !n!custom:Person\nfirstnamechar: P\nsurname: Pan\nage: 12\n", output)
 
   test "Load object with inherited fields":
     let input =
@@ -490,20 +461,12 @@ suite "Serialization":
                   Animal(name: "Anubis", kind: akDog, barkometer: 13)]
     var output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & "\n" &
-        "- \n" &
-        "  - \n" &
-        "    name: Bastet\n" &
-        "  - \n" &
-        "    kind: akCat\n" &
-        "  - \n" &
-        "    purringIntensity: 7\n" &
-        "- \n" &
-        "  - \n" &
-        "    name: Anubis\n" &
-        "  - \n" &
-        "    kind: akDog\n" &
-        "  - \n" &
-        "    barkometer: 13\n", output
+        "- - name: Bastet\n" &
+        "  - kind: akCat\n" &
+        "  - purringIntensity: 7\n" &
+        "- - name: Anubis\n" &
+        "  - kind: akDog\n" &
+        "  - barkometer: 13\n", output
 
   test "Load custom variant object - missing field":
     let input = "[{name: Bastet}, {kind: akCat}]"
@@ -555,18 +518,11 @@ suite "Serialization":
         neverThere: 42)]
     let output = dump(input, tsNone, asTidy, blockOnly)
     assertStringEqual yamlDirs & "\n" &
-        "- \n" &
-        "  - \n" &
-        "    gStorable: gs\n" &
-        "  - \n" &
-        "    kind: deA\n" &
-        "  - \n" &
-        "    cStorable: cs\n" &
-        "- \n" &
-        "  - \n" &
-        "    gStorable: a\n" &
-        "  - \n" &
-        "    kind: deC\n", output
+        "- - gStorable: gs\n" &
+        "  - kind: deA\n" &
+        "  - cStorable: cs\n" &
+        "- - gStorable: a\n" &
+        "  - kind: deC\n", output
 
   test "Load object with ignored key":
     let input = "[{x: 1, y: 2}, {x: 3, z: 4, y: 5}, {z: [1, 2, 3], x: 4, y: 5}]"
@@ -596,16 +552,16 @@ suite "Serialization":
       b.next = c
       c.next = a
       var output = dump(a, tsRootOnly, asTidy, blockOnly)
-      assertStringEqual yamlDirs & "!example.net:Node &a \n" &
+      assertStringEqual yamlDirs & " !example.net:Node &a\n" &
           "value: a\n" &
-          "next: \n" &
+          "next:\n" &
           "  value: b\n" &
-          "  next: \n" &
+          "  next:\n" &
           "    value: c\n" &
           "    next: *a\n", output
 
     test "Load cyclic data structure":
-      let input = yamlDirs & """!n!system:seq(example.net:Node)
+      let input = yamlDirs & """ !n!system:seq(example.net:Node)
   - &a
     value: a
     next: &b
@@ -661,7 +617,7 @@ suite "Serialization":
   test "Custom representObject":
     let input = @[1.BetterInt, 9998887.BetterInt, 98312.BetterInt]
     var output = dump(input, tsAll, asTidy, blockOnly)
-    assertStringEqual yamlDirs & "!n!system:seq(test:BetterInt) \n" &
+    assertStringEqual yamlDirs & " !n!system:seq(test:BetterInt)\n" &
         "- !test:BetterInt 1\n" &
         "- !test:BetterInt 9_998_887\n" &
         "- !test:BetterInt 98_312\n", output

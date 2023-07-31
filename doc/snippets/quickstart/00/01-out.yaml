@@ -1,9 +1,7 @@
 %YAML 1.2
 %TAG !n! tag:nimyaml.org,2016:
---- !n!system:seq(tag:nimyaml.org;2016:custom:Person) 
-- 
-  name: Karl Koch
+--- !n!system:seq(tag:nimyaml.org;2016:custom:Person)
+- name: Karl Koch
   age: 23
-- 
-  name: Peter Pan
+- name: Peter Pan
   age: 12

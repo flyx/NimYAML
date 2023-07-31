@@ -6,9 +6,11 @@ test/tserialization
 test/tjson
 test/tparser
 test/tquickstart
+test/tpresenter
 test/*.exe
 test/*.pdb
 test/*.ilk
+test/*.js
 server/server
 bench/jsonBench
 bench/yamlBench
@@ -22,4 +24,8 @@ doc/rstPreproc
 doc/tmp.rst
 doc/**/code
 nimsuggest.log
+server/server_cfg.nim
 result
+vendor
+.vscode
+*.swp

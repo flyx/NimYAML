@@ -130,6 +130,17 @@ proc properties*(event: Event): Properties =
   of yamlScalar: result = event.scalarProperties
   else: raise newException(FieldDefect, "Event " & $event.kind & " has no properties")
 
+proc hasSpecificTag*(event: Event): bool =
+  var props: Properties
+  case event.kind
+  of yamlStartMap: props = event.mapProperties
+  of yamlStartSeq: props = event.seqProperties
+  of yamlScalar: props = event.scalarProperties
+  else: return false
+  case props.tag
+  of yTagExclamationMark, yTagQuestionMark: return false
+  else: return true
+
 proc collectionStyle*(event: Event): CollectionStyle =
   ## returns the style of the given collection start event
   case event.kind

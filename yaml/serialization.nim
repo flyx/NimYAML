@@ -26,7 +26,7 @@ type
   SerializationContext* = ref object
     ## Context information for the process of serializing YAML from Nim values.
     refs*: Table[pointer, tuple[a: Anchor, referenced: bool]]
-    style: AnchorStyle
+    anchorStyle: AnchorStyle
     nextAnchorId*: string
     put*: proc(e: Event) {.raises: [], closure.}
 
@@ -95,7 +95,7 @@ proc newConstructionContext*(): ConstructionContext =
 proc newSerializationContext*(s: AnchorStyle,
     putImpl: proc(e: Event) {.raises: [], closure.}):
     SerializationContext =
-  result = SerializationContext(style: s, nextAnchorId: "a",
+  result = SerializationContext(anchorStyle: s, nextAnchorId: "a",
                                 put: putImpl)
   result.refs = initTable[pointer, tuple[a: Anchor, referenced: bool]]()
 
@@ -867,7 +867,6 @@ macro constructFieldValue(t: typedesc, stream: untyped,
   let
     tDecl = getType(t)
     tName = $tDecl[1]
-    tDesc = getType(tDecl[1])
   result = newStmtList()
   var caseStmt = newNimNode(nnkCaseStmt).add(name)
   var fieldIndex = 0
@@ -1372,12 +1371,12 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
   if isNil(value): c.put(scalarEvent("~", yTagNull))
   else:
     let p = cast[pointer](value)
-    # when c.style == asNone, `referenced` is used as indicator that we are
+    # when c.anchorStyle == asNone, `referenced` is used as indicator that we are
     # currently in the process of serializing this node. This enables us to
     # detect cycles and raise an error.
-    var val = c.refs.getOrDefault(p, (c.nextAnchorId.Anchor, c.style == asNone))
+    var val = c.refs.getOrDefault(p, (c.nextAnchorId.Anchor, c.anchorStyle == asNone))
     if val.a != c.nextAnchorId.Anchor:
-      if c.style == asNone:
+      if c.anchorStyle == asNone:
         if val.referenced:
           raise newException(YamlSerializationError,
               "tried to serialize cyclic graph with asNone")
@@ -1397,20 +1396,20 @@ proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
       var ex = e
       case ex.kind
       of yamlStartMap:
-        if c.style != asNone: ex.mapProperties.anchor = val.a
+        if c.anchorStyle != asNone: ex.mapProperties.anchor = val.a
         if ts == tsNone: ex.mapProperties.tag = yTagQuestionMark
       of yamlStartSeq:
-        if c.style != asNone: ex.seqProperties.anchor = val.a
+        if c.anchorStyle != asNone: ex.seqProperties.anchor = val.a
         if ts == tsNone: ex.seqProperties.tag = yTagQuestionMark
       of yamlScalar:
-        if c.style != asNone: ex.scalarProperties.anchor = val.a
+        if c.anchorStyle != asNone: ex.scalarProperties.anchor = val.a
         if ts == tsNone and guessType(ex.scalarContent) != yTypeNull:
           ex.scalarProperties.tag = yTagQuestionMark
       else: discard
       c.put = origPut
       c.put(ex)
     representChild(value[], childTagStyle, c)
-    if c.style == asNone: c.refs[p] = (val.a, false)
+    if c.anchorStyle == asNone: c.refs[p] = (val.a, false)
 
 proc representChild*[T](value: Option[T], ts: TagStyle,
     c: SerializationContext) =
@@ -1539,8 +1538,8 @@ proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
   ## Dump a Nim value as YAML character stream.
   ## To prevent %TAG directives in the output, give ``handles = @[]``.
   var events = represent(value,
-      if options.style == psCanonical: tsAll else: tagStyle,
-      if options.style == psJson: asNone else: anchorStyle, handles)
+    if options.quoting == sqJson: tsNone else: tagStyle,
+    if options.quoting == sqJson: asNone else: anchorStyle, handles)
   try: present(events, target, options)
   except YamlStreamError as e:
     internalError("Unexpected exception: " & $e.name)
@@ -1556,8 +1555,8 @@ proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
   ## Dump a Nim value as YAML into a string.
   ## To prevent %TAG directives in the output, give ``handles = @[]``.
   var events = represent(value,
-      if options.style == psCanonical: tsAll else: tagStyle,
-      if options.style == psJson: asNone else: anchorStyle, handles)
+    if options.quoting == sqJson: tsNone else: tagStyle,
+    if options.quoting == sqJson: asNone else: anchorStyle, handles)
   try: result = present(events, options)
   except YamlStreamError as e:
     internalError("Unexpected exception: " & $e.name)

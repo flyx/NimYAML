@@ -1,17 +1,17 @@
 %YAML 1.1
 %TAG !n! tag:nimyaml.org,2016:
---- 
-!n!system:seq(tag:nimyaml.org;2016:custom:Person) [
+--- !n!system:seq(tag:nimyaml.org;2016:custom:Person)
+[
    !n!custom:Person {
-      ? !n!field "name"
-      : !!str "Karl Koch",
-      ? !n!field "age"
-      : !n!system:int32 "23"
+      ?  !n!field "name"
+      :  !!str "Karl Koch",
+      ?  !n!field "age"
+      :  !n!system:int32 "23"
    },
    !n!custom:Person {
-      ? !n!field "name"
-      : !!str "Peter Pan",
-      ? !n!field "age"
-      : !n!system:int32 "12"
+      ?  !n!field "name"
+      :  !!str "Peter Pan",
+      ?  !n!field "age"
+      :  !n!system:int32 "12"
    }
 ]

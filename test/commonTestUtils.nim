@@ -72,3 +72,29 @@ template ensure*(input: var YamlStream,
       fail()
       break
     i.inc()
+
+template assertStringEqual*(expected, actual: string) =
+  if expected != actual:
+    # if they are unequal, walk through the strings and check each
+    # character for a better error message
+    if expected.len != actual.len:
+      echo "Expected and actual string's length differs.\n"
+      echo "Expected length: ", expected.len, "\n"
+      echo "Actual length: ", actual.len, "\n"
+    # check length up to smaller of the two strings
+    for i in countup(0, min(expected.high, actual.high)):
+      if expected[i] != actual[i]:
+        echo "string mismatch at character #", i, "(expected:\'",
+         expected[i], "\', was \'", actual[i], "\'):\n"
+        echo "expected:\n", expected, "\nactual:\n", actual, "\n"
+        assert(false)
+    # if we haven't raised an assertion error here, the problem is that
+    # one string is longer than the other
+    let minInd = min(expected.len, actual.len) # len instead of high to continue
+                                               # after shorter string
+    if expected.high > actual.high:
+      echo "Expected continues with: '", expected[minInd .. ^1], "'"
+      assert false
+    else:
+      echo "Actual continues with: '", actual[minInd .. ^1], "'"
+      assert false

@@ -5,7 +5,7 @@ name: Node 1
 left:
   name: Node 2
   left: ~
-  right: &b 
+  right: &b
     name: Node 3
     left: *a
     right: ~

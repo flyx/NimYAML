@@ -1,11 +1,11 @@
 %YAML 1.2
 %TAG !n! tag:nimyaml.org,2016:
---- !n!custom:NodeObj &a 
+--- !n!custom:NodeObj &a
 name: Node 1
-left: 
+left:
   name: Node 2
   left: !!null ~
-  right: &b 
+  right: &b
     name: Node 3
     left: *a
     right: !!null ~

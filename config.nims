@@ -43,6 +43,11 @@ task hintsTests, "Run hints tests":
   --verbosity:0
   setCommand "c", "test/thints"
 
+task presenterTests, "Run presenter tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tpresenter"
+
 task documentation, "Generate documentation":
   exec "mkdir -p docout"
   withDir "doc":

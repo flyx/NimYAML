@@ -9,5 +9,5 @@ personList.add(Person(name: "Peter Pan", age: 12))
 
 var s = newFileStream("out.yaml", fmWrite)
 dump(personList, s,
-      options = defineOptions(style = psJson))
+    options = defineOptions(style = psJson))
 s.close()
