@@ -1,5 +1,5 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2016 Felix Krause
+#        (c) Copyright 2015-2023 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -12,7 +12,7 @@
 ## structures provided by Nim's stdlib.
 
 import json, streams, strutils, tables
-import data, hints, serialization, stream, private/internal, parser
+import data, hints, native, stream, private/internal, parser
 
 # represents a single YAML level. The `node` with name `key`.
 # `expKey` is used to indicate that an empty node shall be filled
@@ -21,8 +21,10 @@ type Level = tuple[node: JsonNode, key: string, expKey: bool]
 proc initLevel(node: JsonNode): Level {.raises: [].} =
   (node: node, key: "", expKey: true)
 
-proc jsonFromScalar(content: sink string, tag: Tag): JsonNode
-   {.raises: [YamlConstructionError].}=
+proc jsonFromScalar(
+  content: sink string,
+  tag    : Tag,
+): JsonNode {.raises: [YamlConstructionError].} =
   new(result)
   var mappedType: TypeHint
 
@@ -75,8 +77,9 @@ proc jsonFromScalar(content: sink string, tag: Tag): JsonNode
     e.parent = ve
     raise e
 
-proc constructJson*(s: var YamlStream): seq[JsonNode]
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructJson*(s: var YamlStream): seq[JsonNode] {.raises: [
+  YamlConstructionError, YamlStreamError
+].} =
   ## Construct an in-memory JSON tree from a YAML event stream. The stream may
   ## not contain any tags apart from those in ``coreTagLibrary``. Anchors and
   ## aliases will be resolved. Maps in the input must not contain
@@ -102,7 +105,7 @@ proc constructJson*(s: var YamlStream): seq[JsonNode]
       # by first scalar, sequence or map event
       discard
     of yamlEndDoc:
-      # we can savely assume that levels has e length of exactly 1.
+      # we can safely assume that levels has e length of exactly 1.
       result.add(levels.pop().node)
     of yamlStartSeq:
       levels.add(initLevel(newJArray()))

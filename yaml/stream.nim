@@ -1,5 +1,5 @@
-    #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2016 Felix Krause
+#            NimYAML - YAML implementation in Nim
+#        (c) Copyright 2015-2023 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -57,8 +57,9 @@ when not defined(JS):
   type IteratorYamlStream = ref object of YamlStream
     backend: iterator(): Event {.gcSafe, raises: [CatchableError].}
 
-  proc initYamlStream*(backend: iterator(): Event {.gcSafe, raises: [CatchableError].}): YamlStream
-      {.raises: [].} =
+  proc initYamlStream*(
+    backend: iterator(): Event {.gcSafe, raises: [CatchableError].}
+  ): YamlStream {.raises: [].} =
     ## Creates a new ``YamlStream`` that uses the given iterator as backend.
     result = new(IteratorYamlStream)
     result.basicInit()

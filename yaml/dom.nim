@@ -1,5 +1,5 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2016 Felix Krause
+#        (c) Copyright 2015-2023 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -12,15 +12,16 @@
 ## structure. It can also dump the structure back to YAML. Formally, it
 ## represents the *Representation Graph* as defined in the YAML specification.
 ##
-## The main interface of this API are ``loadDom`` and ``dumpDom``. The other
-## exposed procs are low-level and useful if you want to load or generate parts
-## of a ``YamlStream``.
+## You use this API by importing this module alongside loading and/or dumping,
+## and then call load() / dump() on YamlNode values. A special function
+## ``loadFlattened`` allows you to load aliases in the YAML input as if they
+## were copies of the referenced subtree.
 ##
-## The ``YamlNode`` objects in the DOM can be used similarly to the ``JsonNode``
+## The ``YamlNode`` objects in the DOM are structured similarly to the ``JsonNode``
 ## objects of Nim's `json module <http://nim-lang.org/docs/json.html>`_.
 
 import std / [tables, streams, hashes, sets, strutils]
-import data, stream, taglib, serialization, private/internal, parser
+import data, stream, taglib, private/internal, parser, loading
 
 when defined(gcArc) and not defined(gcOrc):
   {.error: "NimYAML's DOM API only supports ORC because ARC can't deal with cycles".}
@@ -128,7 +129,7 @@ proc newYamlNode*(
   tag     : Tag         = yTagQuestionMark,
   style   : ScalarStyle = ssAny,
   startPos: Mark        = Mark(),
-  endPos  : Mark        = Mark()
+  endPos  : Mark        = Mark(),
 ): YamlNode =
   YamlNode(kind: yScalar, content: content, tag: tag,
       startPos: startPos, endPos: endPos)
@@ -153,65 +154,75 @@ proc newYamlNode*(
   YamlNode(kind: yMapping, fields: newTable(fields), tag: tag,
       startPos: startPos, endPos: endPos)
 
-proc constructChild*(s: var YamlStream, c: ConstructionContext,
-                     result: var YamlNode)
-    {.raises: [YamlStreamError, YamlConstructionError].} =
-  template addAnchor(c: ConstructionContext, target: Anchor) =
+proc constructChild*(
+  ctx   : var ConstructionContext,
+  result: var YamlNode
+) {.raises: [YamlStreamError, YamlConstructionError].} =
+  template addAnchor(c: var ConstructionContext, target: Anchor) =
     if target != yAnchorNone:
-      yAssert(not c.refs.hasKey(target))
+      yAssert(not ctx.refs.hasKey(target))
       c.refs[target] = (tag: yamlTag(YamlNode), p: cast[pointer](result))
 
   var start: Event
   when defined(gcArc) or defined(gcOrc):
-    start = s.next()
+    start = ctx.input.next()
   else:
-    shallowCopy(start, s.next())
+    shallowCopy(start, ctx.input.next())
 
   case start.kind
   of yamlStartMap:
-    result = YamlNode(tag: start.mapProperties.tag,
-                      kind: yMapping,
-                      fields: newTable[YamlNode, YamlNode](),
-                      mapStyle: start.mapStyle,
-                      startPos: start.startPos, endPos: start.endPos)
-    addAnchor(c, start.mapProperties.anchor)
-    while s.peek().kind != yamlEndMap:
+    result = YamlNode(
+      tag: start.mapProperties.tag,
+      kind: yMapping,
+      fields: newTable[YamlNode, YamlNode](),
+      mapStyle: start.mapStyle,
+      startPos: start.startPos,
+      endPos: start.endPos,
+    )
+    ctx.addAnchor(start.mapProperties.anchor)
+    while ctx.input.peek().kind != yamlEndMap:
       var
         key: YamlNode = nil
         value: YamlNode = nil
-      constructChild(s, c, key)
-      constructChild(s, c, value)
+      ctx.constructChild(key)
+      ctx.constructChild(value)
       if result.fields.hasKeyOrPut(key, value):
-        raise newException(YamlConstructionError,
-            "Duplicate key: " & $key)
-    discard s.next()
+        raise ctx.input.constructionError(key.startPos, "Duplicate key: " & $key)
+    discard ctx.input.next()
   of yamlStartSeq:
-    result = YamlNode(tag: start.seqProperties.tag,
-                      kind: ySequence,
-                      elems: newSeq[YamlNode](),
-                      seqStyle: start.seqStyle,
-                      startPos: start.startPos, endPos: start.endPos)
-    addAnchor(c, start.seqProperties.anchor)
-    while s.peek().kind != yamlEndSeq:
+    result = YamlNode(
+      tag: start.seqProperties.tag,
+      kind: ySequence,
+      elems: newSeq[YamlNode](),
+      seqStyle: start.seqStyle,
+      startPos: start.startPos,
+      endPos: start.endPos,
+    )
+    ctx.addAnchor(start.seqProperties.anchor)
+    while ctx.input.peek().kind != yamlEndSeq:
       var item: YamlNode = nil
-      constructChild(s, c, item)
+      ctx.constructChild(item)
       result.elems.add(item)
-    discard s.next()
+    discard ctx.input.next()
   of yamlScalar:
-    result = YamlNode(tag: start.scalarProperties.tag,
-                      kind: yScalar, scalarStyle: start.scalarStyle,
-                      startPos: start.startPos, endPos: start.endPos)
-    addAnchor(c, start.scalarProperties.anchor)
+    result = YamlNode(
+      tag: start.scalarProperties.tag,
+      kind: yScalar,
+      scalarStyle: start.scalarStyle,
+      startPos: start.startPos,
+      endPos: start.endPos,
+    )
+    ctx.addAnchor(start.scalarProperties.anchor)
     when defined(gcArc) or defined(gcOrc):
       result.content = move start.scalarContent
     else:
       shallowCopy(result.content, start.scalarContent)
   of yamlAlias:
-    result = cast[YamlNode](c.refs.getOrDefault(start.aliasTarget).p)
+    result = cast[YamlNode](ctx.refs.getOrDefault(start.aliasTarget).p)
   else: internalError("Malformed YamlStream")
 
 proc representChild*(
-  ctx: var SerializationContext, 
+  ctx  : var SerializationContext, 
   value: YamlNodeObj,
 ) {.raises: [YamlSerializationError].} =
   case value.kind
@@ -298,9 +309,13 @@ iterator mpairs*(node: var YamlNode):
   doAssert node.kind == yMapping
   for key, value in node.fields.mpairs: yield (key, value)
 
-proc loadFlattened*[K](input: Stream | string, target: var K)
-    {.raises: [YamlConstructionError, YamlSerializationError, IOError, OSError,
-               YamlParserError].} =
+proc loadFlattened*[K](
+  input : Stream | string,
+  target: var K,
+) {.raises: [
+  YamlConstructionError, YamlSerializationError,
+  IOError, OSError, YamlParserError
+].} =
   ## Replaces all aliases with the referenced nodes in the input, then loads
   ## the resulting YAML into K. Can be used when anchors & aliases are used like
   ## variables in the input, to avoid having to define `ref` types for the

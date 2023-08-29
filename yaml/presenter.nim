@@ -1,5 +1,5 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2016 Felix Krause
+#        (c) Copyright 2015-2023 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -138,10 +138,12 @@ proc searchHandle(ctx: Context, tag: string):
         result.len = item.uriPrefix.len
         result.handle = item.handle
 
-proc inspect(scalar: string, indentation: int,
-             words, lines: var seq[tuple[start, finish: int]],
-             lineLength: Option[int]):
-    ScalarStyle {.raises: [].} =
+proc inspect(
+  scalar      : string,
+  indentation : int,
+  words, lines: var seq[tuple[start, finish: int]],
+  lineLength  : Option[int],
+): ScalarStyle {.raises: [].} =
   var
     inLine = false
     inWord = false
@@ -237,8 +239,10 @@ proc newline(ctx: var Context) {.inline.} =
   ctx.needsWhitespace = 0
   if ctx.levels.len > 0: ctx.level.wroteAnything = true
 
-proc writeDoubleQuoted(ctx: var Context, scalar: string)
-    {.raises: [YamlPresenterOutputError].} =
+proc writeDoubleQuoted(
+  ctx   : var Context,
+  scalar: string,
+) {.raises: [YamlPresenterOutputError].} =
   let indentation = ctx.indentation + ctx.options.indentationStep
   var curPos = indentation
   let t = ctx.target
@@ -282,8 +286,10 @@ proc writeDoubleQuoted(ctx: var Context, scalar: string)
     e.parent = ce
     raise e
 
-proc writeDoubleQuotedJson(ctx: var Context, scalar: string)
-    {.raises: [YamlPresenterOutputError].} =
+proc writeDoubleQuotedJson(
+  ctx   : var Context,
+  scalar: string,
+) {.raises: [YamlPresenterOutputError].} =
   let t = ctx.target
   try:
     ctx.append('"')
@@ -305,8 +311,10 @@ proc writeDoubleQuotedJson(ctx: var Context, scalar: string)
     raise e
 
 proc writeLiteral(
-    ctx: var Context, scalar: string, lines: seq[tuple[start, finish: int]])
-    {.raises: [YamlPresenterOutputError].} =
+  ctx   : var Context,
+  scalar: string,
+  lines : seq[tuple[start, finish: int]],
+) {.raises: [YamlPresenterOutputError].} =
   let indentation = ctx.indentation + ctx.options.indentationStep
   let t = ctx.target
   try:
@@ -324,9 +332,11 @@ proc writeLiteral(
     e.parent = ce
     raise e
 
-proc writeFolded(ctx: var Context, scalar: string,
-                 words: seq[tuple[start, finish: int]])
-    {.raises: [YamlPresenterOutputError].} =
+proc writeFolded(
+  ctx   : var Context,
+  scalar: string,
+  words : seq[tuple[start, finish: int]],
+) {.raises: [YamlPresenterOutputError].} =
   let t = ctx.target
   let indentation = ctx.indentation + ctx.options.indentationStep
   let lineLength = (
@@ -372,7 +382,10 @@ template safeNewline(c: var Context) =
     e.parent = ce
     raise e
 
-proc startItem(ctx: var Context, isObject: bool) {.raises: [YamlPresenterOutputError].} =
+proc startItem(
+  ctx     : var Context,
+  isObject: bool,
+) {.raises: [YamlPresenterOutputError].} =
   let t = ctx.target
   try:
     case ctx.state
@@ -455,8 +468,10 @@ proc startItem(ctx: var Context, isObject: bool) {.raises: [YamlPresenterOutputE
     e.parent = ce
     raise e
 
-proc writeTagAndAnchor(ctx: var Context, props: Properties): bool
-    {.raises: [YamlPresenterOutputError].} =
+proc writeTagAndAnchor(
+  ctx  : var Context,
+  props: Properties,
+): bool {.raises: [YamlPresenterOutputError].} =
   if ctx.options.suppressAttrs: return false
   let t = ctx.target
   result = false
@@ -484,17 +499,23 @@ proc writeTagAndAnchor(ctx: var Context, props: Properties): bool
     e.parent = ce
     raise e
 
-proc nextItem(c: var Deque, s: YamlStream):
-    Event {.raises: [YamlStreamError].} =
+proc nextItem(
+  c: var Deque,
+  s: YamlStream,
+): Event {.raises: [YamlStreamError].} =
   if c.len > 0:
     try: result = c.popFirst
     except IndexDefect: internalError("Unexpected IndexError")
   else:
     result = s.next()
 
-proc doPresent(ctx: var Context, s: YamlStream)
-    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-     YamlStreamError].} =
+proc doPresent(
+  ctx: var Context,
+  s  : YamlStream,
+) {.raises: [
+  YamlPresenterJsonError, YamlPresenterOutputError,
+  YamlStreamError
+].} =
   var
     cached = initDeQue[Event]()
     firstDoc = true
@@ -746,7 +767,7 @@ proc doPresent(ctx: var Context, s: YamlStream)
 proc present*(
   s      : YamlStream,
   target : Stream,
-  options: PresentationOptions = PresentationOptions()
+  options: PresentationOptions = PresentationOptions(),
 ) {.raises: [
   YamlPresenterJsonError, YamlPresenterOutputError,
   YamlStreamError
@@ -757,7 +778,7 @@ proc present*(
 
 proc present*(
   s      : YamlStream,
-  options: PresentationOptions = PresentationOptions()
+  options: PresentationOptions = PresentationOptions(),
 ): string {.raises: [
   YamlPresenterJsonError, YamlPresenterOutputError,
   YamlStreamError
@@ -773,7 +794,7 @@ proc present*(
 proc doTransform(
   ctx  : var Context,
   input: Stream,
-  resolveToCoreYamlTags: bool
+  resolveToCoreYamlTags: bool,
 ) =
   var parser: YamlParser
   parser.init()
@@ -825,7 +846,7 @@ proc transform*(
   input  : Stream | string,
   output : Stream,
   options: PresentationOptions = PresentationOptions(),
-  resolveToCoreYamlTags: bool = false
+  resolveToCoreYamlTags: bool = false,
 ) {.raises: [
   IOError, OSError, YamlParserError, YamlPresenterJsonError,
   YamlPresenterOutputError
@@ -840,7 +861,7 @@ proc transform*(
 proc transform*(
   input  : Stream | string,
   options: PresentationOptions = PresentationOptions(),
-  resolveToCoreYamlTags: bool = false
+  resolveToCoreYamlTags: bool = false,
 ): string {.raises: [
   IOError, OSError, YamlParserError, YamlPresenterJsonError,
   YamlPresenterOutputError

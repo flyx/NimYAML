@@ -1,3 +1,9 @@
+#            NimYAML - YAML implementation in Nim
+#        (c) Copyright 2015-2023 Felix Krause
+#
+#    See the file "copying.txt", included in this
+#    distribution, for details about the copyright.
+
 import hashes
 import private/escaping
 
@@ -71,6 +77,15 @@ type
     column*: Positive = 1
 
   Properties* = tuple[anchor: Anchor, tag: Tag]
+  
+  YamlLoadingError* = object of ValueError
+    ## Base class for all exceptions that may be raised during the process
+    ## of loading a YAML character stream.
+    mark*: Mark ## position at which the error has occurred.
+    lineContent*: string ## \
+      ## content of the line where the error was encountered. Includes a
+      ## second line with a marker ``^`` at the position where the error
+      ## was encountered.
 
 const
   yamlTagRepositoryPrefix* = "tag:yaml.org,2002:"
@@ -135,11 +150,11 @@ proc endStreamEvent*(): Event =
   return Event(kind: yamlEndStream)
 
 proc startDocEvent*(
-  explicit = false;
-  version  = "";
-  handles  : seq[tuple[handle, uriPrefix: string]] = @[];
-  startPos : Mark = Mark();
-  endPos   : Mark = Mark();
+  explicit = false,
+  version  = "",
+  handles  : seq[tuple[handle, uriPrefix: string]] = @[],
+  startPos : Mark = Mark(),
+  endPos   : Mark = Mark(),
 ): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML document
@@ -148,9 +163,9 @@ proc startDocEvent*(
                  explicitDirectivesEnd: explicit)
 
 proc endDocEvent*(
-  explicit = false;
-  startPos : Mark = Mark();
-  endPos   : Mark = Mark();
+  explicit = false,
+  startPos : Mark = Mark(),
+  endPos   : Mark = Mark(),
 ): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML document
@@ -158,10 +173,10 @@ proc endDocEvent*(
                  kind: yamlEndDoc, explicitDocumentEnd: explicit)
 
 proc startMapEvent*(
-  style   : CollectionStyle;
-  props   : Properties;
-  startPos: Mark = Mark();
-  endPos  : Mark = Mark();
+  style   : CollectionStyle,
+  props   : Properties,
+  startPos: Mark = Mark(),
+  endPos  : Mark = Mark(),
 ): Event {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML mapping
   result = Event(startPos: startPos, endPos: endPos,
@@ -169,26 +184,26 @@ proc startMapEvent*(
                  mapStyle: style)
 
 proc startMapEvent*(
-  style   : CollectionStyle = csAny;
-  tag     : Tag             = yTagQuestionMark;
-  anchor  : Anchor          = yAnchorNone;
-  startPos: Mark            = Mark();
-  endPos  : Mark            = Mark();
+  style   : CollectionStyle = csAny,
+  tag     : Tag             = yTagQuestionMark,
+  anchor  : Anchor          = yAnchorNone,
+  startPos: Mark            = Mark(),
+  endPos  : Mark            = Mark(),
 ): Event {.inline.} =
   return startMapEvent(style, (anchor, tag), startPos, endPos)
 
 proc endMapEvent*(
-  startPos : Mark = Mark();
-  endPos   : Mark = Mark();
+  startPos : Mark = Mark(),
+  endPos   : Mark = Mark(),
 ): Event {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML mapping
   result = Event(startPos: startPos, endPos: endPos, kind: yamlEndMap)
 
 proc startSeqEvent*(
-  style   : CollectionStyle;
-  props   : Properties;
-  startPos: Mark = Mark();
-  endPos  : Mark = Mark();
+  style   : CollectionStyle,
+  props   : Properties,
+  startPos: Mark = Mark(),
+  endPos  : Mark = Mark(),
 ): Event {.inline, raises: [].} =
   ## creates a new event that marks the beginning of a YAML sequence
   result = Event(startPos: startPos, endPos: endPos,
@@ -196,27 +211,27 @@ proc startSeqEvent*(
                  seqStyle: style)
 
 proc startSeqEvent*(
-  style   : CollectionStyle = csAny;
-  tag     : Tag             = yTagQuestionMark;
-  anchor  : Anchor          = yAnchorNone;
-  startPos: Mark            = Mark();
-  endPos  : Mark            = Mark();
+  style   : CollectionStyle = csAny,
+  tag     : Tag             = yTagQuestionMark,
+  anchor  : Anchor          = yAnchorNone,
+  startPos: Mark            = Mark(),
+  endPos  : Mark            = Mark(),
 ): Event {.inline.} =
   return startSeqEvent(style, (anchor, tag), startPos, endPos)
 
 proc endSeqEvent*(
-  startPos: Mark = Mark();
-  endPos  : Mark = Mark();
+  startPos: Mark = Mark(),
+  endPos  : Mark = Mark(),
 ): Event {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML sequence
   result = Event(startPos: startPos, endPos: endPos, kind: yamlEndSeq)
 
 proc scalarEvent*(
-  content : string;
-  props   : Properties;
-  style   : ScalarStyle = ssAny;
-  startPos: Mark        = Mark();
-  endPos  : Mark        = Mark();
+  content : string,
+  props   : Properties,
+  style   : ScalarStyle = ssAny,
+  startPos: Mark        = Mark(),
+  endPos  : Mark        = Mark(),
 ): Event {.inline, raises: [].} =
   ## creates a new event that represents a YAML scalar
   result = Event(startPos: startPos, endPos: endPos,
@@ -224,19 +239,19 @@ proc scalarEvent*(
                  scalarContent: content, scalarStyle: style)
 
 proc scalarEvent*(
-  content : string      = "";
-  tag     : Tag         = yTagQuestionMark;
-  anchor  : Anchor      = yAnchorNone;
-  style   : ScalarStyle = ssAny;
-  startPos: Mark        = Mark();
-  endPos  : Mark        = Mark();
+  content : string      = "",
+  tag     : Tag         = yTagQuestionMark,
+  anchor  : Anchor      = yAnchorNone,
+  style   : ScalarStyle = ssAny,
+  startPos: Mark        = Mark(),
+  endPos  : Mark        = Mark(),
 ): Event {.inline.} =
   return scalarEvent(content, (anchor, tag), style, startPos, endPos)
 
 proc aliasEvent*(
-  target  : Anchor;
-  startPos: Mark = Mark();
-  endPos  : Mark = Mark();
+  target  : Anchor,
+  startPos: Mark = Mark(),
+  endPos  : Mark = Mark(),
 ): Event {.inline, raises: [].} =
   ## creates a new event that represents a YAML alias
   result = Event(startPos: startPos, endPos: endPos, kind: yamlAlias, aliasTarget: target)

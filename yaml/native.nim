@@ -4,20 +4,23 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-## =========================
-## Module yaml/serialization
-## =========================
+## ==================
+## Module yaml/native
+## ==================
 ##
-## This is the most high-level API of NimYAML. It enables you to parse YAML
-## character streams directly into native YAML types and vice versa. It builds
-## on top of the low-level parser and presenter APIs.
+## This module transforms native Nim values into a stream of YAML events,
+## and vice versa. The procs of this module must be available for name binding
+## when using the loading and dumping APIs. A NimYAML consumer would rarely
+## call this module's procs directly. The main entry points to this API are
+## ``construct`` and ``represent``; all other procs are usually called via
+## instantiations of those two procs.
 ##
-## It is possible to define custom construction and serialization procs for any
-## type. Please consult the serialization guide on the NimYAML website for more
-## information.
+## You can extend the procs defined here with own procs to define custom
+## handling for native types. See the documentation on the NimYAML
+## website for more information.
 
 import std / [tables, typetraits, strutils, macros, streams, times, parseutils, options]
-import data, parser, taglib, stream, private/internal, hints, annotations
+import data, taglib, stream, private/internal, hints, annotations
 export data, stream, macros, annotations, options
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.
@@ -60,9 +63,10 @@ type
     options*: SerializationOptions
     putImpl*: proc(ctx: var SerializationContext, e: Event) {.raises: [], closure.}
 
-  ConstructionContext* = ref object
+  ConstructionContext* = object
     ## Context information for the process of constructing Nim values from YAML.
-    refs*: Table[Anchor, tuple[tag: Tag, p: pointer]]
+    input*: YamlStream
+    refs* : Table[Anchor, tuple[tag: Tag, p: pointer]]
 
   YamlConstructionError* = object of YamlLoadingError
     ## Exception that may be raised when constructing data objects from a
@@ -80,50 +84,60 @@ proc put*(ctx: var SerializationContext, e: Event) {.raises: [].} =
 
 # forward declares
 
-proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
-                        result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].}
+proc constructChild*[T](
+  ctx   : var ConstructionContext,
+  result: var T,
+) {.raises: [YamlConstructionError, YamlStreamError].}
   ## Constructs an arbitrary Nim value from a part of a YAML stream.
   ## The stream will advance until after the finishing token that was used
   ## for constructing the value. The ``ConstructionContext`` is needed for
   ## potential child objects which may be refs.
 
-proc constructChild*(s: var YamlStream, c: ConstructionContext,
-                     result: var string)
-    {.raises: [YamlConstructionError, YamlStreamError].}
+proc constructChild*(
+  ctx   : var ConstructionContext,
+  result: var string,
+) {.raises: [YamlConstructionError, YamlStreamError].}
   ## Constructs a Nim value that is a string from a part of a YAML stream.
   ## This specialization takes care of possible nil strings.
 
-proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
-                        result: var seq[T])
-    {.raises: [YamlConstructionError, YamlStreamError].}
+proc constructChild*[T](
+  ctx   : var ConstructionContext,
+  result: var seq[T],
+) {.raises: [YamlConstructionError, YamlStreamError].}
   ## Constructs a Nim value that is a string from a part of a YAML stream.
   ## This specialization takes care of possible nil seqs.
 
-proc constructChild*[O](s: var YamlStream, ctx: ConstructionContext,
-                        result: var ref O)
-    {.raises: [YamlConstructionError, YamlStreamError].}
+proc constructChild*[O](
+  ctx   : var ConstructionContext,
+  result: var ref O,
+) {.raises: [YamlConstructionError, YamlStreamError].}
   ## Constructs an arbitrary Nim value from a part of a YAML stream.
   ## The stream will advance until after the finishing token that was used
   ## for constructing the value. The object may be constructed from an alias
   ## node which will be resolved using the ``ConstructionContext``.
 
-proc representChild*[O](ctx: var SerializationContext, value: ref O)
-    {.raises: [YamlSerializationError].}
+proc representChild*[O](
+  ctx  : var SerializationContext,
+  value: ref O,
+) {.raises: [YamlSerializationError].}
   ## Represents an arbitrary Nim reference value as YAML object. The object
   ## may be represented as alias node if it is already present in the
   ## ``SerializationContext``.
 
-proc representChild*(ctx: var SerializationContext, value: string)
-    {.inline, raises: [].}
+proc representChild*(
+  ctx  : var SerializationContext,
+  value: string,
+) {.inline, raises: [].}
   ## Represents a Nim string. Supports nil strings.
 
 proc representChild*[O](ctx: var SerializationContext, value: O)
   ## Represents an arbitrary Nim object as YAML object.
 
-proc newConstructionContext*(): ConstructionContext =
-  new(result)
-  result.refs = initTable[Anchor, tuple[tag: Tag, p: pointer]]()
+proc initConstructionContext*(input: YamlStream): ConstructionContext =
+  result = ConstructionContext(
+    input: input,
+    refs : initTable[Anchor, tuple[tag: Tag, p: pointer]](),
+  )
 
 proc initSerializationContext*(
   options: SerializationOptions,
@@ -164,11 +178,16 @@ proc newYamlConstructionError*(s: YamlStream, mark: Mark, msg: string): ref Yaml
   if not s.getLastTokenContext(result.lineContent):
     result.lineContent = ""
 
-proc constructionError(s: YamlStream, mark: Mark, msg: string): ref YamlConstructionError =
+proc constructionError*(s: YamlStream, mark: Mark, msg: string):
+    ref YamlConstructionError =
   return newYamlConstructionError(s, mark, msg)
 
-template constructScalarItem*(s: var YamlStream, i: untyped,
-                              t: typedesc, content: untyped) =
+template constructScalarItem*(
+  s: var YamlStream,
+  i: untyped,
+  t: typedesc,
+  content: untyped,
+) =
   ## Helper template for implementing ``constructObject`` for types that
   ## are constructed from a scalar. ``i`` is the identifier that holds
   ## the scalar as ``Event`` in the content. Exceptions raised in
@@ -190,23 +209,25 @@ template constructScalarItem*(s: var YamlStream, i: untyped,
 proc yamlTag*(T: typedesc[string]): Tag {.inline, noSideEffect, raises: [].} =
   yTagString
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var string)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
-  ## costructs a string from a YAML scalar
-  constructScalarItem(s, item, string):
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var string,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
+  ## constructs a string from a YAML scalar
+  ctx.input.constructScalarItem(item, string):
     result = item.scalarContent
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: string,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [].} =
   ## represents a string as YAML scalar
   ctx.put(scalarEvent(value, tag, yAnchorNone))
 
 proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
-      s: YamlStream, mark: Mark, val: string): T =
+  s: YamlStream, mark: Mark, val: string
+): T =
   result = 0
   for i in 2..<val.len:
     case val[i]
@@ -219,7 +240,8 @@ proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
           escape("" & val[i]))
 
 proc parseOctal[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
-    s: YamlStream, mark: Mark, val: string): T =
+  s: YamlStream, mark: Mark, val: string
+): T =
   for i in 2..<val.len:
     case val[i]
     of '_': discard
@@ -240,43 +262,48 @@ proc numberStyle(item: Event): NumberStyle =
   return nsDecimal
 
 proc constructObject*[T: int8|int16|int32|int64](
-    s: var YamlStream, c: ConstructionContext, result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx   : var ConstructionContext,
+  result: var T,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs an integer value from a YAML scalar
-  constructScalarItem(s, item, T):
+  ctx.input.constructScalarItem(item, T):
     case item.numberStyle
-    of nsHex: result = parseHex[T](s, item.startPos, item.scalarContent)
-    of nsOctal: result = parseOctal[T](s, item.startPos, item.scalarContent)
+    of nsHex: result = parseHex[T](ctx.input, item.startPos, item.scalarContent)
+    of nsOctal: result = parseOctal[T](ctx.input, item.startPos, item.scalarContent)
     of nsDecimal:
       let nInt = parseBiggestInt(item.scalarContent)
       if nInt <= T.high:
         # make sure we don't produce a range error
         result = T(nInt)
       else:
-        raise s.constructionError(item.startPos, "Cannot construct int; out of range: " &
-          $nInt & " for type " & T.name & " with max of: " & $T.high)
+        raise ctx.input.constructionError(
+          item.startPos,
+          "Cannot construct int; out of range: " &
+          $nInt & " for type " & T.name & " with max of: " & $T.high
+        )
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var int)
-    {.raises: [YamlConstructionError, YamlStreamError], inline.} =
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var int,
+) {.raises: [YamlConstructionError, YamlStreamError], inline.} =
   ## constructs an integer of architecture-defined length by loading it into
   ## int32 and then converting it.
   var i32Result: int32
-  constructObject(s, c, i32Result)
+  ctx.constructObject(i32Result)
   result = int(i32Result)
 
 proc representObject*[T: int8|int16|int32|int64](
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: T,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [].} =
   ## represents an integer value as YAML scalar
   ctx.put(scalarEvent($value, tag, yAnchorNone))
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: int,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [YamlSerializationError], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
   ## on 64-bit systems, this may cause a RangeDefect.
@@ -294,30 +321,35 @@ else:
   type DefiniteUIntTypes = uint8 | uint16 | uint32 | uint64
 
 proc constructObject*[T: DefiniteUIntTypes](
-    s: var YamlStream, c: ConstructionContext, result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx   : var ConstructionContext,
+  result: var T,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct an unsigned integer value from a YAML scalar
-  constructScalarItem(s, item, T):
+  ctx.input.constructScalarItem(item, T):
     case item.numberStyle
-    of nsHex: result = parseHex[T](s, item.startPos, item.scalarContent)
-    of nsOctal: result = parseOctal[T](s, item.startPos, item.scalarContent)
+    of nsHex: result = parseHex[T](ctx.input, item.startPos, item.scalarContent)
+    of nsOctal: result = parseOctal[T](ctx.input, item.startPos, item.scalarContent)
     else:
       let nUInt = parseBiggestUInt(item.scalarContent)
       if nUInt <= T.high:
         # make sure we don't produce a range error
         result = T(nUInt)
       else:
-        raise s.constructionError(item.startPos, "Cannot construct uint; out of range: " &
-          $nUInt & " for type " & T.name & " with max of: " & $T.high)
+        raise ctx.input.constructionError(
+          item.startPos,
+          "Cannot construct uint; out of range: " &
+          $nUInt & " for type " & T.name & " with max of: " & $T.high
+        )
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var uint)
-    {.raises: [YamlConstructionError, YamlStreamError], inline.} =
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var uint,
+) {.raises: [YamlConstructionError, YamlStreamError], inline.} =
   ## represent an unsigned integer of architecture-defined length by loading it
   ## into uint32 and then converting it.
   var u32Result: uint32
-  constructObject(s, c, u32Result)
-  result= uint(u32Result)
+  ctx.constructObject(u32Result)
+  result = uint(u32Result)
 
 when defined(JS):
   # TODO: this is a dirty hack and may lead to overflows!
@@ -325,17 +357,17 @@ when defined(JS):
     result = $BiggestInt(x)
 
 proc representObject*[T: uint8|uint16|uint32|uint64](
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: T,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [].} =
   ## represents an unsigned integer value as YAML scalar
   ctx.put(scalarEvent($value, tag, yAnchorNone))
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: uint,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [YamlSerializationError], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
   ## to int32. on 64-bit systems, this may cause a RangeDefect.
@@ -346,10 +378,11 @@ proc representObject*(
     raise e
 
 proc constructObject*[T: float|float32|float64](
-    s: var YamlStream, c: ConstructionContext, result: var T)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx   : var ConstructionContext,
+  result: var T,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## construct a float value from a YAML scalar
-  constructScalarItem(s, item, T):
+  ctx.input.constructScalarItem(item, T):
     let hint = guessType(item.scalarContent)
     case hint
     of yTypeFloat:
@@ -365,13 +398,15 @@ proc constructObject*[T: float|float32|float64](
         else: result = Inf
     of yTypeFloatNaN: result = NaN
     else:
-      raise s.constructionError(item.startPos, "Cannot construct to float: " &
-          escape(item.scalarContent))
+      raise ctx.input.constructionError(
+        item.startPos,
+        "Cannot construct to float: " & escape(item.scalarContent)
+      )
 
 proc representObject*[T: float|float32|float64](
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: T,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [].} =
   ## represents a float value as YAML scalar
   case value
@@ -382,50 +417,57 @@ proc representObject*[T: float|float32|float64](
 
 proc yamlTag*(T: typedesc[bool]): Tag {.inline, raises: [].} = yTagBoolean
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var bool)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var bool,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a bool value from a YAML scalar
-  constructScalarItem(s, item, bool):
+  ctx.input.constructScalarItem(item, bool):
     case guessType(item.scalarContent)
     of yTypeBoolTrue: result = true
     of yTypeBoolFalse: result = false
     else:
-      raise s.constructionError(item.startPos, "Cannot construct to bool: " &
-          escape(item.scalarContent))
+      raise ctx.input.constructionError(
+        item.startPos,
+        "Cannot construct to bool: " & escape(item.scalarContent)
+      )
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: bool,
-  tag: Tag,
+  tag  : Tag,
 )  {.raises: [].} =
   ## represents a bool value as a YAML scalar
   ctx.put(scalarEvent(if value: "true" else: "false", tag, yAnchorNone))
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var char)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var char,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a char value from a YAML scalar
-  constructScalarItem(s, item, char):
+  ctx.input.constructScalarItem(item, char):
     if item.scalarContent.len != 1:
-      raise s.constructionError(item.startPos, "Cannot construct to char (length != 1): " &
-          escape(item.scalarContent))
+      raise ctx.input.constructionError(
+        item.startPos,
+        "Cannot construct to char (length != 1): " & escape(item.scalarContent)
+      )
     else: result = item.scalarContent[0]
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: char,
-  tag: Tag
+  tag  : Tag
 ) {.raises: [].} =
   ## represents a char value as YAML scalar
   ctx.put(scalarEvent("" & value, tag, yAnchorNone))
 
 proc yamlTag*(T: typedesc[Time]): Tag {.inline, raises: [].} = yTagTimestamp
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var Time)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
-  constructScalarItem(s, item, Time):
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var Time,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx.input.constructScalarItem(item, Time):
     if guessType(item.scalarContent) == yTypeTimestamp:
       var
         tmp = newStringOfCap(60)
@@ -478,13 +520,15 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
       let info = tmp.parse("yyyy-M-d'T'H:mm:sszzz")
       result = info.toTime()
     else:
-      raise s.constructionError(item.startPos, "Not a parsable timestamp: " &
-          escape(item.scalarContent))
+      raise ctx.input.constructionError(
+        item.startPos,
+        "Not a parsable timestamp: " & escape(item.scalarContent)
+      )
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: Time,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [].} =
   let tmp = value.utc()
   ctx.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
@@ -495,33 +539,35 @@ proc yamlTag*[I](T: typedesc[seq[I]]): Tag {.inline, raises: [].} =
 proc yamlTag*[I](T: typedesc[set[I]]): Tag {.inline, raises: [].} =
   return nimTag("system:set(" & safeTagUri(yamlTag(I)) & ')')
 
-proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
-                         result: var seq[T])
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*[T](
+  ctx   : var ConstructionContext,
+  result: var seq[T],
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim seq from a YAML sequence
-  let event = s.next()
+  let event = ctx.input.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError(event.startPos, "Expected sequence start")
+    raise ctx.input.constructionError(event.startPos, "Expected sequence start")
   result = newSeq[T]()
-  while s.peek().kind != yamlEndSeq:
+  while ctx.input.peek().kind != yamlEndSeq:
     var item: T
-    constructChild(s, c, item)
+    ctx.constructChild(item)
     result.add(move(item))
-  discard s.next()
+  discard ctx.input.next()
 
-proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
-                         result: var set[T])
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*[T](
+  ctx   : var ConstructionContext,
+  result: var set[T],
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim seq from a YAML sequence
-  let event = s.next()
+  let event = ctx.input.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError(event.startPos, "Expected sequence start")
+    raise ctx.input.constructionError(event.startPos, "Expected sequence start")
   result = {}
-  while s.peek().kind != yamlEndSeq:
+  while ctx.input.peek().kind != yamlEndSeq:
     var item: T
-    constructChild(s, c, item)
+    ctx.constructChild(item)
     result.incl(item)
-  discard s.next()
+  discard ctx.input.next()
 
 proc representObject*[T](
   ctx  : var SerializationContext,
@@ -538,26 +584,27 @@ proc yamlTag*[I, V](T: typedesc[array[I, V]]): Tag {.inline, raises: [].} =
   return nimTag("system:array(" & rangeName[6..rangeName.high()] & ';' &
       safeTagUri(yamlTag(V)) & ')')
 
-proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
-                         result: var array[I, T])
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*[I, T](
+  ctx   : var ConstructionContext,
+  result: var array[I, T],
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim array from a YAML sequence
-  var event = s.next()
+  var event = ctx.input.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError(event.startPos, "Expected sequence start")
+    raise ctx.input.constructionError(event.startPos, "Expected sequence start")
   for index in low(I)..high(I):
-    event = s.peek()
+    event = ctx.input.peek()
     if event.kind == yamlEndSeq:
-      raise s.constructionError(event.startPos, "Too few array values")
-    constructChild(s, c, result[index])
-  event = s.next()
+      raise ctx.input.constructionError(event.startPos, "Too few array values")
+    ctx.constructChild(result[index])
+  event = ctx.input.next()
   if event.kind != yamlEndSeq:
-    raise s.constructionError(event.startPos, "Too many array values")
+    raise ctx.input.constructionError(event.startPos, "Too many array values")
 
 proc representObject*[I, T](
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: array[I, T],
-  tag: Tag,
+  tag  : Tag,
 ) =
   ## represents a Nim array as YAML sequence
   ctx.put(startSeqEvent(tag = tag))
@@ -568,24 +615,27 @@ proc yamlTag*[K, V](T: typedesc[Table[K, V]]): Tag {.inline, raises: [].} =
   return nimTag("tables:Table(" & safeTagUri(yamlTag(K)) & ';' &
       safeTagUri(yamlTag(V)) & ")")
 
-proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
-                            result: var Table[K, V])
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*[K, V](
+  ctx   : var ConstructionContext,
+  result: var Table[K, V],
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim Table from a YAML mapping
-  let event = s.next()
+  let event = ctx.input.next()
   if event.kind != yamlStartMap:
-    raise s.constructionError(event.startPos, "Expected map start, got " & $event.kind)
+    raise ctx.input.constructionError(
+      event.startPos, "Expected map start, got " & $event.kind
+    )
   result = initTable[K, V]()
-  while s.peek.kind != yamlEndMap:
+  while ctx.input.peek.kind != yamlEndMap:
     var
       key: K
       value: V
-    constructChild(s, c, key)
-    constructChild(s, c, value)
+    ctx.constructChild(key)
+    ctx.constructChild(value)
     if result.contains(key):
-      raise s.constructionError(event.startPos, "Duplicate table key!")
+      raise ctx.input.constructionError(event.startPos, "Duplicate table key!")
     result[key] = value
-  discard s.next()
+  discard ctx.input.next()
 
 proc representObject*[K, V](
   ctx  : var SerializationContext,
@@ -604,30 +654,37 @@ proc yamlTag*[K, V](T: typedesc[OrderedTable[K, V]]): Tag
   return nimTag("tables:OrderedTable(" & safeTagUri(yamlTag(K)) & ';' &
       safeTagUri(yamlTag(V)) & ")")
 
-proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
-                            result: var OrderedTable[K, V])
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*[K, V](
+  ctx   : var ConstructionContext,
+  result: var OrderedTable[K, V],
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim OrderedTable from a YAML mapping
-  var event = s.next()
+  var event = ctx.input.next()
   if event.kind != yamlStartSeq:
-    raise s.constructionError(event.startPos, "Expected seq start, got " & $event.kind)
+    raise ctx.input.constructionError(
+      event.startPos, "Expected seq start, got " & $event.kind
+    )
   result = initOrderedTable[K, V]()
-  while s.peek.kind != yamlEndSeq:
+  while ctx.input.peek.kind != yamlEndSeq:
     var
       key: K
       value: V
-    event = s.next()
+    event = ctx.input.next()
     if event.kind != yamlStartMap:
-      raise s.constructionError(event.startPos, "Expected map start, got " & $event.kind)
-    constructChild(s, c, key)
-    constructChild(s, c, value)
-    event = s.next()
+      raise ctx.input.constructionError(
+        event.startPos, "Expected map start, got " & $event.kind
+      )
+    ctx.constructChild(key)
+    ctx.constructChild(value)
+    event = ctx.input.next()
     if event.kind != yamlEndMap:
-      raise s.constructionError(event.startPos, "Expected map end, got " & $event.kind)
+      raise ctx.input.constructionError(
+        event.startPos, "Expected map end, got " & $event.kind
+      )
     if result.contains(key):
-      raise s.constructionError(event.startPos, "Duplicate table key!")
+      raise ctx.input.constructionError(event.startPos, "Duplicate table key!")
     result[move(key)] = move(value)
-  discard s.next()
+  discard ctx.input.next()
 
 proc representObject*[K, V](
   ctx  : var SerializationContext,
@@ -743,12 +800,21 @@ macro matchMatrix(t: typedesc): untyped =
   for i in 0..<numFields:
     result.add(newLit(false))
 
-proc checkDuplicate(s: NimNode, tName: string, name: string, i: int,
-                    matched: NimNode, m: NimNode): NimNode {.compileTime.} =
+proc checkDuplicate(
+  s      : NimNode,
+  tName  : string,
+  name   : string,
+  i      : int,
+  matched: NimNode,
+  m      : NimNode,
+): NimNode {.compileTime.} =
   result = newIfStmt((newNimNode(nnkBracketExpr).add(matched, newLit(i)),
       newNimNode(nnkRaiseStmt).add(newCall(bindSym("constructionError"), s, m,
       newLit("While constructing " & tName & ": Duplicate field: " &
       escape(name))))))
+
+proc input(ctx: NimNode): NimNode {.compileTime.} =
+  return newDotExpr(ctx, ident("input"))
 
 proc hasSparse(t: typedesc): bool {.compileTime.} =
   when compiles(t.hasCustomPragma(sparse)):
@@ -762,8 +828,14 @@ proc getOptionInner(fType: NimNode): NimNode {.compileTime.} =
     return newIdentNode($fType[1])
   else: return nil
 
-proc checkMissing(s: NimNode, t: NimNode, tName: string, field: NimNode,
-                  i: int, matched, o: NimNode, m: NimNode):
+proc checkMissing(
+  s, t   : NimNode,
+  tName  : string,
+  field  : NimNode,
+  i      : int,
+  matched: NimNode,
+  o, m   : NimNode,
+):
     NimNode {.compileTime.} =
   let
     fType = getTypeInst(field)
@@ -807,8 +879,12 @@ proc ifNotTransient(
         `stmts`
 
 proc recEnsureAllFieldsPresent(
-    s: NimNode, tDecl: NimNode, o: NimNode, matched: NimNode, m: NimNode,
-    tName: string, field: var int, stmt: NimNode) {.compileTime.} =
+  s, tDecl, o: NimNode,
+  matched, m : NimNode,
+  tName: string,
+  field: var int,
+  stmt : NimNode,
+) {.compileTime.} =
   var
     tDesc = getType(tDecl[1])
     tParent = parentType(tDesc)
@@ -841,8 +917,13 @@ proc recEnsureAllFieldsPresent(
       stmt.add(checkMissing(s, tDecl, tName, child, field, matched, o, m))
     inc(field)
 
-macro ensureAllFieldsPresent(s: YamlStream, t: typedesc, o: typed,
-                             matched: typed, m: Mark) =
+macro ensureAllFieldsPresent(
+  s      : YamlStream,
+  t      : typedesc,
+  o      : typed,
+  matched: typed,
+  m      : Mark,
+) =
   result = newStmtList()
   let
     tDecl = getType(t)
@@ -861,14 +942,18 @@ proc skipOverValue(s: var YamlStream) =
       else: internalError("Unexpected event kind.")
 
 proc addFieldCases(
-    tDecl: NimNode, stream: NimNode, context: NimNode, name: NimNode, o: NimNode,
-    matched: NimNode, failOnUnknown: NimNode, m: NimNode, tName: string, caseStmt: NimNode,
-    fieldIndex: var int) {.compileTime.} =
+  tDecl, context  : NimNode,
+  name, o, matched: NimNode,
+  failOnUnknown, m: NimNode,
+  tName     : string,
+  caseStmt  : NimNode,
+  fieldIndex: var int,
+) {.compileTime.} =
   var
     tDesc = getType(tDecl[1])
     tParent = parentType(tDesc)
   if tParent != nil:
-    addFieldCases(tParent, stream, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
+    addFieldCases(tParent, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
@@ -887,11 +972,11 @@ proc addFieldCases(
         objConstr.add(newColonExpr(newIdentNode($otherChild), newDotExpr(o,
             newIdentNode($otherChild))))
       disOb.add(newStmtList(
-          checkDuplicate(stream, tName, $child[0], fieldIndex, matched, m),
+          checkDuplicate(input(context), tName, $child[0], fieldIndex, matched, m),
           newNimNode(nnkVarSection).add(
               newNimNode(nnkIdentDefs).add(
                   newIdentNode("value"), discType, newEmptyNode())),
-          newCall("constructChild", stream, context, newIdentNode("value")),
+          newCall("constructChild", context, newIdentNode("value")),
           newAssignment(o, objConstr),
           markAsFound(fieldIndex, matched)))
       caseStmt.add(disOb)
@@ -919,45 +1004,48 @@ proc addFieldCases(
           var ob = newNimNode(nnkOfBranch).add(newStrLitNode($item))
           let field = newDotExpr(o, newIdentNode($item))
           var ifStmt = newIfStmt((cond: discTest, body: newStmtList(
-              newCall("constructChild", stream, context, field))))
+              newCall("constructChild", context, field))))
           ifStmt.add(newNimNode(nnkElse).add(newNimNode(nnkRaiseStmt).add(
-              newCall(bindSym("constructionError"), stream, m,
+              newCall(bindSym("constructionError"), input(context), m,
               infix(newStrLitNode("Field " & $item & " not allowed for " &
               $child[0] & " == "), "&", prefix(discriminant, "$"))))))
           ob.add(ifNotTransient(o, item,
-              [checkDuplicate(stream, tName, $item, fieldIndex, matched, m),
-              ifStmt, markAsFound(fieldIndex, matched)], true, stream, m, tName,
-              $item))
+              [checkDuplicate(input(context), tName, $item, fieldIndex, matched, m),
+              ifStmt, markAsFound(fieldIndex, matched)], true,
+              input(context), m, tName, $item))
           caseStmt.add(ob)
     else:
       yAssert child.kind == nnkSym
       var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
       let field = newDotExpr(o, newIdentNode($child))
       ob.add(ifNotTransient(o, child,
-          [checkDuplicate(stream, tName, $child, fieldIndex, matched, m),
-          newCall("constructChild", stream, context, field),
-          markAsFound(fieldIndex, matched)], true, stream, m, tName, $child))
+          [checkDuplicate(input(context), tName, $child, fieldIndex, matched, m),
+          newCall("constructChild", context, field),
+          markAsFound(fieldIndex, matched)], true, input(context), m, tName, $child))
       caseStmt.add(ob)
     inc(fieldIndex)
 
-macro constructFieldValue(t: typedesc, stream: untyped,
-                          context: untyped, name: untyped, o: untyped,
-                          matched: untyped, failOnUnknown: bool, m: untyped) =
+macro constructFieldValue(
+  t: typedesc, 
+  context, name, o, matched: untyped,
+  failOnUnknown: bool,
+  m: untyped,
+) =
   let
     tDecl = getType(t)
     tName = $tDecl[1]
   result = newStmtList()
   var caseStmt = newNimNode(nnkCaseStmt).add(name)
   var fieldIndex = 0
-  addFieldCases(tDecl, stream, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
+  addFieldCases(tDecl, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
   caseStmt.add(newNimNode(nnkElse).add(newNimNode(nnkWhenStmt).add(
     newNimNode(nnkElifBranch).add(failOnUnknown,
       newNimNode(nnkRaiseStmt).add(
-        newCall(bindSym("constructionError"), stream, m,
+        newCall(bindSym("constructionError"), input(context), m,
         infix(newLit("While constructing " & tName & ": Unknown field: "), "&",
         newCall(bindSym("escape"), name)))))
   ).add(newNimNode(nnkElse).add(
-    newCall(bindSym("skipOverValue"), stream)
+    newCall(bindSym("skipOverValue"), input(context))
   ))))
   result.add(caseStmt)
 
@@ -988,40 +1076,50 @@ proc hasIgnore(t: typedesc): bool {.compileTime.} =
     return false
 
 proc constructObjectDefault*(
-    s: var YamlStream, c: ConstructionContext, result: var RootObj) =
+  ctx   : var ConstructionContext,
+  result: var RootObj,
+) =
   # specialization of generic proc for RootObj, doesn't do anything
   return
 
 proc constructObjectDefault*[O: object|tuple](
-    s: var YamlStream, c: ConstructionContext, result: var O)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx   : var ConstructionContext,
+  result: var O,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## Constructs a Nim object or tuple from a YAML mapping.
   ## This is the default implementation for custom objects and tuples and should
   ## not be redefined. If you are adding a custom constructObject()
   ## implementation, you can use this proc to call the default implementation
   ## within it.
   var matched = matchMatrix(O)
-  var e = s.next()
+  var e = ctx.input.next()
   const
     startKind = when isVariantObject(getType(O)): yamlStartSeq else: yamlStartMap
     endKind = when isVariantObject(getType(O)): yamlEndSeq else: yamlEndMap
   if e.kind != startKind:
-    raise s.constructionError(e.startPos, "While constructing " &
-        typetraits.name(O) & ": Expected " & $startKind & ", got " & $e.kind)
+    raise ctx.input.constructionError(
+      e.startPos,
+      "While constructing " & typetraits.name(O) &
+      ": Expected " & $startKind & ", got " & $e.kind
+    )
   let startPos = e.startPos
   when hasIgnore(O):
     const ignoredKeyList = O.getCustomPragmaVal(ignore)
     const failOnUnknown = len(ignoredKeyList) > 0
   else:
     const failOnUnknown = true
-  while s.peek.kind != endKind:
-    e = s.next()
+  while ctx.input.peek.kind != endKind:
+    e = ctx.input.next()
     when isVariantObject(getType(O)):
       if e.kind != yamlStartMap:
-        raise s.constructionError(e.startPos, "Expected single-pair map, got " & $e.kind)
-      e = s.next()
+        raise ctx.input.constructionError(
+          e.startPos, "Expected single-pair map, got " & $e.kind
+        )
+      e = ctx.input.next()
     if e.kind != yamlScalar:
-      raise s.constructionError(e.startPos, "Expected field name, got " & $e.kind)
+      raise ctx.input.constructionError(
+        e.startPos, "Expected field name, got " & $e.kind
+      )
     let name = e.scalarContent
     when result is tuple:
       var i = 0
@@ -1029,48 +1127,58 @@ proc constructObjectDefault*[O: object|tuple](
       for fname, value in fieldPairs(result):
         if fname == name:
           if matched[i]:
-            raise s.constructionError(e.startPos, "While constructing " &
-                typetraits.name(O) & ": Duplicate field: " & escape(name))
-          constructChild(s, c, value)
+            raise ctx.input.constructionError(
+              e.startPos, "While constructing " &
+              typetraits.name(O) & ": Duplicate field: " & escape(name)
+            )
+          ctx.constructChild(value)
           matched[i] = true
           found = true
           break
         inc(i)
       when failOnUnknown:
         if not found:
-          raise s.constructionError(e.startPos, "While constructing " &
-              typetraits.name(O) & ": Unknown field: " & escape(name))
+          raise ctx.input.constructionError(
+            e.startPos, "While constructing " &
+            typetraits.name(O) & ": Unknown field: " & escape(name)
+          )
     else:
       when hasIgnore(O) and failOnUnknown:
         if name notin ignoredKeyList:
-          constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
+          constructFieldValue(O, ctx, name, result, matched, failOnUnknown, e.startPos)
         else:
-          skipOverValue(s)
+          skipOverValue(ctx.input)
       else:
-        constructFieldValue(O, s, c, name, result, matched, failOnUnknown, e.startPos)
+        constructFieldValue(O, ctx, name, result, matched, failOnUnknown, e.startPos)
     when isVariantObject(getType(O)):
-      e = s.next()
+      e = ctx.input.next()
       if e.kind != yamlEndMap:
-        raise s.constructionError(e.startPos, "Expected end of single-pair map, got " &
-            $e.kind)
-  discard s.next()
+        raise ctx.input.constructionError(
+          e.startPos, "Expected end of single-pair map, got " & $e.kind
+        )
+  discard ctx.input.next()
   when result is tuple:
     var i = 0
     for fname, value in fieldPairs(result):
       if not matched[i]:
-        raise s.constructionError(startPos, "While constructing " &
+        raise ctx.input.constructionError(startPos, "While constructing " &
             typetraits.name(O) & ": Missing field: " & escape(fname))
       inc(i)
-  else: ensureAllFieldsPresent(s, O, result, matched, startPos)
+  else: ensureAllFieldsPresent(ctx.input, O, result, matched, startPos)
 
 proc constructObject*[O: object|tuple](
-    s: var YamlStream, c: ConstructionContext, result: var O)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx   : var ConstructionContext,
+  result: var O,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## Overridable default implementation for custom object and tuple types
-  constructObjectDefault(s, c, result)
+  ctx.constructObjectDefault(result)
 
 proc recGenFieldRepresenters(
-    tDecl, value: NimNode, isVO: bool, fieldIndex: var int16, result: NimNode) {.compileTime.} =
+  tDecl, value: NimNode,
+  isVO        : bool,
+  fieldIndex  : var int16,
+  result      : NimNode,
+) {.compileTime.} =
   let
     tDesc = getType(tDecl[1])
     tParent = parentType(tDesc)
@@ -1187,32 +1295,38 @@ proc representObject*[O: tuple](
     inc(fieldIndex)
   ctx.put(endMapEvent())
 
-proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
-                               result: var O)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
+proc constructObject*[O: enum](
+  ctx   : var ConstructionContext,
+  result: var O,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
   ## constructs a Nim enum from a YAML scalar
-  let e = s.next()
+  let e = ctx.input.next()
   if e.kind != yamlScalar:
-    raise s.constructionError(e.startPos, "Expected scalar, got " & $e.kind)
+    raise ctx.input.constructionError(
+      e.startPos, "Expected scalar, got " & $e.kind
+    )
   try: result = parseEnum[O](e.scalarContent)
   except ValueError as ve:
-    var ex = s.constructionError(e.startPos, "Cannot parse '" &
-        escape(e.scalarContent) & "' as " & type(O).name)
+    var ex = ctx.input.constructionError(e.startPos, "Cannot parse '" &
+      escape(e.scalarContent) & "' as " & type(O).name
+    )
     ex.parent = ve
     raise ex
 
 proc representObject*[O: enum](
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: O,
-  tag: Tag,
+  tag  : Tag,
 ) {.raises: [].} =
   ## represents a Nim enum as YAML scalar
   ctx.put(scalarEvent($value, tag, yAnchorNone))
 
 proc yamlTag*[O](T: typedesc[ref O]): Tag {.inline, raises: [].} = yamlTag(O)
 
-macro constructImplicitVariantObject(s, m, c, r, possibleTags: untyped,
-                                     t: typedesc) =
+macro constructImplicitVariantObject(
+  m, c, r, possibleTags: untyped,
+  t: typedesc,
+) =
   let tDesc = getType(getType(t)[1])
   yAssert tDesc.kind == nnkObjectTy
   let recCase = tDesc[2][0]
@@ -1229,19 +1343,20 @@ macro constructImplicitVariantObject(s, m, c, r, possibleTags: untyped,
     case recCase[i][1].recListLen
     of 0:
       branch.add(infix(newIdentNode("yTagNull"), "in", possibleTags))
-      branchContent.add(newNimNode(nnkDiscardStmt).add(newCall("next", s)))
+      branchContent.add(
+        newNimNode(nnkDiscardStmt).add(newCall("next", input(c))))
     of 1:
       let field = newDotExpr(r, newIdentNode($recCase[i][1].recListNode))
       branch.add(infix(
           newCall("yamlTag", newCall("type", field)), "in", possibleTags))
-      branchContent.add(newCall("constructChild", s, c, field))
+      branchContent.add(newCall("constructChild", c, field))
     else:
       block:
         internalError("Too many children: " & $recCase[i][1].recListlen)
     branch.add(branchContent)
     result.add(branch)
   let raiseStmt = newNimNode(nnkRaiseStmt).add(
-      newCall(bindSym("constructionError"), s, m,
+      newCall(bindSym("constructionError"), input(c), m,
       infix(newStrLitNode("This value type does not map to any field in " &
                           getTypeImpl(t)[1].repr & ": "), "&",
             newCall("$", newNimNode(nnkBracketExpr).add(possibleTags, newIntLitNode(0)))
@@ -1274,9 +1389,11 @@ proc canBeImplicit(t: typedesc): bool {.compileTime.} =
     else: return false
   return true
 
-proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
-                        result: var T) =
-  let item = s.peek()
+proc constructChild*[T](
+  ctx   : var ConstructionContext,
+  result: var T,
+) =
+  let item = ctx.input.peek()
   when isImplicitVariantObject(T):
     when not canBeImplicit(T):
       {. fatal: "This type cannot be marked as implicit" .}
@@ -1298,7 +1415,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         of yTypeBoolTrue, yTypeBoolFalse:
           possibleTags.add(yamlTag(bool))
         of yTypeNull:
-          raise s.constructionError(item.startPos, "not implemented!")
+          raise ctx.input.constructionError(item.startPos, "not implemented!")
         of yTypeUnknown:
           possibleTags.add(yamlTag(string))
         of yTypeTimestamp:
@@ -1309,127 +1426,136 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
         possibleTags.add(item.scalarProperties.tag)
     of yamlStartMap:
       if item.mapProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
-        raise s.constructionError(item.startPos,
+        raise ctx.input.constructionError(item.startPos,
             "Complex value of implicit variant object type must have a tag.")
       possibleTags.add(item.mapProperties.tag)
     of yamlStartSeq:
       if item.seqProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
-        raise s.constructionError(item.startPos,
+        raise ctx.input.constructionError(item.startPos,
             "Complex value of implicit variant object type must have a tag.")
       possibleTags.add(item.seqProperties.tag)
     of yamlAlias:
-      raise s.constructionError(item.startPos,
+      raise ctx.input.constructionError(item.startPos,
           "cannot load non-ref value from alias node")
     else: internalError("Unexpected item kind: " & $item.kind)
-    constructImplicitVariantObject(s, item.startPos, c, result, possibleTags, T)
+    constructImplicitVariantObject(item.startPos, ctx, result, possibleTags, T)
   else:
     case item.kind
     of yamlScalar:
       if item.scalarProperties.tag notin [yTagQuestionMark, yTagExclamationMark,
                                yamlTag(T)]:
-        raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+        raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
       elif item.scalarProperties.anchor != yAnchorNone:
-        raise s.constructionError(item.startPos, "Anchor on non-ref type")
+        raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlStartMap:
       if item.mapProperties.tag notin [yTagQuestionMark, yamlTag(T)]:
-        raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+        raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
       elif item.mapProperties.anchor != yAnchorNone:
-        raise s.constructionError(item.startPos, "Anchor on non-ref type")
+        raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlStartSeq:
       if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(T)]:
-        raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+        raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
       elif item.seqProperties.anchor != yAnchorNone:
-        raise s.constructionError(item.startPos, "Anchor on non-ref type")
+        raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlAlias:
-      raise s.constructionError(item.startPos,
+      raise ctx.input.constructionError(item.startPos,
           "cannot load non-ref value from alias node")
     else: internalError("Unexpected item kind: " & $item.kind)
-    constructObject(s, c, result)
+    ctx.constructObject(result)
 
-proc constructChild*(s: var YamlStream, c: ConstructionContext,
-                     result: var string) =
-  let item = s.peek()
+proc constructChild*(
+  ctx   : var ConstructionContext,
+  result: var string,
+) =
+  let item = ctx.input.peek()
   if item.kind == yamlScalar:
     if item.scalarProperties.tag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
-      raise s.constructionError(item.startPos, "Wrong tag for string")
+      raise ctx.input.constructionError(item.startPos, "Wrong tag for string")
     elif item.scalarProperties.anchor != yAnchorNone:
-      raise s.constructionError(item.startPos, "Anchor on non-ref type")
-  constructObject(s, c, result)
+      raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
+  ctx.constructObject(result)
 
-proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
-                        result: var seq[T]) =
-  let item = s.peek()
+proc constructChild*[T](
+  ctx   : var ConstructionContext,
+  result: var seq[T],
+) =
+  let item = ctx.input.peek()
   if item.kind == yamlStartSeq:
     if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(seq[T])]:
-      raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(seq[T]))
+      raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(seq[T]))
     elif item.seqProperties.anchor != yAnchorNone:
-      raise s.constructionError(item.startPos, "Anchor on non-ref type")
-  constructObject(s, c, result)
+      raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
+  ctx.constructObject(result)
 
-proc constructChild*[I, T](s: var YamlStream, c: ConstructionContext,
-                           result: var array[I, T]) =
-  let item = s.peek()
+proc constructChild*[I, T](
+  ctx   : var ConstructionContext,
+  result: var array[I, T],
+) =
+  let item = ctx.input.peek()
   if item.kind == yamlStartSeq:
     if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(array[I, T])]:
-      raise s.constructionError(item.startPos, "Wrong tag for " & typetraits.name(array[I, T]))
+      raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(array[I, T]))
     elif item.seqProperties.anchor != yAnchorNone:
-      raise s.constructionError(item.startPos, "Anchor on non-ref type")
-  constructObject(s, c, result)
+      raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
+  ctx.constructObject(result)
 
-proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
-    result: var Option[T]) =
+proc constructChild*[T](
+  ctx   : var ConstructionContext,
+  result: var Option[T],
+) =
   ## constructs an optional value. A value with a !!null tag will be loaded
   ## an empty value.
-  let event = s.peek()
+  let event = ctx.input.peek()
   if event.kind == yamlScalar and event.scalarProperties.tag == yTagNull:
     result = none(T)
-    discard s.next()
+    discard ctx.input.next()
   else:
     var inner: T
-    constructChild(s, c, inner)
+    ctx.constructChild(inner)
     result = some(inner)
 
 when defined(JS):
   # in JS, Time is a ref type. Therefore, we need this specialization so that
   # it is not handled by the general ref-type handler.
-  proc constructChild*(s: var YamlStream, c: ConstructionContext,
-                       result: var Time) =
-    let e = s.peek()
+  proc constructChild*(
+    ctx   : var ConstructionContext,
+    result: var Time,
+  ) =
+    let e = ctx.input.peek()
     if e.kind == yamlScalar:
       if e.scalarProperties.tag notin [yTagQuestionMark, yTagTimestamp]:
-        raise s.constructionError(e.startPos, "Wrong tag for Time")
+        raise ctx.input.constructionError(e.startPos, "Wrong tag for Time")
       elif guessType(e.scalarContent) != yTypeTimestamp:
-        raise s.constructionError(e.startPos, "Invalid timestamp")
+        raise ctx.input.constructionError(e.startPos, "Invalid timestamp")
       elif e.scalarProperties.anchor != yAnchorNone:
-        raise s.constructionError(e.startPos, "Anchor on non-ref type")
-      constructObject(s, c, result)
+        raise ctx.input.constructionError(e.startPos, "Anchor on non-ref type")
+      ctx.constructObject(result)
     else:
-      raise s.constructionError(e.startPos, "Unexpected structure, expected timestamp")
+      raise ctx.input.constructionError(e.startPos, "Unexpected structure, expected timestamp")
 
 proc constructChild*[O](
-  s     : var YamlStream,
-  ctx   : ConstructionContext,
+  ctx   : var ConstructionContext,
   result: var ref O,
 ) =
-  var e = s.peek()
+  var e = ctx.input.peek()
   if e.kind == yamlScalar:
     let props = e.scalarProperties
     if props.tag == yTagNull or (props.tag == yTagQuestionMark and
         guessType(e.scalarContent) == yTypeNull):
       result = nil
-      discard s.next()
+      discard ctx.input.next()
       return
   elif e.kind == yamlAlias:
     let val = ctx.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
     if val.p == nil:
-      raise constructionError(s, e.startPos,
+      raise ctx.input.constructionError(e.startPos,
         "alias node refers to anchor in ignored scope")
     if val.tag != yamlTag(O):
-      raise constructionError(s, e.startPos,
+      raise ctx.input.constructionError(e.startPos,
         "alias node refers to object of incompatible type")
     result = cast[ref O](val.p)
-    discard s.next()
+    discard ctx.input.next()
     return
   new(result)
   template removeAnchor(anchor: var Anchor) {.dirty.} =
@@ -1443,8 +1569,8 @@ proc constructChild*[O](
   of yamlStartMap: removeAnchor(e.mapProperties.anchor)
   of yamlStartSeq: removeAnchor(e.seqProperties.anchor)
   else: internalError("Unexpected event kind: " & $e.kind)
-  s.peek = e
-  try: constructChild(s, ctx, result[])
+  ctx.input.peek = e
+  try: ctx.constructChild(result[])
   except YamlConstructionError as e: raise e
   except YamlStreamError as e: raise e
   except CatchableError as ce:
@@ -1547,79 +1673,31 @@ proc representChild*[O](
   else:
     ctx.representObject(value, ctx.presentTag(O))
 
-proc construct*[T](s: var YamlStream, target: var T)
+proc construct*[T](
+  input : var YamlStream,
+  target: var T,
+)
     {.raises: [YamlStreamError, YamlConstructionError].} =
   ## Constructs a Nim value from a YAML stream.
-  var context = newConstructionContext()
+  var context = initConstructionContext(input)
   try:
-    var e = s.next()
+    var e = input.next()
     yAssert(e.kind == yamlStartDoc)
 
-    constructChild(s, context, target)
-    e = s.next()
+    context.constructChild(target)
+    e = input.next()
     yAssert(e.kind == yamlEndDoc)
   except YamlConstructionError as e: raise e
   except YamlStreamError as e: raise e
   except CatchableError as ce:
-    # may occur while calling s()
+    # may occur while calling ctx.input()
     var ex = newException(YamlStreamError, "error occurred while constructing")
     ex.parent = ce
     raise ex
 
-proc load*[K](input: Stream | string, target: var K)
-    {.raises: [YamlConstructionError, IOError, OSError, YamlParserError].} =
-  ## Loads a Nim value from a YAML character stream.
-  try:
-    var
-      parser = initYamlParser()
-      events = parser.parse(input)
-      e = events.next()
-    yAssert(e.kind == yamlStartStream)
-    if events.peek().kind != yamlStartDoc:
-      raise constructionError(events, e.startPos, "stream contains no documents")
-    construct(events, target)
-    e = events.next()
-    if e.kind != yamlEndStream:
-      var ex = (ref YamlConstructionError)(
-        mark: e.startPos, msg: "stream contains multiple documents")
-      discard events.getLastTokenContext(ex.lineContent)
-      raise ex
-  except YamlStreamError as e:
-    if e.parent of IOError: raise (ref IOError)(e.parent)
-    if e.parent of OSError: raise (ref OSError)(e.parent)
-    elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: internalError("Unexpected exception: " & $e.parent.name)
-
-proc loadAs*[K](input: Stream | string): K {.raises:
-    [YamlConstructionError, IOError, OSError, YamlParserError].} =
-  ## Loads the given YAML input to a value of the type K and returns it
-  load(input, result)
-
-proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
-  var
-    parser = initYamlParser()
-    events = parser.parse(input)
-    e = events.next()
-  yAssert(e.kind == yamlStartStream)
-  try:
-    while events.peek().kind == yamlStartDoc:
-      var item: K
-      construct(events, item)
-      target.add(item)
-    e = events.next()
-    yAssert(e.kind == yamlEndStream)
-  except YamlConstructionError as e:
-    discard events.getLastTokenContext(e.lineContent)
-    raise e
-  except YamlStreamError as e:
-    if e.parent of IOError: raise (ref IOError)(e.parent)
-    elif e.parent of OSError: raise (ref OSError)(e.parent)
-    elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
-    else: internalError("Unexpected exception: " & $e.parent.name)
-
 proc represent*[T](
-  value: T,
-  options: SerializationOptions = SerializationOptions()
+  value  : T,
+  options: SerializationOptions = SerializationOptions(),
 ): YamlStream =
   ## Represents a Nim value as ``YamlStream``
   var

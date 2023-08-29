@@ -1,3 +1,9 @@
+#            NimYAML - YAML implementation in Nim
+#        (c) Copyright 2015-2023 Felix Krause
+#
+#    See the file "copying.txt", included in this
+#    distribution, for details about the copyright.
+
 import ../yaml/[ presenter, data, stream ]
 import unittest
 import commonTestUtils

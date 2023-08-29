@@ -1,5 +1,5 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2015 Felix Krause
+#        (c) Copyright 2015-2023 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -78,9 +78,9 @@ const yamlDir = "---"
 const yamlTagDirs = "%TAG !n! tag:nimyaml.org,2016:\n---"
 
 proc representObject*(
-  ctx: var SerializationContext,
+  ctx  : var SerializationContext,
   value: BetterInt,
-  tag: Tag
+  tag  : Tag
 ) {.raises: [].} =
   var
     val = $value
@@ -90,10 +90,11 @@ proc representObject*(
     i -= 3
   ctx.put(scalarEvent(val, tag, yAnchorNone))
 
-proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                      result: var BetterInt)
-    {.raises: [YamlConstructionError, YamlStreamError].} =
-  constructScalarItem(s, item, BetterInt):
+proc constructObject*(
+  ctx   : var ConstructionContext,
+  result: var BetterInt,
+) {.raises: [YamlConstructionError, YamlStreamError].} =
+  ctx.input.constructScalarItem(item, BetterInt):
     result = BetterInt(parseBiggestInt(item.scalarContent) + 1)
 
 template expectConstructionError(li, co: int, message: string, body: typed) =

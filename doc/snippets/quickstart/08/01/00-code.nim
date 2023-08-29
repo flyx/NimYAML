@@ -6,9 +6,9 @@ setTag(Person, nimTag("demo:Person"), yTagPerson)
 
 var
   s = newFileStream("in.yaml", fmRead)
-  context = newConstructionContext()
   yamlParser = initYamlParser()
   events = yamlParser.parse(s)
+  context = initConstructionContext(events)
 
 assert events.next().kind == yamlStartStream
 assert events.next().kind == yamlStartDoc
@@ -30,19 +30,19 @@ while nextEvent.kind != yamlEndSeq:
   case curTag
   of yTagString:
     var s: string
-    events.constructChild(context, s)
+    context.constructChild(s)
     echo "got string: ", s
   of yTagInteger:
     var i: int32
-    events.constructChild(context, i)
+    context.constructChild(i)
     echo "got integer: ", i
   of yTagBoolean:
     var b: bool
-    events.constructChild(context, b)
+    context.constructChild(b)
     echo "got boolean: ", b
   of yTagPerson:
     var p: Person
-    events.constructChild(context, p)
+    context.constructChild(p)
     echo "got Person with name: ", p.name
   else: assert false, "unsupported tag: " & $curTag
   nextEvent = events.peek()

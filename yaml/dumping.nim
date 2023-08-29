@@ -1,11 +1,20 @@
 #            NimYAML - YAML implementation in Nim
-#        (c) Copyright 2016-2023 Felix Krause
+#        (c) Copyright 2015-2023 Felix Krause
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+## ===================
+## Module yaml/dumping
+## ===================
+##
+## The dumping API enables you to dump native Nim values as
+## YAML character stream. Along with the loading API, this
+## forms the highest-level API of NimYAML.
+
 import std/streams
-import presenter, serialization, private/internal
+import presenter, native, private/internal
+export native
 
 type
   Dumper* = object
