@@ -37,7 +37,7 @@ suite "DOM":
     let input = newYamlNode([
         newYamlNode("a", yTagString),
         newYamlNode("no", yTagBoolean)])
-    var result = represent(input, tsAll)
+    var result = represent(input, SerializationOptions(tagStyle: tsAll))
     ensure(result, startStreamEvent(), startDocEvent(), startSeqEvent(),
            scalarEvent("a", yTagString), scalarEvent("no", yTagBoolean),
            endSeqEvent(), endDocEvent(), endStreamEvent())
@@ -89,7 +89,7 @@ suite "DOM":
     let
       a = newYamlNode("a")
       input = newYamlNode([a, newYamlNode("b"), a])
-    var result = represent(input, a = asAlways)
+    var result = represent(input, SerializationOptions(anchorStyle: asAlways))
     ensure(result, startStreamEvent(), startDocEvent(),
            startSeqEvent(anchor="a".Anchor),
            scalarEvent("a", anchor = "b".Anchor),
@@ -116,7 +116,7 @@ suite "DOM":
     let value = Root(
       a: "b",
       c: newYamlNode([newYamlNode("d"), newYamlNode("e")]))
-    var result = represent(value, tsNone, handles = @[])
+    var result = represent(value, SerializationOptions(tagStyle: tsNone))
     ensure(result, startStreamEvent(), startDocEvent(), startMapEvent(),
       scalarEvent("a"), scalarEvent("b"), scalarEvent("c"), startSeqEvent(),
       scalarEvent("d"), scalarEvent("e"), endSeqEvent(), endMapEvent(),

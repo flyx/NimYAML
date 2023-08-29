@@ -1,4 +1,4 @@
-import yaml/serialization, streams
+import yaml, streams
 type
   Node = ref NodeObj
   NodeObj = object
@@ -16,5 +16,5 @@ node2.right = node3
 node3.left = node1
 
 var s = newFileStream("out.yaml", fmWrite)
-dump(node1, s)
+Dumper().dump(node1, s)
 s.close()

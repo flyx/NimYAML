@@ -4,15 +4,15 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import "../yaml"
+import ../yaml/[ parser, stream, tojson]
 
 import unittest, json
 
 proc ensureEqual(yamlIn, jsonIn: string) =
   try:
     var
-      parser = initYamlParser(true)
-      s = parser.parse(yamlIn)
+      yamlParser = initYamlParser(true)
+      s = yamlParser.parse(yamlIn)
       yamlResult = constructJson(s)
       jsonResult = parseJson(jsonIn)
     assert yamlResult.len == 1

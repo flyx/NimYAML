@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/22.11";
+    nixpkgs.url = "nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
     nix-filter.url = "github:numtide/nix-filter";
   };
@@ -11,7 +11,7 @@
         eachSystem allSystems (system:
           let pkgs = nixpkgs.legacyPackages.${system};
           in with nix-filter.lib; {
-            devShell = pkgs.mkShell { buildInputs = with pkgs; [ nim ]; };
+            devShell = pkgs.mkShell { buildInputs = with pkgs; [ nim2 ]; };
             packages.webdocs = let
               nim-jester = pkgs.stdenv.mkDerivation {
                 name = "nim-jester-0.5.0";
@@ -70,21 +70,21 @@
                 (
                   cd doc
                   for rstFile in *.rst; do
-                    ${pkgs.nim}/bin/nim rst2html -o:../docout/''${rstFile%.rst}.html $rstFile
+                    ${pkgs.nim2}/bin/nim rst2html -o:../docout/''${rstFile%.rst}.html $rstFile
                   done
-                  ${pkgs.nim}/bin/nim c --nimcache:.cache rstPreproc
+                  ${pkgs.nim2}/bin/nim c --nimcache:.cache rstPreproc
                   for txtFile in *.txt; do
                     ./rstPreproc -o:tmp.rst $txtFile
-                    ${pkgs.nim}/bin/nim rst2html -o:../docout/''${txtFile%.txt}.html tmp.rst
+                    ${pkgs.nim2}/bin/nim rst2html -o:../docout/''${txtFile%.txt}.html tmp.rst
                   done
                   cp docutils.css style.css processing.svg ../docout
                 )
-                ${pkgs.nim}/bin/nim doc2 -o:docout/api/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/${
+                ${pkgs.nim2}/bin/nim doc2 -o:docout/api/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/${
                   self.rev or "master"
                 } yaml
                 for srcFile in yaml/*.nim; do
                   bn=''${srcFile#yaml/}
-                  ${pkgs.nim}/bin/nim doc2 -o:docout/api/''${bn%.nim}.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/yaml/${
+                  ${pkgs.nim2}/bin/nim doc2 -o:docout/api/''${bn%.nim}.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/yaml/${
                     self.rev or "master"
                   } $srcFile
                 done
@@ -94,7 +94,7 @@
                 proc shareDir*(): string =
                   result = "$out/share"
                 EOF
-                ${pkgs.nim}/bin/nim c --d:release --stackTrace -p:"${nim-jester}/lib" -p:"${nim-httpbeast}/lib" -p:"${nim-cligen}/lib" --nimcache:.cache server/server
+                ${pkgs.nim2}/bin/nim c --d:release --stackTrace -p:"${nim-jester}/lib" -p:"${nim-httpbeast}/lib" -p:"${nim-cligen}/lib" --nimcache:.cache server/server
               '';
               installPhase = ''
                 mkdir -p $out/{bin,share}

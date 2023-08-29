@@ -1,5 +1,5 @@
-import ../yaml
-import unittest, strutils
+import ../yaml/[ presenter, data, stream ]
+import unittest
 import commonTestUtils
 
 proc inputSingle(events: varargs[Event]): BufferYamlStream =
@@ -10,7 +10,7 @@ proc inputSingle(events: varargs[Event]): BufferYamlStream =
   result.put(endDocEvent())
   result.put(endStreamEvent())
 
-let minimalOptions = defineOptions(outputVersion = ovNone)
+let minimalOptions = PresentationOptions(outputVersion: ovNone)
 
 proc assertOutput(
     input: YamlStream, expected: string,
@@ -33,27 +33,27 @@ suite "Presenter":
   
   test "Forced block sequence":
     var input = inputSingle(startSeqEvent(), scalarEvent("1"), scalarEvent("2"), endSeqEvent())
-    assertOutput(input, "- 1\n- 2\n", defineOptions(outputVersion = ovNone, containers = cBlock))
+    assertOutput(input, "- 1\n- 2\n", PresentationOptions(outputVersion: ovNone, containers: cBlock))
   
   test "Forced multiline flow sequence":
     var input = inputSingle(startSeqEvent(), scalarEvent("1"), scalarEvent("2"), endSeqEvent())
-    assertOutput(input, "[\n  1,\n  2\n]\n", defineOptions(outputVersion = ovNone, condenseFlow = false))
+    assertOutput(input, "[\n  1,\n  2\n]\n", PresentationOptions(outputVersion: ovNone, condenseFlow: false))
     
   test "Compact flow mapping":
     var input = inputSingle(startMapEvent(), scalarEvent("1"), scalarEvent("2"), endMapEvent())
-    assertOutput(input, "{1: 2}\n", defineOptions(outputVersion = ovNone, containers = cFlow))
+    assertOutput(input, "{1: 2}\n", PresentationOptions(outputVersion: ovNone, containers: cFlow))
   
   test "Simple block mapping":
     var input = inputSingle(startMapEvent(), scalarEvent("1"), scalarEvent("2"), endMapEvent())
-    assertOutput(input, "1: 2\n", defineOptions(outputVersion = ovNone))
+    assertOutput(input, "1: 2\n", PresentationOptions(outputVersion: ovNone))
   
   test "Forced multiline flow mapping":
     var input = inputSingle(startMapEvent(), scalarEvent("1"), scalarEvent("2"), endMapEvent())
-    assertOutput(input, "{\n  1: 2\n}\n", defineOptions(outputVersion = ovNone, condenseFlow = false, containers = cFlow))
+    assertOutput(input, "{\n  1: 2\n}\n", PresentationOptions(outputVersion: ovNone, condenseFlow: false, containers: cFlow))
   
   test "Forced JSON mapping":
     var input = inputSingle(startMapEvent(), scalarEvent("1"), scalarEvent("2"), endMapEvent())
-    assertOutput(input, "{\n  \"1\": 2\n}\n", defineOptions(outputVersion = ovNone, condenseFlow = false, containers = cFlow, quoting = sqJson))
+    assertOutput(input, "{\n  \"1\": 2\n}\n", PresentationOptions(outputVersion: ovNone, condenseFlow: false, containers: cFlow, quoting: sqJson))
   
   test "Nested flow sequence":
     var input = inputSingle(startMapEvent(), scalarEvent("a"), startSeqEvent(), scalarEvent("1"), scalarEvent("2"), endSeqEvent(), endMapEvent())
@@ -61,7 +61,7 @@ suite "Presenter":
   
   test "Nested block sequence":
     var input = inputSingle(startMapEvent(), scalarEvent("a"), startSeqEvent(), scalarEvent("1"), scalarEvent("2"), endSeqEvent(), endMapEvent())
-    assertOutput(input, "a:\n  - 1\n  - 2\n", defineOptions(outputVersion = ovNone, containers = cBlock))
+    assertOutput(input, "a:\n  - 1\n  - 2\n", PresentationOptions(outputVersion: ovNone, containers: cBlock))
   
   test "Compact notation: mapping in sequence":
     var input = inputSingle(startSeqEvent(), scalarEvent("a"), startMapEvent(), scalarEvent("1"), scalarEvent("2"),   
@@ -70,15 +70,15 @@ suite "Presenter":
   
   test "No compact notation: sequence in mapping":
     var input = inputSingle(startMapEvent(), scalarEvent("a"), startSeqEvent(), scalarEvent("1"), endSeqEvent(), endMapEvent())
-    assertOutput(input, "a:\n  - 1\n", defineOptions(outputVersion = ovNone, containers = cBlock))
+    assertOutput(input, "a:\n  - 1\n", PresentationOptions(outputVersion: ovNone, containers: cBlock))
   
   test "Compact notation with 4 spaces indentation":
     var input = inputSingle(startSeqEvent(), scalarEvent("a"), startMapEvent(), scalarEvent("1"), scalarEvent("2"),   
         scalarEvent("3"), scalarEvent("4"), endMapEvent(), endSeqEvent())
-    assertOutput(input, "-   a\n-   1: 2\n    3: 4\n", defineOptions(outputVersion = ovNone, indentationStep = 4))
+    assertOutput(input, "-   a\n-   1: 2\n    3: 4\n", PresentationOptions(outputVersion: ovNone, indentationStep: 4))
   
   test "Compact notation with 4 spaces indentation, more complex input":
     var input = inputSingle(startMapEvent(), scalarEvent("root"), startSeqEvent(), scalarEvent("a"),
         startMapEvent(), scalarEvent("1"), scalarEvent("2"), scalarEvent("3"), scalarEvent("4"), endMapEvent(),
         endSeqEvent(), endMapEvent())
-    assertOutput(input, "root:\n    -   a\n    -   1: 2\n        3: 4\n", defineOptions(outputVersion = ovNone, indentationStep = 4))
+    assertOutput(input, "root:\n    -   a\n    -   1: 2\n        3: 4\n", PresentationOptions(outputVersion: ovNone, indentationStep: 4))

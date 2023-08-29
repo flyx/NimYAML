@@ -17,18 +17,48 @@
 ## information.
 
 import std / [tables, typetraits, strutils, macros, streams, times, parseutils, options]
-import data, parser, taglib, presenter, stream, private/internal, hints, annotations
+import data, parser, taglib, stream, private/internal, hints, annotations
 export data, stream, macros, annotations, options
   # *something* in here needs externally visible `==`(x,y: AnchorId),
   # but I cannot figure out what. binding it would be the better option.
 
 type
-  SerializationContext* = ref object
+  TagStyle* = enum
+    ## Whether object should be serialized with explicit tags.
+    ##
+    ## - ``tsNone``: No tags will be outputted unless necessary.
+    ## - ``tsRootOnly``: A tag will only be outputted for the root tag and
+    ##   where necessary.
+    ## - ``tsAll``: Tags will be outputted for every object.
+    tsNone, tsRootOnly, tsAll
+  
+  AnchorStyle* = enum
+    ## How ref object should be serialized.
+    ##
+    ## - ``asNone``: No anchors will be written. Values present at
+    ##   multiple places in the content that is serialized will be
+    ##   duplicated at every occurrence. If the content is cyclic, this
+    ##   will raise a YamlSerializationError.
+    ## - ``asTidy``: Anchors will only be generated for objects that
+    ##   actually occur more than once in the content to be serialized.
+    ##   This is a bit slower and needs more memory than ``asAlways``.
+    ## - ``asAlways``: Achors will be generated for every ref object in the
+    ##   content that is serialized, regardless of whether the object is
+    ##   referenced again afterwards.
+    asNone, asTidy, asAlways
+
+  SerializationOptions* = object
+    tagStyle*   : TagStyle    = tsNone
+    anchorStyle*: AnchorStyle = asTidy
+    handles*    : seq[tuple[handle, uriPrefix: string]]
+
+  SerializationContext* = object
     ## Context information for the process of serializing YAML from Nim values.
-    refs*: Table[pointer, tuple[a: Anchor, referenced: bool]]
-    anchorStyle: AnchorStyle
-    nextAnchorId*: string
-    put*: proc(e: Event) {.raises: [], closure.}
+    refs: Table[pointer, tuple[a: Anchor, referenced: bool]]
+    emitTag: bool
+    nextAnchorId: string
+    options*: SerializationOptions
+    putImpl*: proc(ctx: var SerializationContext, e: Event) {.raises: [], closure.}
 
   ConstructionContext* = ref object
     ## Context information for the process of constructing Nim values from YAML.
@@ -44,6 +74,9 @@ type
   YamlSerializationError* = object of ValueError
     ## Exception that may be raised when serializing Nim values into YAML
     ## stream events.
+
+proc put*(ctx: var SerializationContext, e: Event) {.raises: [].} =
+  ctx.putImpl(ctx, e)
 
 # forward declares
 
@@ -67,7 +100,7 @@ proc constructChild*[T](s: var YamlStream, c: ConstructionContext,
   ## Constructs a Nim value that is a string from a part of a YAML stream.
   ## This specialization takes care of possible nil seqs.
 
-proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
+proc constructChild*[O](s: var YamlStream, ctx: ConstructionContext,
                         result: var ref O)
     {.raises: [YamlConstructionError, YamlStreamError].}
   ## Constructs an arbitrary Nim value from a part of a YAML stream.
@@ -75,33 +108,42 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   ## for constructing the value. The object may be constructed from an alias
   ## node which will be resolved using the ``ConstructionContext``.
 
-proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext)
+proc representChild*[O](ctx: var SerializationContext, value: ref O)
     {.raises: [YamlSerializationError].}
   ## Represents an arbitrary Nim reference value as YAML object. The object
   ## may be represented as alias node if it is already present in the
   ## ``SerializationContext``.
 
-proc representChild*(value: string, ts: TagStyle, c: SerializationContext)
+proc representChild*(ctx: var SerializationContext, value: string)
     {.inline, raises: [].}
   ## Represents a Nim string. Supports nil strings.
 
-proc representChild*[O](value: O, ts: TagStyle, c: SerializationContext)
+proc representChild*[O](ctx: var SerializationContext, value: O)
   ## Represents an arbitrary Nim object as YAML object.
 
 proc newConstructionContext*(): ConstructionContext =
   new(result)
   result.refs = initTable[Anchor, tuple[tag: Tag, p: pointer]]()
 
-proc newSerializationContext*(s: AnchorStyle,
-    putImpl: proc(e: Event) {.raises: [], closure.}):
-    SerializationContext =
-  result = SerializationContext(anchorStyle: s, nextAnchorId: "a",
-                                put: putImpl)
-  result.refs = initTable[pointer, tuple[a: Anchor, referenced: bool]]()
+proc initSerializationContext*(
+  options: SerializationOptions,
+  putImpl: proc(ctx: var SerializationContext, e: Event) {.raises: [], closure.}
+): SerializationContext =
+  result = SerializationContext(
+    refs: initTable[pointer, tuple[a: Anchor, referenced: bool]](),
+    emitTag: options.tagStyle != tsNone,
+    nextAnchorId: "a",
+    options: options,
+    putImpl: putImpl
+  )
 
-template presentTag*(t: typedesc, ts: TagStyle): Tag =
+proc presentTag*(ctx: var SerializationContext, t: typedesc): Tag {.inline.} =
   ## Get the Tag that represents the given type in the given style
-  if ts == tsNone: yTagQuestionMark else: yamlTag(t)
+  if ctx.emitTag:
+    result = yamlTag(t)
+    if ctx.options.tagStyle == tsRootOnly: ctx.emitTag = false
+  else:
+    result = yTagQuestionMark
 
 proc safeTagUri(tag: Tag): string {.raises: [].} =
   try:
@@ -155,10 +197,13 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
   constructScalarItem(s, item, string):
     result = item.scalarContent
 
-proc representObject*(value: string, ts: TagStyle,
-        c: SerializationContext, tag: Tag) {.raises: [].} =
+proc representObject*(
+  ctx: var SerializationContext,
+  value: string,
+  tag: Tag,
+) {.raises: [].} =
   ## represents a string as YAML scalar
-  c.put(scalarEvent(value, tag, yAnchorNone))
+  ctx.put(scalarEvent(value, tag, yAnchorNone))
 
 proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
       s: YamlStream, mark: Mark, val: string): T =
@@ -220,19 +265,24 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
   constructObject(s, c, i32Result)
   result = int(i32Result)
 
-proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
-    c: SerializationContext, tag: Tag) {.raises: [].} =
+proc representObject*[T: int8|int16|int32|int64](
+  ctx: var SerializationContext,
+  value: T,
+  tag: Tag,
+) {.raises: [].} =
   ## represents an integer value as YAML scalar
-  c.put(scalarEvent($value, tag, yAnchorNone))
+  ctx.put(scalarEvent($value, tag, yAnchorNone))
 
-proc representObject*(value: int, tagStyle: TagStyle,
-                      c: SerializationContext, tag: Tag)
-    {.raises: [YamlSerializationError], inline.}=
+proc representObject*(
+  ctx: var SerializationContext,
+  value: int,
+  tag: Tag,
+) {.raises: [YamlSerializationError], inline.}=
   ## represent an integer of architecture-defined length by casting it to int32.
   ## on 64-bit systems, this may cause a RangeDefect.
 
   # currently, sizeof(int) is at least sizeof(int32).
-  try: c.put(scalarEvent($int32(value), tag, yAnchorNone))
+  try: ctx.put(scalarEvent($int32(value), tag, yAnchorNone))
   except RangeDefect as rd:
     var e = newException(YamlSerializationError, rd.msg)
     e.parent = rd
@@ -274,16 +324,22 @@ when defined(JS):
   proc `$`(x: uint8|uint16|uint32|uint64|uint): string =
     result = $BiggestInt(x)
 
-proc representObject*[T: uint8|uint16|uint32|uint64](value: T, ts: TagStyle,
-    c: SerializationContext, tag: Tag) {.raises: [].} =
+proc representObject*[T: uint8|uint16|uint32|uint64](
+  ctx: var SerializationContext,
+  value: T,
+  tag: Tag,
+) {.raises: [].} =
   ## represents an unsigned integer value as YAML scalar
-  c.put(scalarEvent($value, tag, yAnchorNone))
+  ctx.put(scalarEvent($value, tag, yAnchorNone))
 
-proc representObject*(value: uint, ts: TagStyle, c: SerializationContext,
-    tag: Tag) {.raises: [YamlSerializationError], inline.} =
+proc representObject*(
+  ctx: var SerializationContext,
+  value: uint,
+  tag: Tag,
+) {.raises: [YamlSerializationError], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
   ## to int32. on 64-bit systems, this may cause a RangeDefect.
-  try: c.put(scalarEvent($uint32(value), tag, yAnchorNone))
+  try: ctx.put(scalarEvent($uint32(value), tag, yAnchorNone))
   except RangeDefect as rd:
     var e = newException(YamlSerializationError, rd.msg)
     e.parent = rd
@@ -312,14 +368,17 @@ proc constructObject*[T: float|float32|float64](
       raise s.constructionError(item.startPos, "Cannot construct to float: " &
           escape(item.scalarContent))
 
-proc representObject*[T: float|float32|float64](value: T, ts: TagStyle,
-    c: SerializationContext, tag: Tag) {.raises: [].} =
+proc representObject*[T: float|float32|float64](
+  ctx: var SerializationContext,
+  value: T,
+  tag: Tag,
+) {.raises: [].} =
   ## represents a float value as YAML scalar
   case value
-  of Inf: c.put(scalarEvent(".inf", tag))
-  of NegInf: c.put(scalarEvent("-.inf", tag))
-  of NaN: c.put(scalarEvent(".nan", tag))
-  else: c.put(scalarEvent($value, tag))
+  of Inf: ctx.put(scalarEvent(".inf", tag))
+  of NegInf: ctx.put(scalarEvent("-.inf", tag))
+  of NaN: ctx.put(scalarEvent(".nan", tag))
+  else: ctx.put(scalarEvent($value, tag))
 
 proc yamlTag*(T: typedesc[bool]): Tag {.inline, raises: [].} = yTagBoolean
 
@@ -335,10 +394,13 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
       raise s.constructionError(item.startPos, "Cannot construct to bool: " &
           escape(item.scalarContent))
 
-proc representObject*(value: bool, ts: TagStyle, c: SerializationContext,
-    tag: Tag)  {.raises: [].} =
+proc representObject*(
+  ctx: var SerializationContext,
+  value: bool,
+  tag: Tag,
+)  {.raises: [].} =
   ## represents a bool value as a YAML scalar
-  c.put(scalarEvent(if value: "true" else: "false", tag, yAnchorNone))
+  ctx.put(scalarEvent(if value: "true" else: "false", tag, yAnchorNone))
 
 proc constructObject*(s: var YamlStream, c: ConstructionContext,
                       result: var char)
@@ -350,10 +412,13 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
           escape(item.scalarContent))
     else: result = item.scalarContent[0]
 
-proc representObject*(value: char, ts: TagStyle, c: SerializationContext,
-    tag: Tag) {.raises: [].} =
+proc representObject*(
+  ctx: var SerializationContext,
+  value: char,
+  tag: Tag
+) {.raises: [].} =
   ## represents a char value as YAML scalar
-  c.put(scalarEvent("" & value, tag, yAnchorNone))
+  ctx.put(scalarEvent("" & value, tag, yAnchorNone))
 
 proc yamlTag*(T: typedesc[Time]): Tag {.inline, raises: [].} = yTagTimestamp
 
@@ -416,10 +481,13 @@ proc constructObject*(s: var YamlStream, c: ConstructionContext,
       raise s.constructionError(item.startPos, "Not a parsable timestamp: " &
           escape(item.scalarContent))
 
-proc representObject*(value: Time, ts: TagStyle, c: SerializationContext,
-                      tag: Tag) {.raises: [].} =
+proc representObject*(
+  ctx: var SerializationContext,
+  value: Time,
+  tag: Tag,
+) {.raises: [].} =
   let tmp = value.utc()
-  c.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
+  ctx.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
 
 proc yamlTag*[I](T: typedesc[seq[I]]): Tag {.inline, raises: [].} =
   return nimTag("system:seq(" & safeTagUri(yamlTag(I)) & ')')
@@ -455,14 +523,15 @@ proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
     result.incl(item)
   discard s.next()
 
-proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
-    c: SerializationContext, tag: Tag) =
+proc representObject*[T](
+  ctx  : var SerializationContext,
+  value: seq[T]|set[T],
+  tag  : Tag,
+) =
   ## represents a Nim seq as YAML sequence
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  c.put(startSeqEvent(tag = tag))
-  for item in value:
-    representChild(item, childTagStyle, c)
-  c.put(endSeqEvent())
+  ctx.put(startSeqEvent(tag = tag))
+  for item in value: ctx.representChild(item)
+  ctx.put(endSeqEvent())
 
 proc yamlTag*[I, V](T: typedesc[array[I, V]]): Tag {.inline, raises: [].} =
   const rangeName = name(I)
@@ -485,14 +554,15 @@ proc constructObject*[I, T](s: var YamlStream, c: ConstructionContext,
   if event.kind != yamlEndSeq:
     raise s.constructionError(event.startPos, "Too many array values")
 
-proc representObject*[I, T](value: array[I, T], ts: TagStyle,
-    c: SerializationContext, tag: Tag) =
+proc representObject*[I, T](
+  ctx: var SerializationContext,
+  value: array[I, T],
+  tag: Tag,
+) =
   ## represents a Nim array as YAML sequence
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  c.put(startSeqEvent(tag = tag))
-  for item in value:
-    representChild(item, childTagStyle, c)
-  c.put(endSeqEvent())
+  ctx.put(startSeqEvent(tag = tag))
+  for item in value: ctx.representChild(item)
+  ctx.put(endSeqEvent())
 
 proc yamlTag*[K, V](T: typedesc[Table[K, V]]): Tag {.inline, raises: [].} =
   return nimTag("tables:Table(" & safeTagUri(yamlTag(K)) & ';' &
@@ -517,15 +587,17 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
     result[key] = value
   discard s.next()
 
-proc representObject*[K, V](value: Table[K, V], ts: TagStyle,
-    c: SerializationContext, tag: Tag) =
+proc representObject*[K, V](
+  ctx  : var SerializationContext,
+  value: Table[K, V],
+  tag  : Tag,
+) =
   ## represents a Nim Table as YAML mapping
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  c.put(startMapEvent(tag = tag))
+  ctx.put(startMapEvent(tag = tag))
   for key, value in value.pairs:
-    representChild(key, childTagStyle, c)
-    representChild(value, childTagStyle, c)
-  c.put(endMapEvent())
+    ctx.representChild(key)
+    ctx.representChild(value)
+  ctx.put(endMapEvent())
 
 proc yamlTag*[K, V](T: typedesc[OrderedTable[K, V]]): Tag
     {.inline, raises: [].} =
@@ -557,16 +629,18 @@ proc constructObject*[K, V](s: var YamlStream, c: ConstructionContext,
     result[move(key)] = move(value)
   discard s.next()
 
-proc representObject*[K, V](value: OrderedTable[K, V], ts: TagStyle,
-    c: SerializationContext, tag: Tag) =
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  c.put(startSeqEvent(tag = tag))
+proc representObject*[K, V](
+  ctx  : var SerializationContext,
+  value: OrderedTable[K, V],
+  tag  : Tag,
+) =
+  ctx.put(startSeqEvent(tag = tag))
   for key, value in value.pairs:
-    c.put(startMapEvent())
-    representChild(key, childTagStyle, c)
-    representChild(value, childTagStyle, c)
-    c.put(endMapEvent())
-  c.put(endSeqEvent())
+    ctx.put(startMapEvent())
+    ctx.representChild(key)
+    ctx.representChild(value)
+    ctx.put(endMapEvent())
+  ctx.put(endSeqEvent())
 
 proc yamlTag*(T: typedesc[object|enum]):
     Tag {.inline, raises: [].} =
@@ -710,9 +784,14 @@ proc markAsFound(i: int, matched: NimNode): NimNode {.compileTime.} =
   newAssignment(newNimNode(nnkBracketExpr).add(matched, newLit(i)),
       newLit(true))
 
-proc ifNotTransient(o, field: NimNode,
-    content: openarray[NimNode],
-    elseError: bool, s: NimNode, m: NimNode, tName, fName: string = ""):
+proc ifNotTransient(
+  o, field : NimNode,
+  content  : openarray[NimNode],
+  elseError: bool,
+  s, m : NimNode, 
+  tName: string = "",
+  fName: string = "",
+):
     NimNode {.compileTime.} =
   var stmts = newStmtList(content)
   if elseError:
@@ -991,23 +1070,25 @@ proc constructObject*[O: object|tuple](
   constructObjectDefault(s, c, result)
 
 proc recGenFieldRepresenters(
-    tDecl, value, childTagStyle: NimNode, isVO: bool, fieldIndex: var int16, result: NimNode) {.compileTime.} =
+    tDecl, value: NimNode, isVO: bool, fieldIndex: var int16, result: NimNode) {.compileTime.} =
   let
     tDesc = getType(tDecl[1])
     tParent = parentType(tDesc)
   if tParent != nil:
-    recGenFieldRepresenters(tParent, value, childTagStyle, isVO, fieldIndex, result)
+    recGenFieldRepresenters(tParent, value, isVO, fieldIndex, result)
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
         fieldName = $child[0]
         fieldAccessor = newDotExpr(value, newIdentNode(fieldName))
       result.add(quote do:
-        c.put(startMapEvent())
-        c.put(scalarEvent(`fieldName`, tag = if `childTagStyle` == tsNone:
-            yTagQuestionMark else: yTagNimField))
-        representChild(`fieldAccessor`, `childTagStyle`, c)
-        c.put(endMapEvent())
+        ctx.put(startMapEvent())
+        ctx.put(scalarEvent(
+          `fieldName`,
+          tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark
+        ))
+        ctx.representChild(`fieldAccessor`)
+        ctx.put(endMapEvent())
       )
       let enumName = $getTypeInst(child[0])
       var caseStmt = newNimNode(nnkCaseStmt).add(fieldAccessor)
@@ -1034,11 +1115,13 @@ proc recGenFieldRepresenters(
               itemAccessor = newDotExpr(value, newIdentNode(name))
             curStmtList.add(quote do:
               when not `itemAccessor`.hasCustomPragma(transient):
-                c.put(startMapEvent())
-                c.put(scalarEvent(`name`, tag = if `childTagStyle` == tsNone:
-                    yTagQuestionMark else: yTagNimField))
-                representChild(`itemAccessor`, `childTagStyle`, c)
-                c.put(endMapEvent())
+                ctx.put(startMapEvent())
+                ctx.put(scalarEvent(
+                  `name`,
+                  tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark 
+                ))
+                ctx.representChild(`itemAccessor`)
+                ctx.put(endMapEvent())
             )
         else:
           curStmtList.add(newNimNode(nnkDiscardStmt).add(newEmptyNode()))
@@ -1048,51 +1131,61 @@ proc recGenFieldRepresenters(
     else:
       let
         name = $child
+        templName = genSym(nskTemplate)
         childAccessor = newDotExpr(value, newIdentNode(name))
       result.add(quote do:
-        template serializeImpl {.used.} =
-          when bool(`isVO`): c.put(startMapEvent())
-          c.put(scalarEvent(`name`, if `childTagStyle` == tsNone:
-              yTagQuestionMark else: yTagNimField, yAnchorNone))
-          representChild(`childAccessor`, `childTagStyle`, c)
-          when bool(`isVO`): c.put(endMapEvent())
+        template `templName` {.used.} =
+          when bool(`isVO`): ctx.put(startMapEvent())
+          ctx.put(scalarEvent(
+            `name`,
+            if ctx.emitTag: yTagNimField else: yTagQuestionMark,
+            yAnchorNone
+          ))
+          ctx.representChild(`childAccessor`)
+          when bool(`isVO`): ctx.put(endMapEvent())
         when not `childAccessor`.hasCustomPragma(transient):
           when hasSparse(`tDecl`) and `child` is Option:
-            if `childAccessor`.isSome: serializeImpl()
+            if `childAccessor`.isSome: `templName`()
           else:
-            serializeImpl()
+            `templName`()
       )
     inc(fieldIndex)
 
-macro genRepresentObject(t: typedesc, value, childTagStyle: typed) =
+macro genRepresentObject(t: typedesc, value) =
   result = newStmtList()
   let
     tDecl = getType(t)
     isVO  = isVariantObject(t)
   var fieldIndex = 0'i16
-  recGenFieldRepresenters(tDecl, value, childTagStyle, isVO, fieldIndex, result)
+  recGenFieldRepresenters(tDecl, value, isVO, fieldIndex, result)
 
-proc representObject*[O: object](value: O, ts: TagStyle,
-    c: SerializationContext, tag: Tag) =
+proc representObject*[O: object](
+  ctx  : var SerializationContext,
+  value: O,
+  tag  : Tag,
+) =
   ## represents a Nim object or tuple as YAML mapping
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-  when isVariantObject(getType(O)): c.put(startSeqEvent(tag = tag))
-  else: c.put(startMapEvent(tag = tag))
-  genRepresentObject(O, value, childTagStyle)
-  when isVariantObject(getType(O)): c.put(endSeqEvent())
-  else: c.put(endMapEvent())
+  when isVariantObject(getType(O)): ctx.put(startSeqEvent(tag = tag))
+  else: ctx.put(startMapEvent(tag = tag))
+  genRepresentObject(O, value)
+  when isVariantObject(getType(O)): ctx.put(endSeqEvent())
+  else: ctx.put(endMapEvent())
 
-proc representObject*[O: tuple](value: O, ts: TagStyle,
-    c: SerializationContext, tag: Tag) =
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+proc representObject*[O: tuple](
+  ctx  : var SerializationContext,
+  value: O,
+  tag  : Tag,
+) =
   var fieldIndex = 0'i16
-  c.put(startMapEvent(tag = tag))
+  ctx.put(startMapEvent(tag = tag))
   for name, fvalue in fieldPairs(value):
-    c.put(scalarEvent(name, tag = if childTagStyle == tsNone:
-          yTagQuestionMark else: yTagNimField))
-    representChild(fvalue, childTagStyle, c)
+    ctx.put(scalarEvent(
+      name,
+      tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark
+    ))
+    ctx.representChild(fvalue)
     inc(fieldIndex)
-  c.put(endMapEvent())
+  ctx.put(endMapEvent())
 
 proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
                                result: var O)
@@ -1108,10 +1201,13 @@ proc constructObject*[O: enum](s: var YamlStream, c: ConstructionContext,
     ex.parent = ve
     raise ex
 
-proc representObject*[O: enum](value: O, ts: TagStyle,
-    c: SerializationContext, tag: Tag) {.raises: [].} =
+proc representObject*[O: enum](
+  ctx: var SerializationContext,
+  value: O,
+  tag: Tag,
+) {.raises: [].} =
   ## represents a Nim enum as YAML scalar
-  c.put(scalarEvent($value, tag, yAnchorNone))
+  ctx.put(scalarEvent($value, tag, yAnchorNone))
 
 proc yamlTag*[O](T: typedesc[ref O]): Tag {.inline, raises: [].} = yamlTag(O)
 
@@ -1311,8 +1407,11 @@ when defined(JS):
     else:
       raise s.constructionError(e.startPos, "Unexpected structure, expected timestamp")
 
-proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
-                        result: var ref O) =
+proc constructChild*[O](
+  s     : var YamlStream,
+  ctx   : ConstructionContext,
+  result: var ref O,
+) =
   var e = s.peek()
   if e.kind == yamlScalar:
     let props = e.scalarProperties
@@ -1322,7 +1421,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
       discard s.next()
       return
   elif e.kind == yamlAlias:
-    let val = c.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
+    let val = ctx.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
     if val.p == nil:
       raise constructionError(s, e.startPos,
         "alias node refers to anchor in ignored scope")
@@ -1335,8 +1434,8 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   new(result)
   template removeAnchor(anchor: var Anchor) {.dirty.} =
     if anchor != yAnchorNone:
-      yAssert(not c.refs.hasKey(anchor))
-      c.refs[anchor] = (yamlTag(O), cast[pointer](result))
+      yAssert(not ctx.refs.hasKey(anchor))
+      ctx.refs[anchor] = (yamlTag(O), cast[pointer](result))
       anchor = yAnchorNone
 
   case e.kind
@@ -1345,7 +1444,7 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
   of yamlStartSeq: removeAnchor(e.seqProperties.anchor)
   else: internalError("Unexpected event kind: " & $e.kind)
   s.peek = e
-  try: constructChild(s, c, result[])
+  try: constructChild(s, ctx, result[])
   except YamlConstructionError as e: raise e
   except YamlStreamError as e: raise e
   except CatchableError as ce:
@@ -1353,86 +1452,100 @@ proc constructChild*[O](s: var YamlStream, c: ConstructionContext,
     e.parent = ce
     raise e
 
-proc representChild*(value: string, ts: TagStyle, c: SerializationContext) =
-  let tag = presentTag(string, ts)
-  representObject(value, ts, c,
-                  if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
-                    yTagExclamationMark
-                  else:
-                    tag)
+proc representChild*(
+  ctx  : var SerializationContext,
+  value: string,
+) =
+  let tag = ctx.presentTag(string)
+  ctx.representObject(
+    value,
+    if tag == yTagQuestionMark and guessType(value) != yTypeUnknown:
+      yTagExclamationMark
+    else:
+      tag
+  )
 
-proc representChild*[T](value: seq[T], ts: TagStyle, c: SerializationContext) =
-  representObject(value, ts, c, presentTag(seq[T], ts))
+proc representChild*[T](
+  ctx  : var SerializationContext,
+  value: seq[T],
+) =
+  ctx.representObject(value, ctx.presentTag(seq[T]))
 
-proc representChild*[I, T](value: array[I, T], ts: TagStyle, c: SerializationContext) =
-  representObject(value, ts, c, presentTag(array[I, T], ts))
+proc representChild*[I, T](
+  ctx  : var SerializationContext,
+  value: array[I, T],
+) =
+  ctx.representObject(value, ctx.presentTag(array[I, T]))
 
-proc representChild*[O](value: ref O, ts: TagStyle, c: SerializationContext) =
-  if isNil(value): c.put(scalarEvent("~", yTagNull))
+proc representChild*[O](
+  ctx  : var SerializationContext,
+  value: ref O,
+) =
+  if isNil(value): ctx.put(scalarEvent("~", yTagNull))
   else:
     let p = cast[pointer](value)
     # when c.anchorStyle == asNone, `referenced` is used as indicator that we are
     # currently in the process of serializing this node. This enables us to
     # detect cycles and raise an error.
-    var val = c.refs.getOrDefault(p, (c.nextAnchorId.Anchor, c.anchorStyle == asNone))
-    if val.a != c.nextAnchorId.Anchor:
-      if c.anchorStyle == asNone:
+    var val = ctx.refs.getOrDefault(
+      p, (ctx.nextAnchorId.Anchor, ctx.options.anchorStyle == asNone)
+    )
+    if val.a != ctx.nextAnchorId.Anchor:
+      if ctx.options.anchorStyle == asNone:
         if val.referenced:
           raise newException(YamlSerializationError,
               "tried to serialize cyclic graph with asNone")
       else:
-        val = c.refs.getOrDefault(p)
+        val = ctx.refs.getOrDefault(p)
         yAssert(val.a != yAnchorNone)
         if not val.referenced:
-          c.refs[p] = (val.a, true)
-        c.put(aliasEvent(val.a))
+          ctx.refs[p] = (val.a, true)
+        ctx.put(aliasEvent(val.a))
         return
-    c.refs[p] = val
-    nextAnchor(c.nextAnchorId, len(c.nextAnchorId) - 1)
-    let
-      childTagStyle = if ts == tsAll: tsAll else: tsRootOnly
-      origPut = c.put
-    c.put = proc(e: Event) =
+    ctx.refs[p] = val
+    nextAnchor(ctx.nextAnchorId, len(ctx.nextAnchorId) - 1)
+    let origPut = ctx.putImpl
+    ctx.putImpl = proc(ctx: var SerializationContext, e: Event) =
       var ex = e
       case ex.kind
       of yamlStartMap:
-        if c.anchorStyle != asNone: ex.mapProperties.anchor = val.a
-        if ts == tsNone: ex.mapProperties.tag = yTagQuestionMark
+        if ctx.options.anchorStyle != asNone: ex.mapProperties.anchor = val.a
       of yamlStartSeq:
-        if c.anchorStyle != asNone: ex.seqProperties.anchor = val.a
-        if ts == tsNone: ex.seqProperties.tag = yTagQuestionMark
+        if ctx.options.anchorStyle != asNone: ex.seqProperties.anchor = val.a
       of yamlScalar:
-        if c.anchorStyle != asNone: ex.scalarProperties.anchor = val.a
-        if ts == tsNone and guessType(ex.scalarContent) != yTypeNull:
+        if ctx.options.anchorStyle != asNone: ex.scalarProperties.anchor = val.a
+        if not ctx.emitTag and guessType(ex.scalarContent) != yTypeNull:
           ex.scalarProperties.tag = yTagQuestionMark
       else: discard
-      c.put = origPut
-      c.put(ex)
-    representChild(value[], childTagStyle, c)
-    if c.anchorStyle == asNone: c.refs[p] = (val.a, false)
+      ctx.putImpl = origPut
+      ctx.put(ex)
+    ctx.representChild(value[])
+    if ctx.options.anchorStyle == asNone: ctx.refs[p] = (val.a, false)
 
-proc representChild*[T](value: Option[T], ts: TagStyle,
-    c: SerializationContext) =
+proc representChild*[T](
+  ctx  : var SerializationContext,
+  value: Option[T],
+) =
   ## represents an optional value. If the value is missing, a !!null scalar
   ## will be produced.
   if value.isSome:
-    representChild(value.get(), ts, c)
+    ctx.representChild(value.get())
   else:
-    c.put(scalarEvent("~", yTagNull))
+    ctx.put(scalarEvent("~", yTagNull))
 
-proc representChild*[O](value: O, ts: TagStyle,
-                        c: SerializationContext) =
+proc representChild*[O](
+  ctx  : var SerializationContext,
+  value: O,
+) =
   when isImplicitVariantObject(O):
     # todo: this would probably be nicer if constructed with a macro
     var count = 0
     for name, field in fieldPairs(value):
-      if count > 0:
-        representChild(field, if ts == tsAll: tsAll else: tsRootOnly, c)
+      if count > 0: ctx.representChild(field)
       inc(count)
-    if count == 1: c.put(scalarEvent("~", yTagNull))
+    if count == 1: ctx.put(scalarEvent("~", yTagNull))
   else:
-    representObject(value, ts, c,
-        if ts == tsNone: yTagQuestionMark else: yamlTag(O))
+    ctx.representObject(value, ctx.presentTag(O))
 
 proc construct*[T](s: var YamlStream, target: var T)
     {.raises: [YamlStreamError, YamlConstructionError].} =
@@ -1504,20 +1617,23 @@ proc loadMultiDoc*[K](input: Stream | string, target: var seq[K]) =
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
-proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
-                   a: AnchorStyle = asTidy,
-                   handles: seq[tuple[handle, uriPrefix: string]] =
-                       @[("!n!", nimyamlTagRepositoryPrefix)]): YamlStream =
+proc represent*[T](
+  value: T,
+  options: SerializationOptions = SerializationOptions()
+): YamlStream =
   ## Represents a Nim value as ``YamlStream``
   var
     bys = newBufferYamlStream()
-    context = newSerializationContext(a, proc(e: Event) = bys.put(e))
+    context = initSerializationContext(
+      options,
+      proc(ctx: var SerializationContext, e: Event) = bys.put(e)
+    )
   bys.put(startStreamEvent())
-  bys.put(startDocEvent(handles = handles))
-  representChild(value, ts, context)
+  bys.put(startDocEvent(handles = options.handles))
+  context.representChild(value)
   bys.put(endDocEvent())
   bys.put(endStreamEvent())
-  if a == asTidy:
+  if options.anchorStyle == asTidy:
     var ctx = initAnchorContext()
     for item in bys.mitems():
       case item.kind
@@ -1527,37 +1643,4 @@ proc represent*[T](value: T, ts: TagStyle = tsRootOnly,
       of yamlAlias: item.aliasTarget = ctx.map(item.aliasTarget)
       else: discard
   result = bys
-
-proc dump*[K](value: K, target: Stream, tagStyle: TagStyle = tsRootOnly,
-              anchorStyle: AnchorStyle = asTidy,
-              options: PresentationOptions = defaultPresentationOptions,
-              handles: seq[tuple[handle, uriPrefix: string]] =
-                  @[("!n!", nimyamlTagRepositoryPrefix)])
-    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-               YamlSerializationError].} =
-  ## Dump a Nim value as YAML character stream.
-  ## To prevent %TAG directives in the output, give ``handles = @[]``.
-  var events = represent(value,
-    if options.quoting == sqJson: tsNone else: tagStyle,
-    if options.quoting == sqJson: asNone else: anchorStyle, handles)
-  try: present(events, target, options)
-  except YamlStreamError as e:
-    internalError("Unexpected exception: " & $e.name)
-
-{.push hint[XCannotRaiseY]: off.}
-proc dump*[K](value: K, tagStyle: TagStyle = tsRootOnly,
-              anchorStyle: AnchorStyle = asTidy,
-              options: PresentationOptions = defaultPresentationOptions,
-              handles: seq[tuple[handle, uriPrefix: string]] =
-                  @[("!n!", nimyamlTagRepositoryPrefix)]):
-    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-                      YamlSerializationError].} =
-  ## Dump a Nim value as YAML into a string.
-  ## To prevent %TAG directives in the output, give ``handles = @[]``.
-  var events = represent(value,
-    if options.quoting == sqJson: tsNone else: tagStyle,
-    if options.quoting == sqJson: asNone else: anchorStyle, handles)
-  try: result = present(events, options)
-  except YamlStreamError as e:
-    internalError("Unexpected exception: " & $e.name)
-{.pop.}
+  

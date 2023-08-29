@@ -205,7 +205,7 @@ proc safeNext(c: Context) =
     c.lex.next()
   except LexerError as e:
     raise (ref YamlParserError)(
-      msg: e.msg, parent: nil, mark: (e.line, e.column),
+      msg: e.msg, parent: nil, mark: Mark(line: e.line, column: e.column),
       lineContent: e.lineContent)
 
 proc parseTag(c: Context): Tag =

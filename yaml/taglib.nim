@@ -81,3 +81,8 @@ proc nimTag*(suffix: string): Tag =
   ## prepends NimYAML's tag repository prefix to the given suffix. For example,
   ## ``nimTag("system:char")`` yields ``"tag:nimyaml.org,2016:system:char"``.
   Tag(nimyamlTagRepositoryPrefix & suffix)
+
+proc initNimYamlTagHandle*(): seq[tuple[handle, uriPrefix: string]] =
+  ## returns a seq describing the tag handle ``!n!`` referencing the NimYAML
+  ## tag namespace. Can be used with SerializationOptions.
+  result = @[("!n!", nimyamlTagRepositoryPrefix)]

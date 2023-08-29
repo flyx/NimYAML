@@ -14,29 +14,6 @@ import std / [streams, deques, strutils, options]
 import data, taglib, stream, private/internal, hints, parser
 
 type
-  PresentationStyle* = enum
-    ## Different styles for YAML character stream output.
-    ## These are presets that set multiple options in PresentationOptions.
-    ##
-    ## - ``psMinimal``: Single-line flow-only output which tries to
-    ##   use as few characters as possible.
-    ## - ``psCanonical``: Canonical YAML output. Writes all tags except
-    ##   for the non-specific tags ``?`` and ``!``, uses flow style, quotes
-    ##   all string scalars.
-    ##   Hint: To ensure full canonical style, you also need to give
-    ##   ``tagStyle = tsAll`` to dump() to generate specific tags for all
-    ##   nodes.
-    ## - ``psDefault``: Tries to be as human-readable as possible. Uses
-    ##   block style by default, but tries to condense mappings and
-    ##   sequences which only contain scalar nodes into a single line using
-    ##   flow style.
-    ## - ``psJson``: Omits the ``%YAML`` directive and the ``---``
-    ##   marker. Uses flow style. Flattens anchors and aliases, omits tags.
-    ##   Output will be parseable as JSON. ``YamlStream`` to dump may only
-    ##   contain one document.
-    ## - ``psBlockOnly``: Formats all output in block style, does not use
-    ##   flow style at all.
-    psMinimal, psCanonical, psDefault, psJson, psBlockOnly
 
   ContainerStyle* = enum
     ## How to serialize containers nodes.
@@ -49,30 +26,6 @@ type
     ##   and short scalar nodes in flow style, all other container nodes
     ##   in block style.
     cBlock, cFlow, cMixed
-
-  TagStyle* = enum
-    ## Whether object should be serialized with explicit tags.
-    ##
-    ## - ``tsNone``: No tags will be outputted unless necessary.
-    ## - ``tsRootOnly``: A tag will only be outputted for the root tag and
-    ##   where necessary.
-    ## - ``tsAll``: Tags will be outputted for every object.
-    tsNone, tsRootOnly, tsAll
-
-  AnchorStyle* = enum
-    ## How ref object should be serialized.
-    ##
-    ## - ``asNone``: No anchors will be written. Values present at
-    ##   multiple places in the content that is serialized will be
-    ##   duplicated at every occurrence. If the content is cyclic, this
-    ##   will raise a YamlSerializationError.
-    ## - ``asTidy``: Anchors will only be generated for objects that
-    ##   actually occur more than once in the content to be serialized.
-    ##   This is a bit slower and needs more memory than ``asAlways``.
-    ## - ``asAlways``: Achors will be generated for every ref object in the
-    ##   content that is serialized, regardless of whether the object is
-    ##   referenced again afterwards.
-    asNone, asTidy, asAlways
 
   NewLineStyle* = enum
     ## What kind of newline sequence is used when presenting.
@@ -110,21 +63,21 @@ type
     ## - ``deAlways``: Always write it.
     ## - ``deIfNecessary``: Write it if any directive has been written,
     ##   or if the root node has an explicit tag
-    ## - ``deNever``: Don't write it. Suppresses output of directives3
+    ## - ``deNever``: Don't write it. Suppresses output of directives
     deAlways, deIfNecessary, deNever
 
   PresentationOptions* = object
     ## Options for generating a YAML character stream
-    containers*: ContainerStyle ## how mappings and sequences are presented
-    indentationStep*: int ## how many spaces a new level should be indented
-    newlines*: NewLineStyle ## kind of newline sequence to use
-    outputVersion*: OutputYamlVersion ## whether to write the %YAML tag
-    maxLineLength*: Option[int] ## max length of a line, including indentation
-    directivesEnd*: DirectivesEndStyle ## whether to write '---' after tags
-    suppressAttrs*: bool ## whether to suppress all attributes on nodes
-    quoting*: ScalarQuotingStyle ## how scalars are quoted
-    condenseFlow*: bool ## whether non-nested flow containers use a single line
-    explicitKeys*: bool ## whether mapping keys should always use '?'
+    containers*     : ContainerStyle = cMixed ## how mappings and sequences are presented
+    indentationStep*: int = 2 ## how many spaces a new level should be indented
+    newlines*       : NewLineStyle = nlOSDefault ## kind of newline sequence to use
+    outputVersion*  : OutputYamlVersion = ovNone ## whether to write the %YAML tag
+    maxLineLength*  : Option[int] = some(80) ## max length of a line, including indentation
+    directivesEnd*  : DirectivesEndStyle = deIfNecessary ## whether to write '---' after tags
+    suppressAttrs*  : bool = false ## whether to suppress all attributes on nodes
+    quoting*        : ScalarQuotingStyle = sqUnset ## how scalars are quoted
+    condenseFlow*   : bool = true ## whether non-nested flow containers use a single line
+    explicitKeys*   : bool = false ## whether mapping keys should always use '?'
 
   YamlPresenterJsonError* = object of ValueError
     ## Exception that may be raised by the YAML presenter when it is
@@ -160,115 +113,9 @@ type
     levels: seq[DumperLevel]
     needsWhitespace: int
 
-const
-  defaultPresentationOptions* =
-    PresentationOptions(containers: cMixed, indentationStep: 2,
-                        newlines: nlOSDefault, maxLineLength: some(80),
-                        directivesEnd: deIfNecessary, suppressAttrs: false,
-                        quoting: sqUnset, condenseFlow: true,
-                        explicitKeys: false)
-
-proc `style=`*(po: var PresentationOptions, value: PresentationStyle) {.inline.} =
-  case value
-  of psMinimal:
-    po.newlines = nlNone
-    po.containers = cFlow
-    po.directivesEnd = deIfNecessary
-    po.suppressAttrs = false
-    po.quoting = sqJson
-    po.condenseFlow = true
-    po.explicitKeys = false
-  of psCanonical:
-    po.containers = cFlow
-    po.directivesEnd = deAlways
-    po.suppressAttrs = false
-    po.quoting = sqDouble
-    po.condenseFlow = false
-    po.explicitKeys = true
-  of psDefault:
-    po.containers = cMixed
-    po.directivesEnd = deIfNecessary
-    po.suppressAttrs = false
-    po.quoting = sqUnset
-    po.condenseFlow = true
-    po.explicitKeys = false
-  of psJson:
-    po.containers = cFlow
-    po.directivesEnd = deNever
-    po.suppressAttrs = true
-    po.quoting = sqJson
-    po.condenseFlow = false
-    po.explicitKeys = false
-    po.outputVersion = ovNone
-  of psBlockOnly:
-    po.containers = cBlock
-    po.directivesEnd = deIfNecessary
-    po.suppressAttrs = false
-    po.quoting = sqUnset
-    po.condenseFlow = true
-    po.explicitKeys = false
-
-proc style*(po: PresentationOptions): PresentationStyle
-    {.deprecated: """
-      The style options are presets that set multiple fields now.
-      This getter recalculates the style that best matches the actual options.
-      You should rather query the option you care about directly.
-    """ .} =
-  if po.newlines == nlNone: return psMinimal
-  case po.containers
-  of cBlock: return psBlockOnly
-  of cMixed: discard
-  of cFlow:
-    case po.quoting
-    of sqJson:
-      if po.directivesEnd == deNever: return psJson
-    of sqDouble:
-      if not po.suppressAttrs: return psCanonical
-    else: discard
-  return psDefault
-
 proc level(ctx: var Context): var DumperLevel = ctx.levels[^1]
   
 proc level(ctx: Context): DumperLevel = ctx.levels[^1]
-
-proc defineOptions*(style: PresentationStyle,
-                    indentationStep: int = 2,
-                    newlines: NewLineStyle = nlOSDefault,
-                    outputVersion: OutputYamlVersion = ov1_2,
-                    maxLineLength: Option[int] = some(80)):
-    PresentationOptions {.raises: [].} =
-  ## Define a set of options for presentation. Convenience proc that requires
-  ## you to only set those values that should not equal the default.
-  ## This version of the proc uses a style argument, use the other version
-  ## to fine-tune your settings.
-  result = PresentationOptions(
-      indentationStep: indentationStep,
-      newlines: newlines, outputVersion: outputVersion,
-      maxLineLength: maxLineLength)
-  result.style = style
-
-proc defineOptions*(containers: ContainerStyle = cMixed,
-                    indentationStep: int = 2,
-                    newlines: NewLineStyle = nlOSDefault,
-                    outputVersion: OutputYamlVersion = ov1_2,
-                    maxLineLength: Option[int] = some(80),
-                    directivesEnd: DirectivesEndStyle = deIfNecessary,
-                    suppressAttrs: bool = false,
-                    quoting: ScalarQuotingStyle = sqUnset,
-                    condenseFlow: bool = true,
-                    explicitKeys: bool = false):
-    PresentationOptions {.raises: [].} =
-  ## Define a set of options for presentation. Convenience proc that requires
-  ## you to only set those values that should not equal the default.
-  ## This version of the proc allows you to fine-tune everything, use the
-  ## other version to give a general style template.
-  result = PresentationOptions(
-      containers: containers,
-      indentationStep: indentationStep,
-      newlines: newlines, outputVersion: outputVersion,
-      maxLineLength: maxLineLength, directivesEnd: directivesEnd,
-      suppressAttrs: suppressAttrs, quoting: quoting,
-      condenseFlow: condenseFlow, explicitKeys: explicitKeys)
 
 proc state(ctx: Context): DumperState = ctx.level.state
 
@@ -662,7 +509,7 @@ proc doPresent(ctx: var Context, s: YamlStream)
         ctx.safeWrite("...")
         ctx.safeNewline()
       wroteDirectivesEnd =
-        ctx.options.directivesEnd == deAlways or s.peek().hasSpecificTag()
+        ctx.options.directivesEnd == deAlways or not s.peek().emptyProperties()
       
       if ctx.options.directivesEnd != deNever:
         resetHandles(ctx.handles)
@@ -896,18 +743,25 @@ proc doPresent(ctx: var Context, s: YamlStream)
       firstDoc = false
       ctx.safeNewline()
 
-proc present*(s: YamlStream, target: Stream,
-              options: PresentationOptions = defaultPresentationOptions)
-    {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-               YamlStreamError].} =
+proc present*(
+  s      : YamlStream,
+  target : Stream,
+  options: PresentationOptions = PresentationOptions()
+) {.raises: [
+  YamlPresenterJsonError, YamlPresenterOutputError,
+  YamlStreamError
+].} =
   ## Convert ``s`` to a YAML character stream and write it to ``target``.
   var c = Context(target: target, options: options)
   doPresent(c, s)
 
-proc present*(s: YamlStream,
-              options: PresentationOptions = defaultPresentationOptions):
-    string {.raises: [YamlPresenterJsonError, YamlPresenterOutputError,
-                      YamlStreamError].} =
+proc present*(
+  s      : YamlStream,
+  options: PresentationOptions = PresentationOptions()
+): string {.raises: [
+  YamlPresenterJsonError, YamlPresenterOutputError,
+  YamlStreamError
+].} =
   ## Convert ``s`` to a YAML character stream and return it as string.
 
   var
@@ -916,8 +770,11 @@ proc present*(s: YamlStream,
   doPresent(c, s)
   return ss.data
 
-proc doTransform(ctx: var Context, input: Stream,
-                 resolveToCoreYamlTags: bool) =
+proc doTransform(
+  ctx  : var Context,
+  input: Stream,
+  resolveToCoreYamlTags: bool
+) =
   var parser: YamlParser
   parser.init()
   var events = parser.parse(input)
@@ -964,11 +821,15 @@ proc doTransform(ctx: var Context, input: Stream,
 proc genInput(input: Stream): Stream = input
 proc genInput(input: string): Stream = newStringStream(input)
 
-proc transform*(input: Stream | string, output: Stream,
-                options: PresentationOptions = defaultPresentationOptions,
-                resolveToCoreYamlTags: bool = false)
-    {.raises: [IOError, OSError, YamlParserError, YamlPresenterJsonError,
-               YamlPresenterOutputError].} =
+proc transform*(
+  input  : Stream | string,
+  output : Stream,
+  options: PresentationOptions = PresentationOptions(),
+  resolveToCoreYamlTags: bool = false
+) {.raises: [
+  IOError, OSError, YamlParserError, YamlPresenterJsonError,
+  YamlPresenterOutputError
+].} =
   ## Parser ``input`` as YAML character stream and then dump it to ``output``
   ## while resolving non-specific tags to the ones in the YAML core tag
   ## library. If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
@@ -976,11 +837,14 @@ proc transform*(input: Stream | string, output: Stream,
   var c = Context(target: output, options: options)
   doTransform(c, genInput(input), resolveToCoreYamlTags)
 
-proc transform*(input: Stream | string,
-                options: PresentationOptions = defaultPresentationOptions,
-                resolveToCoreYamlTags: bool = false):
-    string {.raises: [IOError, OSError, YamlParserError, YamlPresenterJsonError,
-                      YamlPresenterOutputError].} =
+proc transform*(
+  input  : Stream | string,
+  options: PresentationOptions = PresentationOptions(),
+  resolveToCoreYamlTags: bool = false
+): string {.raises: [
+  IOError, OSError, YamlParserError, YamlPresenterJsonError,
+  YamlPresenterOutputError
+].} =
   ## Parser ``input`` as YAML character stream, resolves non-specific tags to
   ## the ones in the YAML core tag library, and then returns a serialized
   ## YAML string that represents the stream. If ``resolveToCoreYamlTags`` is

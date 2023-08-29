@@ -6,19 +6,80 @@
 
 ## This is the parent module of NimYAML, a package that provides facilities to
 ## generate and interpret `YAML <http://yaml.org>`_ character streams. Importing
-## this package will import everything from all subpackages.
+## this package will import everything from all sub-packages.
 ##
-## There are three high-level APIs which are probably most useful:
+## There is no code in this package, all functionality is available from the
+## exported sub-packages. You can import parts of the whole API by importing
+## certain sub-packages only:
 ##
-## * The serialization API in `serialization <yaml.serialization.html>`_ enables
-##   you to load YAML data directly into native Nim types, and reversely dump
-##   native Nim types as YAML.
-## * The DOM API in `dom <yaml.dom.html>`_ parses YAML files in a tree structure
-##   which you can navigate.
-## * The JSON API in `tojson <yaml.tojson.html>`_ parses YAML files into the
-##   Nim stdlib's JSON structure, which may be useful if you have other modules
-##   which expect JSON input. Note that the serialization API is able to write
-##   and load JSON; you do not need the JSON API for that.
+## High Level Loading & Dumping
+## ----------------------------
+##
+## .. code-block::
+##
+##   import yaml / [loading, dumping, annotations]
+##
+## Enables you to load YAML data directly into native Nim types and reversely
+## dump native Nim types into YAML documents. This API corresponds to the full
+## **Load** / **Dump** process as defined in the
+## `YAML specification <https://yaml.org/spec/1.2.2/#31-processes>`_.
+##
+## DOM API
+## -------
+##
+## .. code-block::
+##
+##   import yaml/dom
+##
+## Enables you to load YAML into ``YamlNode`` objects and dump those back into
+## YAML. This gives you a structured view of your YAML stream. Can be used
+## alongside the loading & dumping API, to load subtrees of YAML data into
+## ``YamlNode`` while other parts of the data are loaded into native Nim types.
+##
+## ``YamlNode`` corresponds to the **Representation (Node Graph)** stage
+## defined in the
+## `YAML specification <https://yaml.org/spec/1.2.2/#31-processes>`_.
+##
+## JSON API
+## --------
+##
+## .. code-block::
+##
+##   import yaml/tojson
+##
+## Enables you to load YAML input into the stdlib's ``JsonNode`` structure.
+## This can be useful for other libraries that expect JSON input. Note that
+## the loading & dumping API is able to read & write JSON files, you don't need
+## the JSON API for that.
+##
+## Event API
+## ---------
+##
+## .. code-block::
+##
+##   import yaml / [parser, presenter, stream, data]
+##
+## The event API is NimYAML's core. It defines a ``YamlStream`` which is an
+## object that supplies ``Event`` objects. The ``YamlStream`` corresponds to
+## the **Serialization (Event Tree)** stage defined in the
+## `YAML specification <https://yaml.org/spec/1.2.2/#31-processes>`_.
+##
+## ``parse`` returns a ``YamlStream``, while ``present`` consumes one. You can
+## use a ``BufferYamlStream`` to supply manually generated events.
+##
+## Serialization API
+## -----------------
+##
+## .. code-block::
+##
+##   import yaml/serialization
+##
+## This part of the API takes care of generating Nim values from a
+## ``YamlStream`` via ``construct``, and transforming them back into a
+## ``YamlStream`` via ``represent``. This complements the Event API.
+##
+## Typically, you'd only access this API when defining custom constructors
+## and representers.
 ##
 ## Apart from those high-level APIs, NimYAML implements a low-level API which
 ## enables you to process YAML input as data stream which does not need to be
@@ -37,15 +98,34 @@
 ##   the presenter.
 ## * The hints API in `hints <yaml.hints.html>`_ provides a simple proc for
 ##   guessing the type of a scalar value.
+##
+## Taglib API
+## ----------
+##
+## .. code-block::
+##
+##   import yaml/taglib
+##
+## This API allows you to customize the YAML tags used for the Nim types you're
+## serializing. The primary usage for tags in the context of NimYAML is to
+## define the type of a value in a heterogeneous collection node.
+##
+## Hints API
+## ---------
+##
+## .. code-block::
+##
+##   import yaml/hints
+##
+## Provides type guessing, i.e. figuring out which type would be appropriate
+## for a certain YAML scalar.
 
-import yaml / [hints, parser, presenter, annotations,
-               serialization, stream, taglib, tojson]
+# top level API
+import yaml / [serialization, annotations, dumping, taglib]
+export serialization, annotations, dumping, taglib
 
 when not defined(gcArc) or defined(gcOrc):
   # YAML DOM may contain cycles and therefore will leak memory if used with
   # ARC but without ORC. In that case it won't be available.
   import yaml/dom
   export dom
-
-export hints, parser, presenter, annotations,
-       serialization, stream, taglib, tojson

@@ -1,6 +1,4 @@
-%YAML 1.2
-%TAG !n! tag:nimyaml.org,2016:
---- !n!custom:NodeObj &a
+--- &a
 name: Node 1
 left:
   name: Node 2

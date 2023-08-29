@@ -6,7 +6,7 @@
 
 import os, terminal, strutils, streams, macros, unittest, sets
 import testEventParser, commonTestUtils
-import ../yaml, ../yaml/data
+import ../yaml/[ data, parser, stream ]
 
 const
   testSuiteFolder = "yaml-test-suite"

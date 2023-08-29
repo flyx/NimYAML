@@ -1,4 +1,4 @@
-import yaml, yaml/data, streams
+import yaml, yaml/data, yaml/parser, yaml/hints, streams
 type Person = object
   name: string
 
@@ -7,8 +7,8 @@ setTag(Person, nimTag("demo:Person"), yTagPerson)
 var
   s = newFileStream("in.yaml", fmRead)
   context = newConstructionContext()
-  parser = initYamlParser()
-  events = parser.parse(s)
+  yamlParser = initYamlParser()
+  events = yamlParser.parse(s)
 
 assert events.next().kind == yamlStartStream
 assert events.next().kind == yamlStartDoc

@@ -20,15 +20,10 @@
 ## objects of Nim's `json module <http://nim-lang.org/docs/json.html>`_.
 
 import std / [tables, streams, hashes, sets, strutils]
-import data, stream, taglib, serialization, private/internal, parser,
-       presenter
+import data, stream, taglib, serialization, private/internal, parser
 
 when defined(gcArc) and not defined(gcOrc):
   {.error: "NimYAML's DOM API only supports ORC because ARC can't deal with cycles".}
-
-const
-  defaultMark: Mark = (1.Positive, 1.Positive) ## \
-    ## used for events that are not generated from input.
 
 when defined(nimNoNil):
     {.experimental: "notnil".}
@@ -53,10 +48,6 @@ type
       fields*  : TableRef[YamlNode, YamlNode]
       mapStyle*: CollectionStyle
       # compiler does not like Table[YamlNode, YamlNode]
-
-  YamlDocument* {.deprecated: "use YamlNode with serialization API instead".} = object
-    ## Represents a YAML document.
-    root*: YamlNode
 
 proc hash*(o: YamlNode): Hash =
   result = o.tag.hash
@@ -132,28 +123,35 @@ proc `$`*(n: YamlNode): string =
     result.setLen(result.len - 1)
     result[^1] = '}'
 
-proc newYamlNode*(content: string, tag: Tag = yTagQuestionMark,
-    style: ScalarStyle = ssAny,
-    startPos, endPos: Mark = defaultMark): YamlNode =
+proc newYamlNode*(
+  content : string,
+  tag     : Tag         = yTagQuestionMark,
+  style   : ScalarStyle = ssAny,
+  startPos: Mark        = Mark(),
+  endPos  : Mark        = Mark()
+): YamlNode =
   YamlNode(kind: yScalar, content: content, tag: tag,
       startPos: startPos, endPos: endPos)
 
-proc newYamlNode*(elems: openarray[YamlNode], tag: Tag = yTagQuestionMark,
-    style: CollectionStyle = csAny,
-    startPos, endPos: Mark = defaultMark): YamlNode =
+proc newYamlNode*(
+  elems   : openarray[YamlNode],
+  tag     : Tag  = yTagQuestionMark,
+  style   : CollectionStyle = csAny,
+  startPos: Mark = Mark(),
+  endPos  : Mark = Mark(),
+): YamlNode =
   YamlNode(kind: ySequence, elems: @elems, tag: tag,
       startPos: startPos, endPos: endPos)
 
-proc newYamlNode*(fields: openarray[(YamlNode, YamlNode)],
-    tag: Tag = yTagQuestionMark, style: CollectionStyle = csAny,
-    startPos, endPos: Mark = defaultMark): YamlNode =
+proc newYamlNode*(
+  fields  : openarray[(YamlNode, YamlNode)],
+  tag     : Tag  = yTagQuestionMark, 
+  style   : CollectionStyle = csAny,
+  startPos: Mark = Mark(),
+  endPos  : Mark = Mark(),
+): YamlNode =
   YamlNode(kind: yMapping, fields: newTable(fields), tag: tag,
       startPos: startPos, endPos: endPos)
-
-{.push warning[Deprecated]: off.}
-proc initYamlDoc*(root: YamlNode): YamlDocument =
-  result = YamlDocument(root: root)
-{.pop.}
 
 proc constructChild*(s: var YamlStream, c: ConstructionContext,
                      result: var YamlNode)
@@ -212,74 +210,26 @@ proc constructChild*(s: var YamlStream, c: ConstructionContext,
     result = cast[YamlNode](c.refs.getOrDefault(start.aliasTarget).p)
   else: internalError("Malformed YamlStream")
 
-{.push warning[Deprecated]: off.}
-proc compose*(s: var YamlStream): YamlDocument
-    {.raises: [YamlStreamError, YamlConstructionError],
-      deprecated: "use construct(s, root) instead".} =
-  construct(s, result.root)
-
-proc loadDom*(s: Stream | string): YamlDocument
-    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError]
-      deprecated: "use loadAs[YamlNode](s) instead".} =
-  load(s, result.root)
-
-proc loadMultiDom*(s: Stream | string): seq[YamlDocument]
-    {.raises: [IOError, OSError, YamlParserError, YamlConstructionError]
-      deprecated: "use loadMultiDoc[YamlNode](s, target) instead".} =
-  var
-    parser = initYamlParser(tagLib)
-    events = parser.parse(s)
-    e: Event
-  try:
-    e = events.next()
-    yAssert(e.kind == yamlStartStream)
-    while events.peek().kind == yamlStartDoc:
-      result.add(compose(events, tagLib))
-    e = events.next()
-    yAssert(e.kind != yamlEndStream)
-  except YamlStreamError as ex:
-    if ex.parent of YamlParserError:
-      raise (ref YamlParserError)(ex.parent)
-    elif ex.parent of IOError:
-      raise (ref IOError)(ex.parent)
-    elif ex.parent of OSError:
-      raise (ref OSError)(ex.parent)
-    else: internalError("Unexpected exception: " & ex.parent.repr)
-{.pop.}
-
-proc representChild*(value: YamlNodeObj, ts: TagStyle,
-                     c: SerializationContext) {.raises: [YamlSerializationError].} =
-  let childTagStyle = if ts == tsRootOnly: tsNone else: ts
+proc representChild*(
+  ctx: var SerializationContext, 
+  value: YamlNodeObj,
+) {.raises: [YamlSerializationError].} =
   case value.kind
   of yScalar:
-    c.put(scalarEvent(value.content, value.tag, style = value.scalarStyle,
+    ctx.put(scalarEvent(value.content, value.tag, style = value.scalarStyle,
         startPos = value.startPos, endPos = value.endPos))
   of ySequence:
-    c.put(startSeqEvent(tag = value.tag, style = value.seqStyle,
+    ctx.put(startSeqEvent(tag = value.tag, style = value.seqStyle,
         startPos = value.startPos, endPos = value.endPos))
-    for item in value.elems: representChild(item, childTagStyle, c)
-    c.put(endSeqEvent())
+    for item in value.elems: ctx.representChild(item)
+    ctx.put(endSeqEvent())
   of yMapping:
-    c.put(startMapEvent(tag = value.tag, style = value.mapStyle,
+    ctx.put(startMapEvent(tag = value.tag, style = value.mapStyle,
         startPos = value.startPos, endPos = value.endPos))
     for key, value in value.fields.pairs:
-      representChild(key, childTagStyle, c)
-      representChild(value, childTagStyle, c)
-    c.put(endMapEvent())
-
-{.push warning[Deprecated]: off.}
-proc serialize*(doc: YamlDocument, a: AnchorStyle = asTidy): YamlStream
-    {.deprecated: "use represent[YamlNode] instead".} =
-  result = represent(doc.root, tsAll, a = a, handles = @[])
-
-proc dumpDom*(doc: YamlDocument, target: Stream,
-              anchorStyle: AnchorStyle = asTidy,
-              options: PresentationOptions = defaultPresentationOptions)
-    {.deprecated: "use dump[YamlNode] instead".} =
-  ## Dump a YamlDocument as YAML character stream.
-  dump(doc.root, target, tsAll, anchorStyle = anchorStyle, options = options,
-       handles = @[])
-{.pop.}
+      ctx.representChild(key)
+      ctx.representChild(value)
+    ctx.put(endMapEvent())
 
 proc `[]`*(node: YamlNode, i: int): YamlNode =
   ## Get the node at index *i* from a sequence. *node* must be a *ySequence*.

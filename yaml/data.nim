@@ -66,7 +66,9 @@ type
     of yamlAlias:
       aliasTarget* : Anchor
 
-  Mark* = tuple[line, column: Positive]
+  Mark* = object
+    line*  : Positive = 1
+    column*: Positive = 1
 
   Properties* = tuple[anchor: Anchor, tag: Tag]
 
@@ -87,9 +89,6 @@ proc defineCoreTag*(name: string): Tag =
 const
   yAnchorNone*: Anchor = "".Anchor ## \
     ## yielded when no anchor was defined for a YAML node
-
-  defaultMark: Mark = (1.Positive, 1.Positive) ## \
-    ## used for events that are not generated from input.
 
   yTagExclamationMark*: Tag = defineTag("!")
   yTagQuestionMark*   : Tag = defineTag("?")
@@ -122,25 +121,6 @@ const
 
   yTagNimField*   = defineTag(nimyamlTagRepositoryPrefix & "field")
 
-proc properties*(event: Event): Properties =
-  ## returns the tag of the given event
-  case event.kind
-  of yamlStartMap: result = event.mapProperties
-  of yamlStartSeq: result = event.seqProperties
-  of yamlScalar: result = event.scalarProperties
-  else: raise newException(FieldDefect, "Event " & $event.kind & " has no properties")
-
-proc hasSpecificTag*(event: Event): bool =
-  var props: Properties
-  case event.kind
-  of yamlStartMap: props = event.mapProperties
-  of yamlStartSeq: props = event.seqProperties
-  of yamlScalar: props = event.scalarProperties
-  else: return false
-  case props.tag
-  of yTagExclamationMark, yTagQuestionMark: return false
-  else: return true
-
 proc collectionStyle*(event: Event): CollectionStyle =
   ## returns the style of the given collection start event
   case event.kind
@@ -149,76 +129,115 @@ proc collectionStyle*(event: Event): CollectionStyle =
   else: raise (ref FieldDefect)(msg: "Event " & $event.kind & " has no collectionStyle")
 
 proc startStreamEvent*(): Event =
-  return Event(startPos: defaultMark, endPos: defaultMark, kind: yamlStartStream)
+  return Event(kind: yamlStartStream)
 
 proc endStreamEvent*(): Event =
-  return Event(startPos: defaultMark, endPos: defaultMark, kind: yamlEndStream)
+  return Event(kind: yamlEndStream)
 
-proc startDocEvent*(explicit: bool = false, version: string = "",
-                    handles: seq[tuple[handle, uriPrefix: string]] = @[],
-                    startPos, endPos: Mark = defaultMark): Event
+proc startDocEvent*(
+  explicit = false;
+  version  = "";
+  handles  : seq[tuple[handle, uriPrefix: string]] = @[];
+  startPos : Mark = Mark();
+  endPos   : Mark = Mark();
+): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML document
   result = Event(startPos: startPos, endPos: endPos,
                  kind: yamlStartDoc, version: version, handles: handles,
                  explicitDirectivesEnd: explicit)
 
-proc endDocEvent*(explicit: bool = false, startPos, endPos: Mark = defaultMark): Event
+proc endDocEvent*(
+  explicit = false;
+  startPos : Mark = Mark();
+  endPos   : Mark = Mark();
+): Event
     {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML document
   result = Event(startPos: startPos, endPos: endPos,
                  kind: yamlEndDoc, explicitDocumentEnd: explicit)
 
-proc startMapEvent*(style: CollectionStyle, props: Properties,
-                    startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
+proc startMapEvent*(
+  style   : CollectionStyle;
+  props   : Properties;
+  startPos: Mark = Mark();
+  endPos  : Mark = Mark();
+): Event {.inline, raises: [].} =
   ## creates a new event that marks the start of a YAML mapping
   result = Event(startPos: startPos, endPos: endPos,
                  kind: yamlStartMap, mapProperties: props,
                  mapStyle: style)
 
-proc startMapEvent*(style: CollectionStyle = csAny,
-                    tag: Tag = yTagQuestionMark,
-                    anchor: Anchor = yAnchorNone,
-                    startPos, endPos: Mark = defaultMark): Event {.inline.} =
+proc startMapEvent*(
+  style   : CollectionStyle = csAny;
+  tag     : Tag             = yTagQuestionMark;
+  anchor  : Anchor          = yAnchorNone;
+  startPos: Mark            = Mark();
+  endPos  : Mark            = Mark();
+): Event {.inline.} =
   return startMapEvent(style, (anchor, tag), startPos, endPos)
 
-proc endMapEvent*(startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
+proc endMapEvent*(
+  startPos : Mark = Mark();
+  endPos   : Mark = Mark();
+): Event {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML mapping
   result = Event(startPos: startPos, endPos: endPos, kind: yamlEndMap)
 
-proc startSeqEvent*(style: CollectionStyle,
-                    props: Properties,
-                    startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
+proc startSeqEvent*(
+  style   : CollectionStyle;
+  props   : Properties;
+  startPos: Mark = Mark();
+  endPos  : Mark = Mark();
+): Event {.inline, raises: [].} =
   ## creates a new event that marks the beginning of a YAML sequence
   result = Event(startPos: startPos, endPos: endPos,
                  kind: yamlStartSeq, seqProperties: props,
                  seqStyle: style)
 
-proc startSeqEvent*(style: CollectionStyle = csAny,
-                    tag: Tag = yTagQuestionMark,
-                    anchor: Anchor = yAnchorNone,
-                    startPos, endPos: Mark = defaultMark): Event {.inline.} =
+proc startSeqEvent*(
+  style   : CollectionStyle = csAny;
+  tag     : Tag             = yTagQuestionMark;
+  anchor  : Anchor          = yAnchorNone;
+  startPos: Mark            = Mark();
+  endPos  : Mark            = Mark();
+): Event {.inline.} =
   return startSeqEvent(style, (anchor, tag), startPos, endPos)
 
-proc endSeqEvent*(startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
+proc endSeqEvent*(
+  startPos: Mark = Mark();
+  endPos  : Mark = Mark();
+): Event {.inline, raises: [].} =
   ## creates a new event that marks the end of a YAML sequence
   result = Event(startPos: startPos, endPos: endPos, kind: yamlEndSeq)
 
-proc scalarEvent*(content: string, props: Properties,
-                  style: ScalarStyle = ssAny,
-                  startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
+proc scalarEvent*(
+  content : string;
+  props   : Properties;
+  style   : ScalarStyle = ssAny;
+  startPos: Mark        = Mark();
+  endPos  : Mark        = Mark();
+): Event {.inline, raises: [].} =
   ## creates a new event that represents a YAML scalar
   result = Event(startPos: startPos, endPos: endPos,
                  kind: yamlScalar, scalarProperties: props,
                  scalarContent: content, scalarStyle: style)
 
-proc scalarEvent*(content: string = "", tag: Tag = yTagQuestionMark,
-                  anchor: Anchor = yAnchorNone,
-                  style: ScalarStyle = ssAny,
-                  startPos, endPos: Mark = defaultMark): Event {.inline.} =
+proc scalarEvent*(
+  content : string      = "";
+  tag     : Tag         = yTagQuestionMark;
+  anchor  : Anchor      = yAnchorNone;
+  style   : ScalarStyle = ssAny;
+  startPos: Mark        = Mark();
+  endPos  : Mark        = Mark();
+): Event {.inline.} =
   return scalarEvent(content, (anchor, tag), style, startPos, endPos)
 
-proc aliasEvent*(target: Anchor, startPos, endPos: Mark = defaultMark): Event {.inline, raises: [].} =
+proc aliasEvent*(
+  target  : Anchor;
+  startPos: Mark = Mark();
+  endPos  : Mark = Mark();
+): Event {.inline, raises: [].} =
   ## creates a new event that represents a YAML alias
   result = Event(startPos: startPos, endPos: endPos, kind: yamlAlias, aliasTarget: target)
 
@@ -283,3 +302,33 @@ proc `$`*(event: Event): string {.raises: [].} =
     of ssFolded: result &= " >"
     result &= yamlTestSuiteEscape(event.scalarContent)
   of yamlAlias: result = "=ALI *" & $event.aliasTarget
+
+proc properties*(event: Event): Properties =
+  ## returns the tag of the given event
+  case event.kind
+  of yamlStartMap: result = event.mapProperties
+  of yamlStartSeq: result = event.seqProperties
+  of yamlScalar: result = event.scalarProperties
+  else: raise newException(FieldDefect, "Event " & $event.kind & " has no properties")
+
+proc emptyProperties*(event: Event): bool =
+  ## returns true if the given event does not need to render
+  ## any properties if presented into a YAML character stream.
+  let props = event.properties()
+  case props.tag
+  of yTagExclamationMark:
+    result = event.kind == yamlScalar and props.anchor == yAnchorNone
+  of yTagQuestionMark:
+    result = props.anchor == yAnchorNone
+  else: result = false
+
+proc hasSpecificTag*(event: Event): bool =
+  var props: Properties
+  case event.kind
+  of yamlStartMap: props = event.mapProperties
+  of yamlStartSeq: props = event.seqProperties
+  of yamlScalar: props = event.scalarProperties
+  else: return false
+  case props.tag
+  of yTagExclamationMark, yTagQuestionMark: return false
+  else: return true

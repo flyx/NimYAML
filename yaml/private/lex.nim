@@ -32,7 +32,7 @@ type
     line*, column*: Positive
     lineContent*: string
 
-  State = proc(lex: var Lexer): bool {.locks: 0, gcSafe, nimcall, raises: [LexerError].}
+  State = proc(lex: var Lexer): bool {.gcSafe, nimcall, raises: [LexerError].}
 
   Token* {.pure.} = enum
     YamlDirective,    # `%YAML`
@@ -86,10 +86,10 @@ const
 
   UnknownIndentation* = int.low
 
-proc currentIndentation*(lex: Lexer): int {.locks: 0.} =
+proc currentIndentation*(lex: Lexer): int =
   return lex.source.getColNumber(lex.source.bufpos) - 1
 
-proc recentIndentation*(lex: Lexer): int {.locks: 0.} =
+proc recentIndentation*(lex: Lexer): int =
   return lex.indentation
 
 # lexer source handling
@@ -131,7 +131,7 @@ proc isPlainSafe(lex: Lexer): bool {.inline.} =
 
 # lexer states
 
-{.push gcSafe, locks: 0.}
+{.push gcSafe.}
 # `raises` cannot be pushed.
 proc outsideDoc(lex: var Lexer): bool {.raises: [].}
 proc yamlVersion(lex: var Lexer): bool {.raises: LexerError.}
@@ -171,11 +171,11 @@ proc generateError(lex: Lexer, message: string):
     lineContent: lex.currentLine())
 
 proc startToken(lex: var Lexer) {.inline.} =
-  lex.curStartPos = (line: lex.lineNumber(), column: lex.columnNumber())
+  lex.curStartPos = Mark(line: lex.lineNumber(), column: lex.columnNumber())
   lex.tokenStart = lex.source.bufpos
 
 proc endToken(lex: var Lexer) {.inline.} =
-  lex.curEndPos = (line: lex.lineNumber(), column: lex.columnNumber())
+  lex.curEndPos = Mark(line: lex.lineNumber(), column: lex.columnNumber())
 
 proc readNumericSubtoken(lex: var Lexer) {.inline.} =
   if lex.c notin digits:
@@ -742,16 +742,16 @@ proc basicInit(lex: var Lexer) =
 
 # interface
 
-proc lastScalarWasMultiline*(lex: Lexer): bool {.locks: 0.} =
+proc lastScalarWasMultiline*(lex: Lexer): bool =
   result = lex.seenMultiline
 
-proc shortLexeme*(lex: Lexer): string {.locks: 0.} =
+proc shortLexeme*(lex: Lexer): string =
   return lex.source.buf[lex.tokenStart..lex.source.bufpos-2]
 
-proc fullLexeme*(lex: Lexer): string {.locks: 0.} =
+proc fullLexeme*(lex: Lexer): string =
   return lex.source.buf[lex.tokenStart - 1..lex.source.bufpos-2]
 
-proc currentLine*(lex: Lexer): string {.locks: 0.} =
+proc currentLine*(lex: Lexer): string =
   return lex.source.getCurrentLine(false)
 
 proc next*(lex: var Lexer) {.raises: [LexerError].}=
