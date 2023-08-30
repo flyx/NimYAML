@@ -3,6 +3,7 @@ test/tests
 test/tlex
 test/tdom
 test/tnative
+test/thints
 test/tjson
 test/tparser
 test/tquickstart

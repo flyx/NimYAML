@@ -47,7 +47,9 @@ jobs:
       run: |
         nim lexerTests
         nim parserTests
-        nim quickstartTests
         nim jsonTests
         nim domTests
-        nim serializationTests
+        nim nativeTests
+        nim quickstartTests
+        nim hintsTests
+        nim presenterTests

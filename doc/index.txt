@@ -16,4 +16,10 @@ install it with `Nimble <https://github.com/nim-lang/nimble>`_:
 .. code-block:: bash
   nimble install yaml
 
+NimYAML 2.x
+===========
+
+**NimYAML 2.0.0** introduced some breaking changes.
+Read about migrating to the new version `here </migrating.html>`_.
+
 %quickstart%0

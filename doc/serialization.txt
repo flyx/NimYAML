@@ -8,8 +8,8 @@ Introduction
 NimYAML tries hard to make transforming YAML characters streams to native Nim
 types and vice versa as easy as possible. In simple scenarios, you might not
 need anything else than the two procs
-`dump <yaml.serialization.html#dump,K,Stream,TagStyle,AnchorStyle,PresentationOptions>`_
-and `load <yaml.serialization.html#load,,K>`_. On the other side, the process
+`dump <yaml.dumping.html#dump,Dumper,K,Stream>`_
+and `load <yaml.loading.html#load,,K>`_. On the other side, the process
 should be as customizable as possible to allow the user to tightly control how
 the generated YAML character stream will look and how a YAML character stream is
 interpreted.
@@ -44,7 +44,7 @@ added in the future.
 
 This also means that NimYAML is generally able to work with object, tuple and
 enum types defined in the standard library or a third-party library without
-further configuration, given that all fields of the object are accessible at the
+further configuration, assuming that all fields of the object are accessible at the
 code point where NimYAML's facilities are invoked.
 
 Scalar Types
@@ -116,6 +116,8 @@ to the ``!!null`` YAML scalar type.
 ``ptr`` types are not supported because it seems dangerous to automatically
 allocate memory which the user must then manually deallocate.
 
+Anchors and aliases are not supported when calling NimYAML at compile time.
+
 User Defined Types
 ------------------
 
@@ -126,10 +128,10 @@ conditions must be met:
 - All fields of an object type must be accessible from the code position where
   you call NimYAML. If an object has non-public member fields, it can only be
   processed in the module where it is defined.
-- The object may not have a generic parameter
+- The object must not have a generic parameter
 
 NimYAML will present enum types as YAML scalars, and tuple and object types as
-YAML maps. Some of the conditions above may be loosened in future releases.
+YAML mappings. Some of the conditions above may be loosened in future releases.
 
 Variant Object Types
 ....................
@@ -229,7 +231,7 @@ Tags
 
 NimYAML uses local tags to represent Nim types that do not map directly to a
 YAML type. For example, ``int8`` is presented with the tag ``!nim:system:int8``.
-Tags are mostly unnecessary when loading YAML data because the user already
+Tags are mostly unnecessary when loading YAML data because the caller already
 defines the target Nim type which usually defines all types of the structure.
 However, there is one case where a tag is necessary: A reference type with the
 value ``nil`` is represented in YAML as a ``!!null`` scalar. This will be
@@ -245,7 +247,7 @@ These tags are generated on the fly based on the types you instantiate
 ``Table`` or ``seq`` with.
 
 You may customize the tags used for your types by using the template
-`setTagUri <yaml.html#setTagUri.t,typedesc,string>`_. It may not
+`setTagUri <yaml.taglib.html#setTagUri.t,typedesc,string>`_. It may not
 be applied to scalar and collection types implemented by NimYAML, but you can
 for example use it on a certain ``seq`` type:
 
@@ -304,12 +306,13 @@ constructObject
 
 .. code-block:: nim
 
-    proc constructObject*(s: var YamlStream, c: ConstructionContext,
-                          result: var MyObject)
-            {.raises: [YamlConstructionError, YamlStreamError.}
+    proc constructObject*(
+      ctx   : var ConstructionContext,
+      result: var MyObject,
+    ) {.raises: [YamlConstructionError, YamlStreamError].}
 
-This proc should construct the type from a ``YamlStream``. Follow the following
-guidelines when implementing a custom ``constructObject`` proc:
+This proc should construct the type from the ``YamlStream`` in ``ctx.input``.
+Follow the following guidelines when implementing a custom ``constructObject`` proc:
 
 - For constructing a value from a YAML scalar, consider using the
   ``constructScalarItem`` template, which will automatically catch exceptions
@@ -328,54 +331,67 @@ guidelines when implementing a custom ``constructObject`` proc:
   the underlying object.
 
 The following example for constructing from a YAML scalar value is the actual
-implementation of constructing ``int`` types:
+implementation of constructing ``bool`` types:
 
 .. code-block:: nim
 
-    proc constructObject*[T: int8|int16|int32|int64](
-            s: var YamlStream, c: ConstructionContext, result: var T)
-            {.raises: [YamlConstructionError, YamlStreamError].} =
-        var item: YamlStreamEvent
-        constructScalarItem(s, item, name(T)):
-            result = T(parseBiggestInt(item.scalarContent))
+    proc constructObject*(
+      ctx   : var ConstructionContext,
+      result: var bool,
+    ) {.raises: [YamlConstructionError, YamlStreamError].} =
+      ## constructs a bool value from a YAML scalar
+      ctx.input.constructScalarItem(item, bool):
+        case guessType(item.scalarContent)
+        of yTypeBoolTrue: result = true
+        of yTypeBoolFalse: result = false
+        else:
+          raise ctx.input.constructionError(
+            item.startPos,
+            "Cannot construct to bool: " & escape(item.scalarContent)
+          )
 
-The following example for constructiong from a YAML non-scalar is the actual
+The following example for constructing from a YAML non-scalar is the actual
 implementation of constructing ``seq`` types:
 
 .. code-block:: nim
 
-    proc constructObject*[T](s: var YamlStream, c: ConstructionContext,
-                             result: var seq[T])
-            {.raises: [YamlConstructionError, YamlStreamError].} =
-        let event = s.next()
-        if event.kind != yamlStartSequence:
-            raise newException(YamlConstructionError, "Expected sequence start")
-        result = newSeq[T]()
-        while s.peek().kind != yamlEndSequence:
-            var item: T
-            constructChild(s, c, item)
-            result.add(item)
-        discard s.next()
+    proc constructObject*[T](
+      ctx   : var ConstructionContext,
+      result: var seq[T],
+    ) {.raises: [YamlConstructionError, YamlStreamError].} =
+      ## constructs a Nim seq from a YAML sequence
+      let event = ctx.input.next()
+      if event.kind != yamlStartSeq:
+        raise ctx.input.constructionError(event.startPos, "Expected sequence start")
+      result = newSeq[T]()
+      while ctx.input.peek().kind != yamlEndSeq:
+        var item: T
+        ctx.constructChild(item)
+        result.add(move(item))
+      discard ctx.input.next()
 
 representObject
 ---------------
 
 .. code-block:: nim
 
-    proc representObject*(value: MyObject, ts: TagStyle = tsNone,
-                          c: SerializationContext, tag: TagId): {.raises: [].}
+    proc representObject*(
+      ctx  : var SerializationContext,
+      value: MyObject,
+      tag  : TagId,
+    ): {.raises: [YamlSerializationError].}
 
 This proc should push a list of tokens that represent the type into the
-serialization context via ``c.put``. Follow the following guidelines when
+serialization context via ``ctx.put``. Follow the following guidelines when
 implementing a custom ``representObject`` proc:
 
 - You can use the helper template
-  `presentTag <yaml.html#presentTag,typedesc,TagStyle>`_ for outputting the
-  tag.
+  `presentTag <yaml.native.html#presentTag,SerializationContext,TagStyle>`_
+  for outputting the tag.
 - Always output the first token with a ``yAnchorNone``. Anchors will be set
   automatically by ``ref`` type handling.
-- When outputting non-scalar types, you should use the ``representObject``
-  implementation of the child types, if possible.
+- When outputting non-scalar types, you should use ``representChild`` for
+  contained values.
 - Always use the ``tag`` parameter as tag for the first token you generate.
 - Never write a ``representObject`` proc for ``ref`` types.
 
@@ -384,21 +400,25 @@ implementation of representing ``int`` types:
 
 .. code-block:: nim
 
-    proc representObject*[T: int8|int16|int32|int64](value: T, ts: TagStyle,
-        c: SerializationContext, tag: TagId) {.raises: [].} =
+    proc representObject*[T: int8|int16|int32|int64](
+      ctx  : var SerializationContext,
+      value: T,
+      tag  : Tag,
+    ) {.raises: [].} =
       ## represents an integer value as YAML scalar
-      c.put(scalarEvent($value, tag, yAnchorNone))
+      ctx.put(scalarEvent($value, tag, yAnchorNone))
 
 The following example for representing to a YAML non-scalar is the actual
 implementation of representing ``seq`` and ``set`` types:
 
 .. code-block:: nim
 
-    proc representObject*[T](value: seq[T]|set[T], ts: TagStyle,
-        c: SerializationContext, tag: TagId) {.raises: [YamlStreamError].} =
+    proc representObject*[T](
+      ctx  : var SerializationContext,
+      value: seq[T]|set[T],
+      tag  : Tag,
+    ) {.raises: [YamlSerializationError].} =
       ## represents a Nim seq as YAML sequence
-      let childTagStyle = if ts == tsRootOnly: tsNone else: ts
-      c.put(startSeqEvent(tag))
-      for item in value:
-        representChild(item, childTagStyle, c)
-      c.put(endSeqEvent())
+      ctx.put(startSeqEvent(tag = tag))
+      for item in value: ctx.representChild(item)
+      ctx.put(endSeqEvent())

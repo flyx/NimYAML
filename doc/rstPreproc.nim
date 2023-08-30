@@ -17,7 +17,7 @@
 ## available as source files for automatic testing. This way, we can make sure
 ## that the code in the docs actually works.
 
-import parseopt2, streams, tables, strutils, os, options, algorithm
+import parseopt, streams, tables, strutils, os, options, algorithm
 
 var
   infile = ""

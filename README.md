@@ -33,7 +33,7 @@ PRs for bugs are welcome. If you want to add a feature, you are free to; but be 
 nim test # runs all tests
 nim lexerTests # run lexer tests
 nim parserTests # run parser tests (git-clones yaml-dev-kit)
-nim serializationTests # runs serialization tests
+nim nativeTests # runs native value tests
 nim quickstartTests # run tests for quickstart snippets from documentation
 nim bench # runs benchmarks, requires libyaml
 nim clean # guess
