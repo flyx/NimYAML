@@ -113,8 +113,18 @@ proc newNode(v: string): ref Node =
   result.value = v
   result.next = nil
 
+template dualTest(name: string, body: untyped) =
+  test name:
+    body
+
+  # fix for compiler problem (comptime doesn't work when included from tests.nim)
+  # possibly this issue: https://github.com/nim-lang/Nim/issues/18103
+  when isMainModule:
+    test name & " [comptime]":
+      static: body
+
 suite "Serialization":
-  test "Load integer without fixed length":
+  dualTest "Load integer without fixed length":
     var input = "-4247"
     var result: int
     load(input, result)
@@ -138,55 +148,55 @@ suite "Serialization":
       except YamlSerializationError: gotException = true
       assert gotException, "Expected exception, got none."
 
-  test "Load Hex byte (0xFF)":
+  dualTest "Load Hex byte (0xFF)":
     let input = "0xFF"
     var result: byte
     load(input, result)
     assert(result == 255)
 
-  test "Load Hex byte (0xC)":
+  dualTest "Load Hex byte (0xC)":
     let input = "0xC"
     var result: byte
     load(input, result)
     assert(result == 12)
 
-  test "Load Octal byte (0o14)":
+  dualTest "Load Octal byte (0o14)":
     let input = "0o14"
     var result: byte
     load(input, result)
     assert(result == 12)
 
-  test "Load byte (14)":
+  dualTest "Load byte (14)":
     let input = "14"
     var result: byte
     load(input, result)
     assert(result == 14)
 
-  test "Load Hex int (0xFF)":
+  dualTest "Load Hex int (0xFF)":
     let input = "0xFF"
     var result: int
     load(input, result)
     assert(result == 255)
 
-  test "Load Hex int (0xC)":
+  dualTest "Load Hex int (0xC)":
     let input = "0xC"
     var result: int
     load(input, result)
     assert(result == 12)
 
-  test "Load Octal int (0o14)":
+  dualTest "Load Octal int (0o14)":
     let input = "0o14"
     var result: int
     load(input, result)
     assert(result == 12)
 
-  test "Load int (14)":
+  dualTest "Load int (14)":
     let input = "14"
     var result: int
     load(input, result)
     assert(result == 14)
 
-  test "Load floats":
+  dualTest "Load floats":
     let input = "[6.8523015e+5, 685.230_15e+03, 685_230.15, -.inf, .NaN]"
     var result: seq[float]
     load(input, result)
@@ -203,7 +213,7 @@ suite "Serialization":
     # currently, there is no good way of checking the result content, because
     # the parsed Time may have any timezone offset.
 
-  test "Load string sequence":
+  dualTest "Load string sequence":
     let input = " - a\n - b"
     var result: seq[string]
     load(input, result)
@@ -216,7 +226,7 @@ suite "Serialization":
     var output = blockOnlyDumper().dump(input)
     assertStringEqual "- a\n- b\n", output
 
-  test "Load char set":
+  dualTest "Load char set":
     let input = "- a\n- b"
     var result: set[char]
     load(input, result)
@@ -229,7 +239,7 @@ suite "Serialization":
     var output = blockOnlyDumper().dump(input)
     assertStringEqual "- a\n- b\n", output
 
-  test "Load array":
+  dualTest "Load array":
     let input = "- 23\n- 42\n- 47"
     var result: array[0..2, int32]
     load(input, result)
@@ -242,7 +252,7 @@ suite "Serialization":
     var output = blockOnlyDumper().dump(input)
     assertStringEqual "- 23\n- 42\n- 47\n", output
 
-  test "Load Option":
+  dualTest "Load Option":
     let input = "- Some\n- !!null ~"
     var result: array[0..1, Option[string]]
     load(input, result)
@@ -255,7 +265,7 @@ suite "Serialization":
     let output = blockOnlyDumper().dump(input)
     assertStringEqual "- !!null ~\n- 42\n- !!null ~\n", output
 
-  test "Load Table[int, string]":
+  dualTest "Load Table[int, string]":
     let input = "23: dreiundzwanzig\n42: zweiundvierzig"
     var result: Table[int32, string]
     load(input, result)
@@ -271,7 +281,7 @@ suite "Serialization":
     assertStringEqual("23: dreiundzwanzig\n42: zweiundvierzig\n",
         output)
 
-  test "Load OrderedTable[tuple[int32, int32], string]":
+  dualTest "Load OrderedTable[tuple[int32, int32], string]":
     let input = "- {a: 23, b: 42}: drzw\n- {a: 13, b: 47}: drsi"
     var result: OrderedTable[tuple[a, b: int32], string]
     load(input, result)
@@ -304,7 +314,7 @@ suite "Serialization":
         "    b: 47\n" &
         "  : dreizehnsiebenundvierzig\n", output)
 
-  test "Load Sequences in Sequence":
+  dualTest "Load Sequences in Sequence":
     let input = " - [1, 2, 3]\n - [4, 5]\n - [6]"
     var result: seq[seq[int32]]
     load(input, result)
@@ -318,7 +328,7 @@ suite "Serialization":
     var output = Dumper().dump(input)
     assertStringEqual "- [1, 2, 3]\n- [4, 5]\n- [6]\n", output
 
-  test "Load Enum":
+  dualTest "Load Enum":
     let input =
       "!<tag:nimyaml.org,2016:system:seq(tl)>\n- !tl tlRed\n- tlGreen\n- tlYellow"
     var result: seq[TrafficLight]
@@ -333,7 +343,7 @@ suite "Serialization":
     var output = blockOnlyDumper().dump(input)
     assertStringEqual "- tlRed\n- tlGreen\n- tlYellow\n", output
 
-  test "Load Tuple":
+  dualTest "Load Tuple":
     let input = "str: value\ni: 42\nb: true"
     var result: MyTuple
     load(input, result)
@@ -364,7 +374,7 @@ suite "Serialization":
     expectConstructionError(4, 1, "While constructing MyTuple: Duplicate field: \"b\""):
       load(input, result)
 
-  test "Load Multiple Documents":
+  dualTest "Load Multiple Documents":
     let input = "1\n---\n2"
     var result: seq[int]
     loadMultiDoc(input, result)
@@ -372,14 +382,14 @@ suite "Serialization":
     assert result[0] == 1
     assert result[1] == 2
 
-  test "Load Multiple Documents (Single Doc)":
+  dualTest "Load Multiple Documents (Single Doc)":
     let input = "1"
     var result: seq[int]
     loadMultiDoc(input, result)
     assert(result.len == 1)
     assert result[0] == 1
 
-  test "Load custom object":
+  dualTest "Load custom object":
     let input = "firstnamechar: P\nsurname: Pan\nage: 12"
     var result: Person
     load(input, result)
@@ -411,7 +421,7 @@ suite "Serialization":
     expectConstructionError(4, 1, "While constructing Person: Duplicate field: \"surname\""):
       load(input, result)
 
-  test "Load sequence with explicit tags":
+  dualTest "Load sequence with explicit tags":
     let input = yamlTagDirs & " !n!system:seq(" &
         "tag:yaml.org;2002:str)\n- !!str one\n- !!str two"
     var result: seq[string]
@@ -428,7 +438,7 @@ suite "Serialization":
     assertStringEqual(yamlTagDirs & " !n!system:seq(" &
         "tag:yaml.org;2002:str)\n- !!str one\n- !!str two\n", output)
 
-  test "Load custom object with explicit root tag":
+  dualTest "Load custom object with explicit root tag":
     let input =
         "--- !<tag:nimyaml.org,2016:custom:Person>\nfirstnamechar: P\nsurname: Pan\nage: 12"
     var result: Person
@@ -446,7 +456,7 @@ suite "Serialization":
     assertStringEqual(yamlTagDirs &
         " !n!custom:Person\nfirstnamechar: P\nsurname: Pan\nage: 12\n", output)
 
-  test "Load object with inherited fields":
+  dualTest "Load object with inherited fields":
     let input =
       "i: 4\ns: hello"
     var result: Child
@@ -454,7 +464,7 @@ suite "Serialization":
     assert result.i == 4
     assert result.s == "hello"
 
-  test "Load custom variant object":
+  dualTest "Load custom variant object":
     let input =
       "---\n- - name: Bastet\n  - kind: akCat\n  - purringIntensity: 7\n" &
       "- - name: Anubis\n  - kind: akDog\n  - barkometer: 13"
@@ -486,7 +496,7 @@ suite "Serialization":
     expectConstructionError(1, 1, "While constructing Animal: Missing field: \"purringIntensity\""):
       load(input, result)
 
-  test "Load non-variant object with transient fields":
+  dualTest "Load non-variant object with transient fields":
     let input = "{b: b, d: d}"
     var result: NonVariantWithTransient
     load(input, result)
@@ -506,7 +516,7 @@ suite "Serialization":
     let output = blockOnlyDumper().dump(input)
     assertStringEqual "b: b\nd: d\n", output
 
-  test "Load variant object with transient fields":
+  dualTest "Load variant object with transient fields":
     let input = "[[gStorable: gs, kind: deA, cStorable: cs], [gStorable: a, kind: deC]]"
     var result: seq[VariantWithTransient]
     load(input, result)
@@ -536,7 +546,7 @@ suite "Serialization":
         "- - gStorable: a\n" &
         "  - kind: deC\n", output
 
-  test "Load object with ignored key":
+  dualTest "Load object with ignored key":
     let input = "[{x: 1, y: 2}, {x: 3, z: 4, y: 5}, {z: [1, 2, 3], x: 4, y: 5}]"
     var result: seq[WithIgnoredField]
     load(input, result)
@@ -602,7 +612,7 @@ suite "Serialization":
       assert(result[1].next == result[2])
       assert(result[2].next == result[0])
 
-  test "Load object with default values":
+  dualTest "Load object with default values":
     let input = "a: abc\nc: dce"
     var result: WithDefault
     load(input, result)
@@ -611,7 +621,7 @@ suite "Serialization":
     assert result.c == "dce"
     assert result.d == "d"
 
-  test "Load object with partly default values":
+  dualTest "Load object with partly default values":
     let input = "a: abc\nb: bcd\nc: cde"
     var result: WithDefault
     load(input, result)
@@ -620,7 +630,7 @@ suite "Serialization":
     assert result.c == "cde"
     assert result.d == "d"
 
-  test "Custom constructObject":
+  dualTest "Custom constructObject":
     let input = "- 1\n- !test:BetterInt 2"
     var result: seq[BetterInt]
     load(input, result)

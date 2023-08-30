@@ -28,10 +28,10 @@ task domTests, "Run DOM tests":
   --verbosity:0
   setCommand "c", "test/tdom"
 
-task serializationTests, "Run serialization tests":
+task nativeTests, "Run native value tests":
   --r
   --verbosity:0
-  setCommand "c", "test/tserialization"
+  setCommand "c", "test/tnative"
 
 task quickstartTests, "Run quickstart tests":
   --r

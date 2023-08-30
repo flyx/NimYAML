@@ -73,8 +73,8 @@ type
     pos: int
     buf: seq[Event]
 
-proc newBufferYamlStream*(): BufferYamlStream not nil =
-  result = cast[BufferYamlStream not nil](new(BufferYamlStream))
+proc newBufferYamlStream*(): BufferYamlStream =
+  result = new(BufferYamlStream)
   result.basicInit()
   result.buf = @[]
   result.pos = 0

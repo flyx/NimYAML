@@ -289,3 +289,7 @@ proc parseEventStream*(input: Stream): YamlStream =
     if streamPos == inStream:
       yield Event(kind: yamlEndStream)
   result = initYamlStream(backend)
+  
+proc parseEventString*(input: sink string): YamlStream =
+  var str = newStringStream(input)
+  result = parseEventStream(str)

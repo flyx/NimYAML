@@ -1550,21 +1550,26 @@ proc constructChild*[O](
       discard ctx.input.next()
       return
   elif e.kind == yamlAlias:
-    let val = ctx.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
-    if val.p == nil:
+    when nimvm:
       raise ctx.input.constructionError(e.startPos,
-        "alias node refers to anchor in ignored scope")
-    if val.tag != yamlTag(O):
-      raise ctx.input.constructionError(e.startPos,
-        "alias node refers to object of incompatible type")
-    result = cast[ref O](val.p)
-    discard ctx.input.next()
-    return
+        "aliases are not supported at compile time")
+    else:
+      let val = ctx.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
+      if val.p == nil:
+        raise ctx.input.constructionError(e.startPos,
+          "alias node refers to anchor in ignored scope")
+      if val.tag != yamlTag(O):
+        raise ctx.input.constructionError(e.startPos,
+          "alias node refers to object of incompatible type")
+      result = cast[ref O](val.p)
+      discard ctx.input.next()
+      return
   new(result)
   template removeAnchor(anchor: var Anchor) {.dirty.} =
     if anchor != yAnchorNone:
       yAssert(not ctx.refs.hasKey(anchor))
-      ctx.refs[anchor] = (yamlTag(O), cast[pointer](result))
+      when nimvm: discard # no aliases supported at compile time
+      else: ctx.refs[anchor] = (yamlTag(O), cast[pointer](result))
       anchor = yAnchorNone
 
   case e.kind

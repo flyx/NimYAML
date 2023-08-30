@@ -2,7 +2,7 @@ nimcache
 test/tests
 test/tlex
 test/tdom
-test/tserialization
+test/tnative
 test/tjson
 test/tparser
 test/tquickstart

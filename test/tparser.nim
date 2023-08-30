@@ -14,19 +14,7 @@ const
 proc echoError(msg: string) =
   styledWriteLine(stdout, fgRed, "[error] ", fgWhite, msg, resetStyle)
 
-
-proc parserTest(path: string, errorExpected : bool): bool =
-  var
-    parser: YamlParser
-  parser.init()
-  var
-    actualIn = newFileStream(path / "in.yaml")
-    actual = parser.parse(actualIn)
-    expectedIn = newFileStream(path / "test.event")
-    expected = parseEventStream(expectedIn)
-  defer:
-    actualIn.close()
-    expectedIn.close()
+proc doParserTest(expected, actual: YamlStream, errorExpected: bool): bool =
   var i = 1
   try:
     while true:
@@ -42,9 +30,10 @@ proc parserTest(path: string, errorExpected : bool): bool =
           echo ".. actual event:"
           echo "  ", actualEvent
           echo ".. difference:"
-          stdout.write("  ")
+          when nimvm: discard
+          else: stdout.write("  ")
           printDifference(expectedEvent, actualEvent)
-
+  
         return
       i.inc()
       if actualEvent.kind == yamlEndStream:
@@ -63,6 +52,20 @@ proc parserTest(path: string, errorExpected : bool): bool =
         echo pe.lineContent
       else: echo e.msg
 
+proc parserTest(path: string, errorExpected : bool): bool =
+  var
+    parser: YamlParser
+  parser.init()
+  var
+    actualIn = newFileStream(path / "in.yaml")
+    actual = parser.parse(actualIn)
+    expectedIn = newFileStream(path / "test.event")
+    expected = parseEventStream(expectedIn)
+  defer:
+    actualIn.close()
+    expectedIn.close()
+  result = doParserTest(expected, actual, errorExpected)
+
 macro genTests(): untyped =
   let
     pwd = staticExec("pwd").strip
@@ -74,11 +77,26 @@ macro genTests(): untyped =
   
   proc genTest(target: var NimNode, dirPath: string, testId: string) {.compileTime.} =
     let title = slurp(dirPath / "===")
+    let isErrorTest = fileExists(dirPath / "error")
+    let testName = strip(title) & " [" & testId & ']'
+    
+    # TODO: this code executes the test at compile time.
+    # sadly it doesn't work currently since the VM doesn't support
+    # closure iterators (in parseEventStream).
+    #
+    #let staticIn = slurp(dirPath / "in.yaml")
+    #let staticExpected = slurp(dirPath / "test.event")
+    #var parser: YamlParser
+    #parser.init()
+    #var actual = parser.parse(staticIn)
+    #var expected = parseEventString(staticExpected)
+    #
+    #if not doParserTest(expected, actual, isErrorTest):
+    # target.add(newCall("test", newLit(testName & " [comptime]"), newCall("fail")))
     
     target.add(newCall("test",
-        newLit(strip(title) & " [" &
-        testId & ']'), newCall("doAssert", newCall("parserTest",
-        newLit(dirPath), newLit(fileExists(dirPath / "error"))))))
+        newLit(testName), newCall("doAssert", newCall("parserTest",
+        newLit(dirPath), newLit(isErrorTest)))))
   
   result = newStmtList()
   
