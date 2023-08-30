@@ -130,7 +130,10 @@ proc representChild*(
 ) {.inline, raises: [].}
   ## Represents a Nim string. Supports nil strings.
 
-proc representChild*[O](ctx: var SerializationContext, value: O)
+proc representChild*[O](
+  ctx: var SerializationContext,
+  value: O,
+) {.raises: [YamlSerializationError].}
   ## Represents an arbitrary Nim object as YAML object.
 
 proc initConstructionContext*(input: YamlStream): ConstructionContext =
@@ -573,7 +576,7 @@ proc representObject*[T](
   ctx  : var SerializationContext,
   value: seq[T]|set[T],
   tag  : Tag,
-) =
+) {.raises: [YamlSerializationError].} =
   ## represents a Nim seq as YAML sequence
   ctx.put(startSeqEvent(tag = tag))
   for item in value: ctx.representChild(item)
@@ -605,7 +608,7 @@ proc representObject*[I, T](
   ctx  : var SerializationContext,
   value: array[I, T],
   tag  : Tag,
-) =
+) {.raises: [YamlSerializationError].} =
   ## represents a Nim array as YAML sequence
   ctx.put(startSeqEvent(tag = tag))
   for item in value: ctx.representChild(item)
@@ -641,7 +644,7 @@ proc representObject*[K, V](
   ctx  : var SerializationContext,
   value: Table[K, V],
   tag  : Tag,
-) =
+) {.raises: [YamlSerializationError].} =
   ## represents a Nim Table as YAML mapping
   ctx.put(startMapEvent(tag = tag))
   for key, value in value.pairs:
@@ -690,7 +693,7 @@ proc representObject*[K, V](
   ctx  : var SerializationContext,
   value: OrderedTable[K, V],
   tag  : Tag,
-) =
+) {.raises: [YamlSerializationError].} =
   ctx.put(startSeqEvent(tag = tag))
   for key, value in value.pairs:
     ctx.put(startMapEvent())
@@ -1271,7 +1274,7 @@ proc representObject*[O: object](
   ctx  : var SerializationContext,
   value: O,
   tag  : Tag,
-) =
+) {.raises: [YamlSerializationError].} =
   ## represents a Nim object or tuple as YAML mapping
   when isVariantObject(getType(O)): ctx.put(startSeqEvent(tag = tag))
   else: ctx.put(startMapEvent(tag = tag))
@@ -1283,7 +1286,7 @@ proc representObject*[O: tuple](
   ctx  : var SerializationContext,
   value: O,
   tag  : Tag,
-) =
+) {.raises: [YamlSerializationError].} =
   var fieldIndex = 0'i16
   ctx.put(startMapEvent(tag = tag))
   for name, fvalue in fieldPairs(value):
@@ -1594,13 +1597,13 @@ proc representChild*(
 proc representChild*[T](
   ctx  : var SerializationContext,
   value: seq[T],
-) =
+) {.raises: [YamlSerializationError].} =
   ctx.representObject(value, ctx.presentTag(seq[T]))
 
 proc representChild*[I, T](
   ctx  : var SerializationContext,
   value: array[I, T],
-) =
+) {.raises: [YamlSerializationError].} =
   ctx.representObject(value, ctx.presentTag(array[I, T]))
 
 proc representChild*[O](
@@ -1651,7 +1654,7 @@ proc representChild*[O](
 proc representChild*[T](
   ctx  : var SerializationContext,
   value: Option[T],
-) =
+) {.raises: [YamlSerializationError].} =
   ## represents an optional value. If the value is missing, a !!null scalar
   ## will be produced.
   if value.isSome:
