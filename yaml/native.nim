@@ -1617,44 +1617,48 @@ proc representChild*[O](
 ) =
   if isNil(value): ctx.put(scalarEvent("~", yTagNull))
   else:
-    let p = cast[pointer](value)
-    # when c.anchorStyle == asNone, `referenced` is used as indicator that we are
-    # currently in the process of serializing this node. This enables us to
-    # detect cycles and raise an error.
-    var val = ctx.refs.getOrDefault(
-      p, (ctx.nextAnchorId.Anchor, ctx.options.anchorStyle == asNone)
-    )
-    if val.a != ctx.nextAnchorId.Anchor:
-      if ctx.options.anchorStyle == asNone:
-        if val.referenced:
-          raise newException(YamlSerializationError,
-              "tried to serialize cyclic graph with asNone")
-      else:
-        val = ctx.refs.getOrDefault(p)
-        yAssert(val.a != yAnchorNone)
-        if not val.referenced:
-          ctx.refs[p] = (val.a, true)
-        ctx.put(aliasEvent(val.a))
-        return
-    ctx.refs[p] = val
-    nextAnchor(ctx.nextAnchorId, len(ctx.nextAnchorId) - 1)
-    let origPut = ctx.putImpl
-    ctx.putImpl = proc(ctx: var SerializationContext, e: Event) =
-      var ex = e
-      case ex.kind
-      of yamlStartMap:
-        if ctx.options.anchorStyle != asNone: ex.mapProperties.anchor = val.a
-      of yamlStartSeq:
-        if ctx.options.anchorStyle != asNone: ex.seqProperties.anchor = val.a
-      of yamlScalar:
-        if ctx.options.anchorStyle != asNone: ex.scalarProperties.anchor = val.a
-        if not ctx.emitTag and guessType(ex.scalarContent) != yTypeNull:
-          ex.scalarProperties.tag = yTagQuestionMark
-      else: discard
-      ctx.putImpl = origPut
-      ctx.put(ex)
+    when nimvm: discard
+    else:
+      let p = cast[pointer](value)
+      # when c.anchorStyle == asNone, `referenced` is used as indicator that we are
+      # currently in the process of serializing this node. This enables us to
+      # detect cycles and raise an error.
+      var val = ctx.refs.getOrDefault(
+        p, (ctx.nextAnchorId.Anchor, ctx.options.anchorStyle == asNone)
+      )
+      if val.a != ctx.nextAnchorId.Anchor:
+        if ctx.options.anchorStyle == asNone:
+          if val.referenced:
+            raise newException(YamlSerializationError,
+                "tried to serialize cyclic graph with asNone")
+        else:
+          val = ctx.refs.getOrDefault(p)
+          yAssert(val.a != yAnchorNone)
+          if not val.referenced:
+            ctx.refs[p] = (val.a, true)
+          ctx.put(aliasEvent(val.a))
+          return
+      ctx.refs[p] = val
+      nextAnchor(ctx.nextAnchorId, len(ctx.nextAnchorId) - 1)
+      let origPut = ctx.putImpl
+      ctx.putImpl = proc(ctx: var SerializationContext, e: Event) =
+        var ex = e
+        case ex.kind
+        of yamlStartMap:
+          if ctx.options.anchorStyle != asNone: ex.mapProperties.anchor = val.a
+        of yamlStartSeq:
+          if ctx.options.anchorStyle != asNone: ex.seqProperties.anchor = val.a
+        of yamlScalar:
+          if ctx.options.anchorStyle != asNone: ex.scalarProperties.anchor = val.a
+          if not ctx.emitTag and guessType(ex.scalarContent) != yTypeNull:
+            ex.scalarProperties.tag = yTagQuestionMark
+        else: discard
+        ctx.putImpl = origPut
+        ctx.put(ex)
     ctx.representChild(value[])
-    if ctx.options.anchorStyle == asNone: ctx.refs[p] = (val.a, false)
+    when nimvm: discard
+    else:
+      if ctx.options.anchorStyle == asNone: ctx.refs[p] = (val.a, false)
 
 proc representChild*[T](
   ctx  : var SerializationContext,
