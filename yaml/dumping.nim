@@ -13,7 +13,7 @@
 ## forms the highest-level API of NimYAML.
 
 import std/streams
-import presenter, native, private/internal
+import parser, presenter, native, private/internal
 export native
 
 type
@@ -130,3 +130,32 @@ proc dump*[K](
   try: result = present(events, dumper.presentation)
   except YamlStreamError as e:
     internalError("Unexpected exception: " & $e.name)
+
+proc transform*(
+  dumper : Dumper,
+  input  : Stream | string,
+  output : Stream,
+  resolveToCoreYamlTags: bool = false,
+) {.raises: [
+  IOError, OSError, YamlParserError, YamlPresenterJsonError,
+  YamlPresenterOutputError
+].} =
+  ## Parse ``input`` as YAML character stream and then dump it to ``output``
+  ## using the given presentation options.
+  ## If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
+  ## be replaced by specific tags according to the YAML core schema.
+  transform(input, output, dumper.presentation, resolveToCoreYamlTags)
+
+proc transform*(
+  dumper : Dumper,
+  input  : Stream | string,
+  resolveToCoreYamlTags: bool = false,
+): string {.raises: [
+  IOError, OSError, YamlParserError, YamlPresenterJsonError,
+  YamlPresenterOutputError
+].} =
+  ## Parse ``input`` as YAML character stream and then dump it
+  ## using the given presentation options. Returns the resulting string.
+  ## If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
+  ## be replaced by specific tags according to the YAML core schema.
+  result = transform(input, dumper.presentation, resolveToCoreYamlTags)

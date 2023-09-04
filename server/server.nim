@@ -4,29 +4,29 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import jester, cligen, asyncdispatch, json, streams, strutils
+import jester, parseopt, asyncdispatch, json, streams, strutils
 import packages/docutils/rstgen, packages/docutils/highlite, options
-import ../yaml, server_cfg
+import ../yaml, ../yaml/parser, ../yaml/presenter, server_cfg
 
 router nyRouter:
   get "/webservice/":
     resp(Http200, [("Content-Type", "text/plain")], "I am a friendly NimYAML parser webservice.")
   post "/webservice/":
     var
-      style: PresentationStyle
       resultNode = newJObject()
       msg: string
       retStatus = Http200
       contentType = "application/json"
       headers = @[("Access-Control-Allow-Origin", "*"), ("Pragma", "no-cache"),
         ("Cache-Control", "no-cache"), ("Expires", "0")]
+      dumper: Dumper
     try:
       case @"style"
-      of "minimal": style = psMinimal
-      of "canonical": style = psCanonical
-      of "default": style = psDefault
-      of "json": style = psJson
-      of "block": style = psBlockOnly
+      of "minimal": dumper.setMinimalStyle()
+      of "canonical": dumper.setCanonicalStyle()
+      of "default": dumper.setDefaultStyle()
+      of "json": dumper.setJsonStyle()
+      of "block": dumper.setBlockOnlyStyle()
       of "tokens":
         try:
           var
@@ -48,7 +48,7 @@ router nyRouter:
         var
           output = newStringStream()
           highlighted = ""
-        transform(newStringStream(@"input"), output, defineOptions(style), true)
+        dumper.transform(newStringStream(@"input"), output, true)
 
         # syntax highlighting (stolen and modified from stlib's rstgen)
         var g: GeneralTokenizer
@@ -86,10 +86,29 @@ router nyRouter:
     headers.add(("Content-Type", contentType))
     resp retStatus, headers, msg
 
-proc main(port = 5000, address = "127.0.0.1") =
+proc main(port: int, address: string) =
   let settings = newSettings(port=port.Port, bindAddr=address, staticDir=shareDir())
   var jester = initJester(nyrouter, settings=settings)
   jester.serve()
 
 when isMainModule:
-  dispatch(main)
+  var
+    port = 5000
+    address = "127.0.0.1"
+  for kind, key, value in getOpt():
+    case kind
+    of cmdArgument:
+      echo "unexpected positional argument"
+      quit 1
+    of cmdLongOption, cmdShortOption:
+      case key
+      of "p", "port":
+        port = parseInt(value)
+      of "a", "address":
+        address = value
+      else:
+        echo "Unknown option: ", key
+        quit 1
+    of cmdEnd:
+      discard
+  main(port, address)

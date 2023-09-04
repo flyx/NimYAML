@@ -43,20 +43,6 @@
                   cp -r src/* $out/lib
                 '';
               };
-              nim-cligen = pkgs.stdenv.mkDerivation {
-                name = "nim-cligen-0.15.3";
-                src = pkgs.fetchFromGitHub {
-                  owner = "c-blake";
-                  repo = "cligen";
-                  rev = "v1.5.23";
-                  sha256 = "rcledZbmcAXs0l5uQRmOennyMiw4G+zye6frGqksjyA=";
-                };
-                dontBuild = true;
-                installPhase = ''
-                  mkdir -p $out/lib
-                  cp -rt $out/lib cligen.nim cligen
-                '';
-              };
             in pkgs.stdenv.mkDerivation {
               pname = "nimyaml-server-deamon";
               inherit version;
@@ -77,7 +63,7 @@
                     ./rstPreproc -o:tmp.rst $txtFile
                     ${pkgs.nim2}/bin/nim rst2html -o:../docout/''${txtFile%.txt}.html tmp.rst
                   done
-                  cp docutils.css style.css processing.svg ../docout
+                  cp docutils.css style.css processing.svg github-mark-white.svg ../docout
                 )
                 ${pkgs.nim2}/bin/nim doc2 -o:docout/api/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/${
                   self.rev or "master"
@@ -94,7 +80,7 @@
                 proc shareDir*(): string =
                   result = "$out/share"
                 EOF
-                ${pkgs.nim2}/bin/nim c --d:release --stackTrace -p:"${nim-jester}/lib" -p:"${nim-httpbeast}/lib" -p:"${nim-cligen}/lib" --nimcache:.cache server/server
+                ${pkgs.nim2}/bin/nim c --stackTrace -p:"${nim-jester}/lib" -p:"${nim-httpbeast}/lib" --gc:refc --nimcache:.cache server/server
               '';
               installPhase = ''
                 mkdir -p $out/{bin,share}

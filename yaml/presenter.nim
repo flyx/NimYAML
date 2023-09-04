@@ -851,9 +851,9 @@ proc transform*(
   IOError, OSError, YamlParserError, YamlPresenterJsonError,
   YamlPresenterOutputError
 ].} =
-  ## Parser ``input`` as YAML character stream and then dump it to ``output``
-  ## while resolving non-specific tags to the ones in the YAML core tag
-  ## library. If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
+  ## Parse ``input`` as YAML character stream and then dump it to ``output``
+  ## using the given presentation options.
+  ## If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
   ## be replaced by specific tags according to the YAML core schema.
   var c = Context(target: output, options: options)
   doTransform(c, genInput(input), resolveToCoreYamlTags)
@@ -866,11 +866,10 @@ proc transform*(
   IOError, OSError, YamlParserError, YamlPresenterJsonError,
   YamlPresenterOutputError
 ].} =
-  ## Parser ``input`` as YAML character stream, resolves non-specific tags to
-  ## the ones in the YAML core tag library, and then returns a serialized
-  ## YAML string that represents the stream. If ``resolveToCoreYamlTags`` is
-  ## ``true``, non-specific tags will be replaced by specific tags according to
-  ## the YAML core schema.
+  ## Parse ``input`` as YAML character stream and then dump it
+  ## using the given presentation options. Returns the resulting string.
+  ## If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
+  ## be replaced by specific tags according to the YAML core schema.
   var
     ss = newStringStream()
     c = Context(target: ss, options: options)

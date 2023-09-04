@@ -61,7 +61,7 @@ task documentation, "Generate documentation":
     exec r"nim rst2html -o:../docout/testing.html testing.rst"
     exec r"nim rst2html -o:../docout/schema.html schema.rst"
     exec r"nim rst2html -o:../docout/migrating.html migrating.rst"
-    exec "cp docutils.css style.css processing.svg ../docout"
+    exec "cp docutils.css style.css processing.svg github-mark-white.svg ../docout"
   exec r"nim doc2 -o:docout/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/`git log -n 1 --format=%H` yaml"
   for file in listFiles("yaml"):
     let packageName = file[5..^5]

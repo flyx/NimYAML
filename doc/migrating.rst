@@ -5,6 +5,22 @@ Migrating to NimYAML 2.x
 NimYAML 2.0.0 introduces some breaking changes, existing code likely needs to be updated.
 This document details the changes and describes what needs to be done to migrate existing code.
 
+Motivation
+==========
+
+NimYAML 2.0.0 is a release made for Nim 2.0.
+It drops support for earlier Nim versions and introduces features added in Nim 2.0, mainly default values for object fields.
+
+The second goal of NimYAML 2.0.0 was to make dumping YAML simpler and more useful.
+Previously, the default style for writing out YAML used exotic features like directives (e.g. ``%YAML 1.2``) and tags.
+This style has originally been chosen to closely follow the YAML specification's intentions of using YAML to share data between applications.
+However, the major usage for YAML today is configuration files.
+To better cater to this use-case, the dumping API has been redesigned to emit less talkative YAML by default.
+
+Finally, the signatures of API functions for dumping have been modified so that you can define your desired dumping style once in a ``Dumper`` object and then use that everywhere.
+This demotes exotic features like custom tag handles from direct parameters of API functions to fields in the ``Dumper`` object.
+This design also enables NimYAML to introduce more dumper options in the future without altering the API.
+
 Module Changes
 ==============
 
