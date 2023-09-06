@@ -114,7 +114,7 @@
               wantedBy = [ "multi-user.target" ];
               after = [ "network.target" ];
               serviceConfig.ExecStart = ''
-                ${webdocs}/bin/nimyaml-docs-server --address "${cfg.address}" --port ${
+                ${webdocs}/bin/nimyaml-docs-server --address="${cfg.address}" --port=${
                   toString cfg.port
                 }'';
             };
