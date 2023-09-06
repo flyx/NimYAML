@@ -1,3 +1,47 @@
+## 2.0.0
+
+Breaking Changes:
+
+ * Requires Nim 2.x
+ * ``yaml/serialization`` has been split into
+   ``yaml/native`` (low-level API to load a ``YamlStream`` into Nim vars),
+   ``yaml/loading`` (high-level loading API) and
+   ``yaml/dumping`` (high-level dumping API).
+ * Dumping API now has a ``Dumper`` object.
+   All dumping procs require an instance of this object.
+   Previous parameters ``tagStyle``, ``handles`` and ``options`` have been
+   moved into this object.
+ * Constants with default values have been removed in favor of default values
+   for object fields.
+ * Low-level native API for loading and dumping has undergone changes to
+   parameter order. Serialization and deserialization context is now first
+   parameter, to be able to use prefix notation.
+ * Removed ``PresentationStyle``; instead ``Dumper`` can be initialized with
+   presets mirroring the former values of ``PresentationStyle``.
+ * Removed deprecated ``YamlDocument`` type from DOM API.
+   Use ``YamlNode`` instead.
+
+Features:
+
+ * Can now load and dump fields of the parent type(s) of used types (#131)
+ * Updated type guessing to use regexes from YAML 1.2 instead of old YAML 1.1.
+   Type guessing is used primarily for heterogeneous items
+   (implicit variant objects).
+ * Presenter no longer outputs trailing spaces
+ * More presentation options
+ * Simplified default presentation style: Don't output ``%YAML 1.2``,
+   ``%TAG !n! ...`` or ``---`` by default.
+   Output compact notation for collections.
+ * Loading now works at compile time (#70, #91).
+   Dumping doesn't work at compile time currently.
+
+Bugfixes:
+
+ * Don't crash on invalid input, instead raise a catchable
+   ``YamlParserError`` (#129)
+ * Fixed some parser errors in exotic edge cases
+ * Several fixes to make the library work with Nim 2.x
+
 ## 1.1.0
 
 Features:
@@ -8,7 +52,7 @@ Features:
  * Added ``loadFlattened`` to resolve aliases while loading,
    instead of deserializing them into pointers. (#117)
 
-Bugfixes
+Bugfixes:
 
  * Fixed problems with ARC/ORC (#120)
  * Fixes some edge cases around whitespace while parsing

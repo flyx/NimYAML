@@ -12,6 +12,7 @@ jobs:
           - windows-latest
           - macOS-latest
         nim-version:
+          - '2.0.x'
           - stable
           - devel
     steps:

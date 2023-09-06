@@ -44,7 +44,7 @@
                 '';
               };
             in pkgs.stdenv.mkDerivation {
-              pname = "nimyaml-server-deamon";
+              pname = "nimyaml-docs-server";
               inherit version;
               src = filter {
                 root = ./.;
@@ -84,7 +84,7 @@
               '';
               installPhase = ''
                 mkdir -p $out/{bin,share}
-                cp server/server $out/bin
+                cp server/server $out/bin/nimyaml-docs-server
                 cp -rt $out/share docout/*
               '';
             };
