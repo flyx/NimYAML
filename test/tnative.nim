@@ -264,6 +264,19 @@ suite "Serialization":
     let input = [none(int32), some(42'i32), none(int32)]
     let output = blockOnlyDumper().dump(input)
     assertStringEqual "- !!null ~\n- 42\n- !!null ~\n", output
+  
+  dualTest "Load Option of seq":
+    let input = "- !!null\n- [a, b]"
+    var result: array[0..1, Option[seq[string]]]
+    load(input, result)
+    assert not result[0].isSome
+    assert result[1].get()[0] == "a"
+    assert result[1].get()[1] == "b"
+  
+  test "Dump Option of seq":
+    let input = [none(seq[string]), some(@["a", "b"])]
+    let output = Dumper().dump(input)
+    assertStringEqual "- !!null ~\n- [a, b]\n", output
 
   dualTest "Load Table[int, string]":
     let input = "23: dreiundzwanzig\n42: zweiundvierzig"

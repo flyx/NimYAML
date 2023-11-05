@@ -38,6 +38,7 @@ proc load*[K](input: Stream | string, target: var K)
     if e.parent of IOError: raise (ref IOError)(e.parent)
     if e.parent of OSError: raise (ref OSError)(e.parent)
     elif e.parent of YamlParserError: raise (ref YamlParserError)(e.parent)
+    elif e.parent of YamlConstructionError: raise (ref YamlConstructionError)(e.parent)
     else: internalError("Unexpected exception: " & $e.parent.name)
 
 proc loadAs*[K](input: Stream | string): K {.raises:

@@ -827,8 +827,8 @@ proc hasSparse(t: typedesc): bool {.compileTime.} =
 
 proc getOptionInner(fType: NimNode): NimNode {.compileTime.} =
   if fType.kind == nnkBracketExpr and len(fType) == 2 and
-      fType[1].kind == nnkSym:
-    return newIdentNode($fType[1])
+      fType[0].kind == nnkSym:
+    return fType[1]
   else: return nil
 
 proc checkMissing(
@@ -850,7 +850,7 @@ proc checkMissing(
         when `o`.`field`.hasCustomPragma(defaultVal):
           `o`.`field` = `o`.`field`.getCustomPragmaVal(defaultVal)
         elif hasSparse(`t`) and `o`.`field` is Option:
-          `o`.`field` = none(`optionInner`)
+          `o`.`field` = none[`optionInner`]()
         else:
           raise constructionError(`s`, `m`, "While constructing " & `tName` &
               ": Missing field: " & `fName`)
@@ -1447,17 +1447,20 @@ proc constructChild*[T](
     of yamlScalar:
       if item.scalarProperties.tag notin [yTagQuestionMark, yTagExclamationMark,
                                yamlTag(T)]:
-        raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+        raise ctx.input.constructionError(
+          item.startPos, "Wrong tag for " & typetraits.name(T) & ": " & $item.scalarProperties.tag)
       elif item.scalarProperties.anchor != yAnchorNone:
         raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlStartMap:
       if item.mapProperties.tag notin [yTagQuestionMark, yamlTag(T)]:
-        raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+        raise ctx.input.constructionError(
+          item.startPos, "Wrong tag for " & typetraits.name(T) & ": " & $item.mapProperties.tag)
       elif item.mapProperties.anchor != yAnchorNone:
         raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlStartSeq:
       if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(T)]:
-        raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(T))
+        raise ctx.input.constructionError(
+          item.startPos, "Wrong tag for " & typetraits.name(T) & ": " & $item.seqProperties.tag)
       elif item.seqProperties.anchor != yAnchorNone:
         raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
     of yamlAlias:
@@ -1474,7 +1477,8 @@ proc constructChild*(
   if item.kind == yamlScalar:
     if item.scalarProperties.tag notin
         [yTagQuestionMark, yTagExclamationMark, yamlTag(string)]:
-      raise ctx.input.constructionError(item.startPos, "Wrong tag for string")
+      raise ctx.input.constructionError(
+        item.startPos, "Wrong tag for string: " & $item.scalarProperties.tag)
     elif item.scalarProperties.anchor != yAnchorNone:
       raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
   ctx.constructObject(result)
@@ -1486,7 +1490,8 @@ proc constructChild*[T](
   let item = ctx.input.peek()
   if item.kind == yamlStartSeq:
     if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(seq[T])]:
-      raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(seq[T]))
+      raise ctx.input.constructionError(
+        item.startPos, "Wrong tag for " & typetraits.name(seq[T]) & ": " & $item.seqProperties.tag)
     elif item.seqProperties.anchor != yAnchorNone:
       raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
   ctx.constructObject(result)
@@ -1498,7 +1503,8 @@ proc constructChild*[I, T](
   let item = ctx.input.peek()
   if item.kind == yamlStartSeq:
     if item.seqProperties.tag notin [yTagQuestionMark, yamlTag(array[I, T])]:
-      raise ctx.input.constructionError(item.startPos, "Wrong tag for " & typetraits.name(array[I, T]))
+      raise ctx.input.constructionError(
+        item.startPos, "Wrong tag for " & typetraits.name(array[I, T]) & ": " & $item.seqProperties.tag)
     elif item.seqProperties.anchor != yAnchorNone:
       raise ctx.input.constructionError(item.startPos, "Anchor on non-ref type")
   ctx.constructObject(result)
@@ -1528,7 +1534,7 @@ when defined(JS):
     let e = ctx.input.peek()
     if e.kind == yamlScalar:
       if e.scalarProperties.tag notin [yTagQuestionMark, yTagTimestamp]:
-        raise ctx.input.constructionError(e.startPos, "Wrong tag for Time")
+        raise ctx.input.constructionError(e.startPos, "Wrong tag for Time: " & $e.scalarProperties.tag)
       elif guessType(e.scalarContent) != yTypeTimestamp:
         raise ctx.input.constructionError(e.startPos, "Invalid timestamp")
       elif e.scalarProperties.anchor != yAnchorNone:

@@ -547,7 +547,6 @@ proc doPresent(
               ctx.target.write("%YAML 1.1")
               ctx.newline()
               wroteDirectivesEnd = true
-              echo "write --- because %YAML"
           of ovNone: discard
           for v in ctx.handles:
             if v.handle == "!":
