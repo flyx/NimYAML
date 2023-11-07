@@ -6,6 +6,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false # so that problems in nim devel don't stop other tests
       matrix:
         os:
           - ubuntu-latest
