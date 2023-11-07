@@ -671,7 +671,6 @@ proc doPresent(
       if ctx.levels.len > 0 and not ctx.options.condenseFlow and
           ctx.state in [dBlockExplicitMapKey, dBlockMapValue,
                         dBlockImplicitMapKey, dBlockSequenceItem]:
-        indentation += ctx.options.indentationStep
         if ctx.options.newlines != nlNone: singleLine = false
       ctx.levels.add (nextState, indentation, singleLine, wroteAnything)
     of yamlStartMap:
@@ -722,7 +721,6 @@ proc doPresent(
       if ctx.levels.len > 0 and not ctx.options.condenseFlow and
           ctx.state in [dBlockExplicitMapKey, dBlockMapValue,
                         dBlockImplicitMapKey, dBlockSequenceItem]:
-        indentation += ctx.options.indentationStep
         if ctx.options.newlines != nlNone: singleLine = false
       ctx.levels.add (nextState, indentation, singleLine, wroteAnything)
     of yamlEndSeq:
