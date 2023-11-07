@@ -227,10 +227,10 @@ proc readHexSequence(lex: var Lexer, len: int) =
           escape("" & lex.c))
   lex.evaluated.add(toUTF8(Rune(charPos)))
 
-proc readURI(lex: var Lexer) =
+proc readURI(lex: var Lexer, verbatim: bool) =
   lex.evaluated.setLen(0)
   let endWithSpace = lex.c != '<'
-  let restricted = lex.flowDepth > 0
+  let restricted = lex.flowDepth > 0 and not verbatim
   var literalStart: int
   if endWithSpace:
     if not restricted and lex.c in {'[', ']', ','}:
@@ -879,7 +879,7 @@ proc tagUri(lex: var Lexer): bool =
   lex.startToken()
   if lex.c == '<':
     raise lex.generateError("Illegal character in tag URI: " & escape("" & lex.c))
-  lex.readUri()
+  lex.readUri(false)
   lex.cur = Token.Suffix
   lex.endToken()
   lex.state = expectLineEnd
@@ -983,7 +983,7 @@ proc readNamespace(lex: var Lexer) =
   lex.startToken()
   lex.advance()
   if lex.c == '<':
-    lex.readURI()
+    lex.readURI(true)
     lex.endToken()
     lex.cur = Token.VerbatimTag
     lex.state = afterToken
