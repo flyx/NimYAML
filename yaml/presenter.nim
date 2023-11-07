@@ -143,14 +143,15 @@ proc inspect(
   indentation : int,
   words, lines: var seq[tuple[start, finish: int]],
   lineLength  : Option[int],
+  inFlow      : bool,
 ): ScalarStyle {.raises: [].} =
   var
     inLine = false
     inWord = false
     multipleSpaces = true
     curWord, curLine: tuple[start, finish: int]
-    canUseFolded = true
-    canUseLiteral = true
+    canUseFolded = not inFlow
+    canUseLiteral = not inFlow
     canUsePlain = scalar.len > 0 and
         scalar[0] notin {'@', '`', '|', '>', '&', '*', '!', ' ', '\t'}
   for i, c in scalar:
@@ -606,7 +607,11 @@ proc doPresent(
         var words, lines = newSeq[tuple[start, finish: int]]()
         case item.scalarContent.inspect(
             ctx.indentation + ctx.options.indentationStep, words, lines,
-            ctx.options.maxLineLength)
+            ctx.options.maxLineLength, ctx.levels.len > 0 and ctx.state in [
+              dFlowImplicitMapKey, dFlowMapValue,
+              dFlowExplicitMapKey, dFlowSequenceItem,
+              dFlowMapStart, dFlowSequenceStart
+            ])
         of sLiteral: ctx.writeLiteral(item.scalarContent, lines)
         of sFolded: ctx.writeFolded(item.scalarContent, words)
         of sPlain: ctx.safeWrite(item.scalarContent)
