@@ -1,3 +1,25 @@
+## 2.1.0 (upcoming)
+
+Changes:
+
+ * renamed ``canonicalDumper`` / ``setCanonicalStyle`` to
+   ``explanatoryDumper`` / ``setExplanatoryStyle`` because it was
+   a misnomer and there is nothing canonical about this output style.
+   The terminology *canonical* was carried over from PyYAML, but the
+   YAML specification uses that term for different things.
+ * The ``explanatoryDumper`` now automatically enables the
+   tag shorthand ``!n!``, because in this style you want that for readability.
+
+Bugfixes:
+
+ * Fixed a bug that prevented instances of generic types to be used in ``Option``
+   fields (e.g. ``Option[seq[string]]``) (#101)
+ * Fixed a problem that caused invalid indentation when dumping with certain
+   settings (#140)
+ * Fixed parsing errors for verbatim tags in flow style (#140)
+ * Fixed a problem that caused presentation of block scalars in
+   flow collections (#140)
+
 ## 2.0.0
 
 Breaking Changes:

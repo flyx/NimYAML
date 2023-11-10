@@ -11,7 +11,7 @@ Motivation
 NimYAML 2.0.0 is a release made for Nim 2.0.
 It drops support for earlier Nim versions and introduces features added in Nim 2.0, mainly default values for object fields.
 
-The second goal of NimYAML 2.0.0 was to make dumping YAML simpler and more useful.
+Another goal of NimYAML 2.0.0 was to make dumping YAML simpler and more useful.
 Previously, the default style for writing out YAML used exotic features like directives (e.g. ``%YAML 1.2``) and tags.
 This style has originally been chosen to closely follow the YAML specification's intentions of using YAML to share data between applications.
 However, the major usage for YAML today is configuration files.
@@ -50,25 +50,36 @@ Example code for old API:
 .. code-block:: nim
   var value = # some value
   var s = newFileStream("out.yaml", fmWrite)
-  dump(value, s, tagStyle = tsAll, options = defineOptions(
-    style = psCanonical, outputVersion = ov1_2)
+  
+  #simple dump
+  dump(value, s)
+  
+  # dump with options
+  dump(value, s, tagStyle = tsAll, options =
+    defineOptions(style = psBlockOnly, outputVersion = ov1_2))
 
 Same code for new API:
 
 .. code-block:: nim
   var value = # some value
   var s = newFileStream("out.yaml", fmWrite)
-  var dumper = canonicalDumper()
+  var dumper = Dumper()
+  
+  # simple dump
+  dumper.dump(value, s)
+  
+  # dump with options
+  dumper.setBlockOnlyStyle()
   dumper.presentation.outputVersion = ov1_2
   dumper.dump(value, s)
 
 The previous ``PresentationOptions`` now live in ``dumper.presentation``.
 There are also ``SeralizationOptions`` in ``dumper.serialization``.
-A preset sets values for both option objects.
+A preset (like ``setBlockOnlyStyle``) sets values for both option objects.
 You can modify the options afterwards to your liking.
 
 The new API makes use of Nim 2 default values for object fields.
-Hence ``defineOptions`` is gone, you can simply use the constructor of ``PresentationOptions``.
+Hence ``defineOptions`` is gone, you can instead use the constructor of ``PresentationOptions``.
 
 Changes to Default Output Style
 ===============================

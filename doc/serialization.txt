@@ -8,8 +8,8 @@ Introduction
 NimYAML tries hard to make transforming YAML characters streams to native Nim
 types and vice versa as easy as possible. In simple scenarios, you might not
 need anything else than the two procs
-`dump <yaml.dumping.html#dump,Dumper,K,Stream>`_
-and `load <yaml.loading.html#load,,K>`_. On the other side, the process
+`dump <api/dumping.html#dump%2CDumper%2CK>`_
+and `load <api/loading.html#load%2C%2CK>`_. On the other side, the process
 should be as customizable as possible to allow the user to tightly control how
 the generated YAML character stream will look and how a YAML character stream is
 interpreted.

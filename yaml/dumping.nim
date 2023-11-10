@@ -13,12 +13,14 @@
 ## forms the highest-level API of NimYAML.
 
 import std/streams
-import parser, presenter, native, private/internal
+import parser, presenter, native, private/internal, taglib
 export native
 
 type
   Dumper* = object
     ## Holds configuration for dumping Nim values.
+    ## Default initialization yields the style that can be set via
+    ## ``setDefaultStyle``.
     presentation* : PresentationOptions
     serialization*: SerializationOptions 
 
@@ -41,9 +43,9 @@ proc setMinimalStyle*(dumper: var Dumper) =
 proc minimalDumper*(): Dumper =
   result.setMinimalStyle()
   
-proc setCanonicalStyle*(dumper: var Dumper) =
+proc setExplanatoryStyle*(dumper: var Dumper) =
   ## Output preset. Generates specific tags for all nodes, uses flow style,
-  ## quotes all string scalars.
+  ## quotes all string scalars. Enables the ``!n!`` tag shorthand.
   dumper.presentation = PresentationOptions(
     containers: cFlow,
     directivesEnd: deAlways,
@@ -54,11 +56,20 @@ proc setCanonicalStyle*(dumper: var Dumper) =
   )
   dumper.serialization = SerializationOptions(
     tagStyle: tsAll,
-    anchorStyle: asTidy
+    anchorStyle: asTidy,
+    handles: initNimYamlTagHandle()
   )
 
-proc canonicalDumper*(): Dumper =
-  result.setCanonicalStyle()
+proc setCanonicalStyle*(dumper: var Dumper)
+    {. deprecated: "renamed to setExplanatoryStyle" .} =
+  dumper.setExplanatoryStyle()
+
+proc explanatoryDumper*(): Dumper =
+  result.setExplanatoryStyle()
+
+proc canonicalDumper*(): Dumper
+    {. deprecated: "renamed to explanatoryDumper" .} =
+  result.setExplanatoryStyle()
 
 proc setDefaultStyle*(dumper: var Dumper) =
   ## Output preset. Uses block style by default, but flow style for collections
