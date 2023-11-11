@@ -1,5 +1,14 @@
 ## 2.1.0 (upcoming)
 
+Features:
+
+ * The presenter now honors the node style set in the events it presents,
+   if possible. So if a scalar is set to be a literal block scalar, it is
+   presented as such unless impossible or presenter options specifically
+   prevent this.
+ * The presenter can now output single-quoted scalars. It only does so when
+   this scalar style is explicitly set on an event.
+
 Changes:
 
  * renamed ``canonicalDumper`` / ``setCanonicalStyle`` to
@@ -7,6 +16,7 @@ Changes:
    a misnomer and there is nothing canonical about this output style.
    The terminology *canonical* was carried over from PyYAML, but the
    YAML specification uses that term for different things.
+   The old names are kept with a ``deprecated`` pragma.
  * The ``explanatoryDumper`` now automatically enables the
    tag shorthand ``!n!``, because in this style you want that for readability.
 
@@ -14,11 +24,18 @@ Bugfixes:
 
  * Fixed a bug that prevented instances of generic types to be used in ``Option``
    fields (e.g. ``Option[seq[string]]``) (#101)
- * Fixed a problem that caused invalid indentation when dumping with certain
+ * Fixed a bug that caused invalid indentation when dumping with certain
    settings (#140)
  * Fixed parsing errors for verbatim tags in flow style (#140)
- * Fixed a problem that caused presentation of block scalars in
+ * Fixed a bug that caused presentation of block scalars in
    flow collections (#140)
+ * Fixed a bug that sometimes caused the last word of a folded block scalar
+   not to be presented.
+ * Fixed maximum line length not properly implemented in presenter in a number
+   of cases.
+ * Fixed a bug that prevented the presenter from outputting compact
+   flow mappings in cMixed mode.
+ * Fixed block scalars as mapping keys not being presented properly.
 
 ## 2.0.0
 

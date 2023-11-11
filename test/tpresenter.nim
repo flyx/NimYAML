@@ -4,6 +4,7 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+import std/[ options, strutils ]
 import ../yaml/[ presenter, data, stream ]
 import unittest
 import commonTestUtils
@@ -32,6 +33,15 @@ suite "Presenter":
   test "Scalar without tag":
     var input = inputSingle(scalarEvent("droggeljug"))
     assertOutput(input, "droggeljug\n")
+  
+  test "Root block scalar":
+    var input = inputSingle(scalarEvent("I am a dwarf and I'm digging a hole\n  diggy diggy hole\n  diggy diggy hole\n"))
+    assertOutput(input,
+      "--- |\n" &
+      "I am a dwarf and I'm digging a hole\n" & 
+      "  diggy diggy hole\n" &
+      "  diggy diggy hole\n",
+      PresentationOptions(maxLineLength: some(40)))
     
   test "Compact flow sequence":
     var input = inputSingle(startSeqEvent(), scalarEvent("1"), scalarEvent("2"), endSeqEvent())
@@ -88,3 +98,54 @@ suite "Presenter":
         startMapEvent(), scalarEvent("1"), scalarEvent("2"), scalarEvent("3"), scalarEvent("4"), endMapEvent(),
         endSeqEvent(), endMapEvent())
     assertOutput(input, "root:\n    -   a\n    -   1: 2\n        3: 4\n", PresentationOptions(outputVersion: ovNone, indentationStep: 4))
+  
+  test "Scalar output with explicit style set":
+    var input = inputSingle(
+      startSeqEvent(), scalarEvent("plain", style = ssPlain),
+      scalarEvent("@noplain", style = ssPlain),
+      scalarEvent("literal\n", style = ssLiteral),
+      scalarEvent("nofolded ", style = ssFolded),
+      scalarEvent("folded scalar", style = ssFolded),
+      scalarEvent("single'", style = ssSingleQuoted),
+      endSeqEvent()
+    )
+    assertOutput(input, "- plain\n" &
+      "- \"@noplain\"\n" &
+      "- |\n" &
+      "  literal\n" &
+      "- \"nofolded \"\n" &
+      "- >-\n" &
+      "  folded scalar\n" &
+      "- 'single'''\n")
+      
+  test "Collection output with explicit style set":
+    var input = inputSingle(
+      startMapEvent(), scalarEvent("a", style = ssDoubleQuoted),
+      startSeqEvent(style = csFlow), scalarEvent("b"), scalarEvent("c"), scalarEvent("d"), endSeqEvent(),
+      scalarEvent("? e"), startSeqEvent(style = csBlock), scalarEvent("f"), endSeqEvent(),
+      scalarEvent("g"), startMapEvent(), scalarEvent("h"), scalarEvent("i"), endMapEvent(),
+      scalarEvent("j"), startMapEvent(), scalarEvent("k", style = ssLiteral), scalarEvent("l"), endMapEvent(),
+      endMapEvent()
+    )
+    assertOutput(input, "\"a\": [b, c, d]\n" &
+      "\"? e\":\n" &
+      "  - f\n" &
+      "g: {h: i}\n" &
+      "j:\n" &
+      "  ? |-\n" &
+      "    k\n" &
+      "  : l\n")
+  
+  test "Block mapping with multiline keys":
+    var input = inputSingle(
+      startMapEvent(), scalarEvent(repeat("a", 18)), scalarEvent("b"),
+      scalarEvent(repeat("\"", 8)), scalarEvent("c"),
+      scalarEvent(repeat("d", 17)), scalarEvent("e"), endMapEvent())
+    assertOutput(input, "? \"aaaaaaaaaaaaaaa\\\n" &
+      "  aaa\"\n" &
+      ": b\n" &
+      "? \"\\\"\\\"\\\"\\\"\\\"\\\"\\\"\\\n" &
+      "  \\\"\"\n" &
+      ": c\n" &
+      "ddddddddddddddddd:\n" &
+      "  e\n", PresentationOptions(maxLineLength: some(19)))

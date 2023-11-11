@@ -23,7 +23,7 @@ router nyRouter:
     try:
       case @"style"
       of "minimal": dumper.setMinimalStyle()
-      of "canonical": dumper.setCanonicalStyle()
+      of "explanatory": dumper.setExplanatoryStyle()
       of "default": dumper.setDefaultStyle()
       of "json": dumper.setJsonStyle()
       of "block": dumper.setBlockOnlyStyle()
@@ -48,7 +48,7 @@ router nyRouter:
         var
           output = newStringStream()
           highlighted = ""
-        dumper.transform(newStringStream(@"input"), output, true)
+        dumper.transform(newStringStream(@"input"), output, @"style" == "explanatory")
 
         # syntax highlighting (stolen and modified from stlib's rstgen)
         var g: GeneralTokenizer

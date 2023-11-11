@@ -48,8 +48,8 @@ updated as you type.
         <label for="style-default">Default</label>
       </div>
       <div class="style-option">
-        <input type="radio" name="style" id="style-canonical" value="canonical" checked="checked"/>
-        <label for="style-canonical">Canonical</label>
+        <input type="radio" name="style" id="style-explanatory" value="explanatory" checked="checked"/>
+        <label for="style-explanatory">Explanatory</label>
       </div>
       <div class="style-option">
         <input type="radio" name="style" id="style-block" value="block"/>

@@ -6,7 +6,7 @@
   };
   outputs = { self, nixpkgs, utils, nix-filter }:
     let
-      version = "1.1.0";
+      version = "2.1.0";
       systemDependent = with utils.lib;
         eachSystem allSystems (system:
           let pkgs = nixpkgs.legacyPackages.${system};
@@ -14,13 +14,13 @@
             devShell = pkgs.mkShell { buildInputs = with pkgs; [ nim2 ]; };
             packages.webdocs = let
               nim-jester = pkgs.stdenv.mkDerivation {
-                name = "nim-jester-0.5.0";
+                name = "nim-jester-0.6.0";
                 src = pkgs.fetchFromGitHub {
                   owner = "dom96";
                   repo = "jester";
-                  rev = "v0.5.0";
+                  rev = "v0.6.0";
                   sha256 =
-                    "0m8a4ss4460jd2lcbqcbdd68jhcy35xg7qdyr95mh8rflwvmcvhk";
+                    "sha256-F/zWWGipJ4lBE3njceXn5HBFTYEXB4l2rk6+FfqqZTQ=";
                 };
                 dontBuild = true;
                 installPhase = ''
@@ -29,17 +29,18 @@
                 '';
               };
               nim-httpbeast = pkgs.stdenv.mkDerivation {
-                name = "nim-httpbeast-0.2.2";
+                name = "nim-httpbeast-0.4.1";
                 src = pkgs.fetchFromGitHub {
                   owner = "dom96";
                   repo = "httpbeast";
-                  rev = "v0.2.2";
+                  rev = "v0.4.1";
                   sha256 =
-                    "1f8ch7sd5kcyaw1b1lpqywvhx2h6aa5an37zm7x0j22giqlml5c6";
+                    "sha256-8ncCj94UeirSevgZP717NiNtecDyH5jHky+QId31IvQ=";
                 };
                 dontBuild = true;
                 installPhase = ''
                   mkdir -p $out/lib
+                  ls -alh
                   cp -r src/* $out/lib
                 '';
               };

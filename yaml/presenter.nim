@@ -103,15 +103,17 @@ type
     singleLine: bool
     wroteAnything: bool
 
-  ScalarStyle = enum
-    sLiteral, sFolded, sPlain, sDoubleQuoted
-
   Context = object
     target: Stream
     options: PresentationOptions
     handles: seq[tuple[handle, uriPrefix: string]]
     levels: seq[DumperLevel]
     needsWhitespace: int
+    wroteDirectivesEnd: bool
+    lastImplicitKeyLen: int
+  
+  ItemKind = enum
+    ikCompactScalar, ikMultilineFlowScalar, ikBlockScalar, ikCollection
 
 proc level(ctx: var Context): var DumperLevel = ctx.levels[^1]
   
@@ -121,6 +123,13 @@ proc state(ctx: Context): DumperState = ctx.level.state
 
 proc `state=`(ctx: var Context, v: DumperState) =
   ctx.level.state = v
+
+proc isFlow(state: DumperState): bool =
+  result = state in [
+    dFlowImplicitMapKey, dFlowMapValue,
+    dFlowExplicitMapKey, dFlowSequenceItem,
+    dFlowMapStart, dFlowSequenceStart
+  ]
 
 proc indentation(ctx: Context): int =
   result = if ctx.levels.len == 0: 0 else: ctx.level.indentation
@@ -142,9 +151,39 @@ proc inspect(
   scalar      : string,
   indentation : int,
   words, lines: var seq[tuple[start, finish: int]],
+  multiLine   : var bool,
   lineLength  : Option[int],
   inFlow      : bool,
+  proposed    : ScalarStyle,
 ): ScalarStyle {.raises: [].} =
+  ## inspects the given scalar and returns the style in which it should be
+  ## presented. fills information in words, lines and multiLine that can be
+  ## used later for presenting it:
+  ##
+  ##  * words will contain substring boundaries of parts of the string that
+  ##    are separated by exactly one, not more, spaces. occurrences of multiple
+  ##    spaces will become part of a single word. This is used for folded block
+  ##    scalars, which can only break at single spaces.
+  ##  * lines will contain substring boundaries of parts of the string that
+  ##    can be emitted as lines within a literal block scalar.
+  ##  * multiLine is set to true for double quoted scalars iff the scalar will
+  ##    be written on multiple lines. important when using the scalar as block
+  ##    mapping key. Will not be set for other styles since single quoted and
+  ##    plain scalars always occupy only one line, and block scalars always
+  ##    occupy multiple.
+  ##
+  ## The proposed style will take precedence over other decisions and will be
+  ## returned if possible. a proposed folded style will decay into a literal
+  ## style if folded style is not possible but literal is. Otherwise, if the
+  ## proposed style is not a valid style, it is ignored.
+  ##
+  ## A proposed style of ssAny is not valid and is therefore always ignored. 
+  ## This proc will never emit ssAny.
+  ##
+  ## This inspector will not always allow a style that would be possible.
+  ## For example, the presenter is currently unable to emit multi-line plain
+  ## scalars, therefore multi-line string will never yield ssPlain. Similarly,
+  ## ssFolded will never be returned if there are more-indented lines.
   var
     inLine = false
     inWord = false
@@ -153,7 +192,10 @@ proc inspect(
     canUseFolded = not inFlow
     canUseLiteral = not inFlow
     canUsePlain = scalar.len > 0 and
-        scalar[0] notin {'@', '`', '|', '>', '&', '*', '!', ' ', '\t'}
+        scalar[0] notin {'@', '`', '|', '>', '&', '*', '!', ' ', '\t'} and
+        (not lineLength.isSome or scalar.len <= indentation + lineLength.get())
+    canUseSingleQuoted = true
+    curDqLen = indentation + 2
   for i, c in scalar:
     case c
     of ' ':
@@ -170,14 +212,22 @@ proc inspect(
           # space at beginning of line will preserve previous and next
           # line break. that is currently too complex to handle.
           canUseFolded = false
+      inc(curDqLen)
     of '\l':
       canUsePlain = false     # we don't use multiline plain scalars
-      curWord.finish = i - 1
-      if lineLength.isSome and
-         curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
-        return if canUsePlain: sPlain else: sDoubleQuoted
-      words.add(curWord)
-      inWord = false
+      canUseSingleQuoted = false
+      if inWord:
+        curWord.finish = i - 1
+        if lineLength.isSome and
+            curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
+          multiLine = lineLength.isSome and curDqLen > lineLength.get()
+          return ssDoubleQuoted
+        words.add(curWord)
+        inWord = false
+      if inLine and scalar[i - 1] in ['\t', ' ']:
+        # cannot use block scalars if line ends with space
+        canUseLiteral = false
+        canUseFolded = false
       curWord.start = i + 1
       multipleSpaces = true
       if not inLine: curLine.start = i
@@ -187,17 +237,24 @@ proc inspect(
          curLine.finish - curLine.start + 1 > lineLength.get() - indentation:
         canUseLiteral = false
       lines.add(curLine)
+      inc(curDqLen, 2)
     else:
-      if c in {'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"', '\''} or
-          c.ord < 32: canUsePlain = false
+      inc(curDqLen, if c in {'"', '\\', '\t', '\''}: 2 else: 1)
+      
+      if c in {'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"', '\''}:
+        canUsePlain = false
+      elif c.ord < 32:
+        canUsePlain = false
+        canUseSingleQuoted = false
       if not inLine:
         curLine.start = i
         inLine = true
       if not inWord:
         if not multipleSpaces:
           if lineLength.isSome and
-             curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
-            return if canUsePlain: sPlain else: sDoubleQuoted
+              curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
+            multiLine = lineLength.isSome and curDqLen > lineLength.get()
+            return ssDoubleQuoted
           words.add(curWord)
         curWord.start = i
         inWord = true
@@ -205,21 +262,46 @@ proc inspect(
   if inWord:
     curWord.finish = scalar.len - 1
     if lineLength.isSome and
-       curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
-      return if canUsePlain: sPlain else: sDoubleQuoted
+        curWord.finish - curWord.start + 1 > lineLength.get() - indentation:
+      multiLine = lineLength.isSome and curDqLen > lineLength.get()
+      return ssDoubleQuoted
     words.add(curWord)
   if inLine:
+    if scalar[^1] in ['\t', ' ']:
+      canUseLiteral = false
+      canUseFolded = false
+      canUsePlain = false
     curLine.finish = scalar.len - 1
     if lineLength.isSome and
        curLine.finish - curLine.start + 1 > lineLength.get() - indentation:
       canUseLiteral = false
     lines.add(curLine)
+  if lineLength.isSome and curDqLen > lineLength.get():
+    canUseSingleQuoted = false
+  
+  case proposed
+  of ssLiteral:
+    if canUseLiteral: return ssLiteral
+  of ssFolded:
+    if canUseFolded: return ssFolded
+    elif canUseLiteral: return ssLiteral
+  of ssPlain:
+    if canUsePlain: return ssPlain
+  of ssSingleQuoted:
+    if canUseSingleQuoted: return ssSingleQuoted
+  of ssDoubleQuoted:
+    multiLine = lineLength.isSome and curDqLen > lineLength.get()
+    return ssDoubleQuoted
+  else: discard
+  
   if lineLength.isNone or scalar.len <= lineLength.get() - indentation:
-    result = if canUsePlain: sPlain else: sDoubleQuoted
-  elif canUseLiteral: result = sLiteral
-  elif canUseFolded: result = sFolded
-  elif canUsePlain: result = sPlain
-  else: result = sDoubleQuoted
+    result = if canUsePlain: ssPlain else: ssDoubleQuoted
+  elif canUseLiteral: result = ssLiteral
+  elif canUseFolded: result = ssFolded
+  elif canUsePlain: result = ssPlain
+  else: result = ssDoubleQuoted
+  if result == ssDoubleQuoted:
+    multiLine = lineLength.isSome and curDqLen > lineLength.get()
 
 proc append(ctx: var Context, val: string | char) {.inline.} =
   if ctx.needsWhitespace > 0:
@@ -243,43 +325,46 @@ proc newline(ctx: var Context) {.inline.} =
 proc writeDoubleQuoted(
   ctx   : var Context,
   scalar: string,
-) {.raises: [YamlPresenterOutputError].} =
+): int {.raises: [YamlPresenterOutputError].} =
   let indentation = ctx.indentation + ctx.options.indentationStep
   var curPos = indentation
   let t = ctx.target
   try:
+    result = 2
     ctx.append('"')
     curPos.inc()
-    for c in scalar:
+    for i, c in scalar:
+      var nextLength = 1
+      case c
+      of '"', '\l', '\t', '\\':
+        nextLength = 2
+      else:
+        if ord(c) < 32:
+          nextLength = 4
+      
       if ctx.options.maxLineLength.isSome and
-         curPos == ctx.options.maxLineLength.get() - 1:
+         (curPos + nextLength >= ctx.options.maxLineLength.get() or
+          curPos + nextLength == ctx.options.maxLineLength.get() - 1 and i == scalar.len - 2):
         t.write('\\')
         ctx.newline()
         t.write(repeat(' ', indentation))
+        result.inc(2 + indentation)
         curPos = indentation
         if c == ' ':
           t.write('\\')
           curPos.inc()
-      case c
-      of '"':
-        t.write("\\\"")
-        curPos.inc(2)
-      of '\l':
-        t.write("\\n")
-        curPos.inc(2)
-      of '\t':
-        t.write("\\t")
-        curPos.inc(2)
-      of '\\':
-        t.write("\\\\")
-        curPos.inc(2)
+          result.inc()
       else:
-        if ord(c) < 32:
-          t.write("\\x" & toHex(ord(c), 2))
-          curPos.inc(4)
-        else:
-          t.write(c)
-          curPos.inc()
+        curPos.inc(nextLength)
+        result.inc(nextLength)
+      case c
+      of '"': t.write("\\\"")
+      of '\l': t.write("\\n")
+      of '\t': t.write("\\t")
+      of '\\': t.write("\\\\")
+      else:
+        if ord(c) < 32: t.write("\\x" & toHex(ord(c), 2))
+        else: t.write(c)
     t.write('"')
   except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
@@ -290,21 +375,62 @@ proc writeDoubleQuoted(
 proc writeDoubleQuotedJson(
   ctx   : var Context,
   scalar: string,
-) {.raises: [YamlPresenterOutputError].} =
+): int {.raises: [YamlPresenterOutputError].} =
   let t = ctx.target
   try:
     ctx.append('"')
+    result = 2
     for c in scalar:
       case c
-      of '"': t.write("\\\"")
-      of '\\': t.write("\\\\")
-      of '\l': t.write("\\n")
-      of '\t': t.write("\\t")
-      of '\f': t.write("\\f")
-      of '\b': t.write("\\b")
+      of '"':
+        t.write("\\\"")
+        result.inc(2)
+      of '\\':
+        t.write("\\\\")
+        result.inc(2)
+      of '\l':
+        t.write("\\n")
+        result.inc(2)
+      of '\t':
+        t.write("\\t")
+        result.inc(2)
+      of '\f':
+        t.write("\\f")
+        result.inc(2)
+      of '\b':
+        t.write("\\b")
+        result.inc(2)
       else:
-        if ord(c) < 32: t.write("\\u" & toHex(ord(c), 4)) else: t.write(c)
+        if ord(c) < 32:
+          t.write("\\u" & toHex(ord(c), 4))
+          result.inc(4)
+        else:
+          t.write(c)
+          result.inc()
     t.write('"')
+  except:
+    var e = newException(YamlPresenterOutputError,
+                         "Error while writing to output stream")
+    e.parent = getCurrentException()
+    raise e
+
+proc writeSingleQuoted(
+  ctx   : var Context,
+  scalar: string,
+): int {.raises: [YamlPresenterOutputError].} =
+  let t = ctx.target
+  try:
+    # writing \39 instead of \' because my syntax highlighter is dumb
+    ctx.append('\39')
+    result = 2
+    for c in scalar:
+      if c == '\39':
+        t.write("''")
+        result.inc(2)
+      else:
+        t.write(c)
+        result.inc()
+    ctx.append('\39')
   except:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
@@ -316,7 +442,8 @@ proc writeLiteral(
   scalar: string,
   lines : seq[tuple[start, finish: int]],
 ) {.raises: [YamlPresenterOutputError].} =
-  let indentation = ctx.indentation + ctx.options.indentationStep
+  var indentation = ctx.indentation
+  if ctx.levels.len > 0: inc(indentation, ctx.options.indentationStep)
   let t = ctx.target
   try:
     ctx.append('|')
@@ -384,9 +511,16 @@ template safeNewline(c: var Context) =
     raise e
 
 proc startItem(
-  ctx     : var Context,
-  isObject: bool,
+  ctx : var Context,
+  kind: ItemKind,
 ) {.raises: [YamlPresenterOutputError].} =
+  if ctx.levels.len == 0:
+    if kind == ikBlockScalar:
+      if not ctx.wroteDirectivesEnd:
+        ctx.wroteDirectivesEnd = true
+        ctx.safeWrite("---")
+        ctx.whitespace(true)
+    return
   let t = ctx.target
   try:
     case ctx.state
@@ -396,7 +530,7 @@ proc startItem(
         t.write(repeat(' ', ctx.indentation))
       else:
         ctx.level.wroteAnything = true
-      if isObject or ctx.options.explicitKeys:
+      if kind != ikCompactScalar or ctx.options.explicitKeys:
         ctx.append('?')
         ctx.whitespace()
         ctx.state = dBlockExplicitMapKey
@@ -425,7 +559,7 @@ proc startItem(
       if not ctx.level.singleLine:
         ctx.newline()
         t.write(repeat(' ', ctx.indentation))
-      if not isObject and not ctx.options.explicitKeys:
+      if kind == ikCompactScalar and not ctx.options.explicitKeys:
         ctx.state = dFlowImplicitMapKey
       else:
         t.write('?')
@@ -435,7 +569,7 @@ proc startItem(
       if not ctx.level.singleLine:
         ctx.newline()
         t.write(repeat(' ', ctx.indentation))
-      if not isObject and not ctx.options.explicitKeys:
+      if kind == ikCompactScalar and not ctx.options.explicitKeys:
         ctx.state = dFlowImplicitMapKey
       else:
         ctx.append('?')
@@ -519,19 +653,19 @@ proc doPresent(
 ].} =
   var
     cached = initDeQue[Event]()
-    firstDoc = true
-    wroteDirectivesEnd = false
+    unclosedDoc = false
+  ctx.wroteDirectivesEnd = false
   while true:
     let item = nextItem(cached, s)
     case item.kind
     of yamlStartStream: discard
     of yamlEndStream: break
     of yamlStartDoc:
-      if not firstDoc:
+      if unclosedDoc:
         ctx.safeWrite("...")
         ctx.safeNewline()
-      wroteDirectivesEnd =
-        ctx.options.directivesEnd == deAlways or not s.peek().emptyProperties()
+      ctx.wroteDirectivesEnd =
+        item.explicitDirectivesEnd or ctx.options.directivesEnd == deAlways or not s.peek().emptyProperties()
       
       if ctx.options.directivesEnd != deNever:
         resetHandles(ctx.handles)
@@ -543,40 +677,77 @@ proc doPresent(
           of ov1_2:
               ctx.target.write("%YAML 1.2")
               ctx.newline()
-              wroteDirectivesEnd = true
+              ctx.wroteDirectivesEnd = true
           of ov1_1:
               ctx.target.write("%YAML 1.1")
               ctx.newline()
-              wroteDirectivesEnd = true
+              ctx.wroteDirectivesEnd = true
           of ovNone: discard
           for v in ctx.handles:
             if v.handle == "!":
               if v.uriPrefix != "!":
                 ctx.target.write("%TAG ! " & v.uriPrefix)
                 ctx.newline()
-                wroteDirectivesEnd = true
+                ctx.wroteDirectivesEnd = true
             elif v.handle == "!!":
               if v.uriPrefix != yamlTagRepositoryPrefix:
                 ctx.target.write("%TAG !! " & v.uriPrefix)
                 ctx.newline()
-                wroteDirectivesEnd = true
+                ctx.wroteDirectivesEnd = true
             else:
               ctx.target.write("%TAG " & v.handle & ' ' & v.uriPrefix)
               ctx.newline()
-              wroteDirectivesEnd = true
+              ctx.wroteDirectivesEnd = true
         except CatchableError as ce:
           var e = newException(YamlPresenterOutputError, "")
           e.parent = ce
           raise e
-      if wroteDirectivesEnd:
+      if ctx.wroteDirectivesEnd:
         ctx.safeWrite("---")
         ctx.whitespace(true)
     of yamlScalar:
-      if ctx.levels.len > 0:
-        ctx.startItem(false)
+      var
+        words, lines: seq[tuple[start, finish: int]]
+        scalarStyle = ssAny
+        multiLine = false
+        needsNextLine = false
+      if ctx.options.quoting in [sqUnset, sqDouble]:
+        words = @[]
+        lines = @[]
+        if ctx.levels.len > 0 and ctx.state == dBlockImplicitMapKey:
+          if ctx.options.maxLineLength.isNone or
+              ctx.indentation + ctx.options.indentationStep + ctx.lastImplicitKeyLen + 4 <
+              ctx.options.maxLineLength.get():
+            scalarStyle = item.scalarContent.inspect(
+              ctx.indentation + ctx.options.indentationStep + ctx.lastImplicitKeyLen + 2,
+              words, lines, multiLine,
+              ctx.options.maxLineLength, ctx.levels.len > 0 and ctx.state.isFlow, item.scalarStyle)
+            case scalarStyle
+            of ssPlain, ssSingleQuoted: discard
+            of ssDoubleQuoted:
+              if multiLine:
+                multiLine = false
+                scalarStyle = ssAny
+                needsNextLine = true
+            else:
+              scalarStyle = ssAny
+              needsNextLine = true
+          else: needsNextLine = true
+        if scalarStyle == ssAny:
+          scalarStyle = item.scalarContent.inspect(
+            ctx.indentation + ctx.options.indentationStep, words, lines, multiLine,
+            ctx.options.maxLineLength, ctx.levels.len > 0 and ctx.state.isFlow, item.scalarStyle)
+      ctx.startItem(case scalarStyle
+        of ssLiteral, ssFolded: ikBlockScalar
+        of ssDoubleQuoted:
+          if multiLine: ikMultilineFlowScalar else: ikCompactScalar
+        else: ikCompactScalar)
       discard ctx.writeTagAndAnchor(item.scalarProperties)
       if ctx.levels.len == 0:
-        if wroteDirectivesEnd: ctx.safeNewline()
+        if ctx.wroteDirectivesEnd and scalarStyle notin [ssLiteral, ssFolded]: ctx.safeNewline()
+      elif needsNextLine and scalarStyle in [ssDoubleQuoted, ssSingleQuoted, ssPlain]:
+        ctx.safeNewline()
+        ctx.safeWrite(repeat(' ', ctx.indentation + ctx.options.indentationStep))
       case ctx.options.quoting
       of sqJson:
         var hint = yTypeUnknown
@@ -600,28 +771,28 @@ proc doPresent(
         elif tag in [yTagQuestionMark, yTagFloat] and
             hint == yTypeFloat:
           ctx.safeWrite(item.scalarContent)
-        else: ctx.writeDoubleQuotedJson(item.scalarContent)
+        else:
+          ctx.lastImplicitKeyLen = ctx.writeDoubleQuotedJson(item.scalarContent)
       of sqDouble:
-        ctx.writeDoubleQuoted(item.scalarContent)
+        ctx.lastImplicitKeyLen = ctx.writeDoubleQuoted(item.scalarContent)
       else:
-        var words, lines = newSeq[tuple[start, finish: int]]()
-        case item.scalarContent.inspect(
-            ctx.indentation + ctx.options.indentationStep, words, lines,
-            ctx.options.maxLineLength, ctx.levels.len > 0 and ctx.state in [
-              dFlowImplicitMapKey, dFlowMapValue,
-              dFlowExplicitMapKey, dFlowSequenceItem,
-              dFlowMapStart, dFlowSequenceStart
-            ])
-        of sLiteral: ctx.writeLiteral(item.scalarContent, lines)
-        of sFolded: ctx.writeFolded(item.scalarContent, words)
-        of sPlain: ctx.safeWrite(item.scalarContent)
-        of sDoubleQuoted: ctx.writeDoubleQuoted(item.scalarContent)
+        case scalarStyle
+        of ssLiteral: ctx.writeLiteral(item.scalarContent, lines)
+        of ssFolded: ctx.writeFolded(item.scalarContent, words)
+        of ssPlain:
+          ctx.safeWrite(item.scalarContent)
+          ctx.lastImplicitKeyLen = item.scalarContent.len
+        of ssSingleQuoted:
+          ctx.lastImplicitKeyLen = ctx.writeSingleQuoted(item.scalarContent)
+        of ssDoubleQuoted:
+          ctx.lastImplicitKeyLen = ctx.writeDoubleQuoted(item.scalarContent)
+        else: discard # ssAny, can never happen
     of yamlAlias:
       if ctx.options.quoting == sqJson:
         raise newException(YamlPresenterJsonError,
                            "Alias not allowed in JSON output")
       yAssert ctx.levels.len > 0
-      ctx.startItem(false)
+      ctx.startItem(ikCompactScalar)
       try:
         ctx.append('*')
         ctx.target.write($item.aliasTarget)
@@ -631,25 +802,35 @@ proc doPresent(
         raise e
     of yamlStartSeq:
       var nextState: DumperState
-      case ctx.options.containers
-      of cMixed:
-        var length = 0
-        while true:
-          let next = s.next()
-          cached.addLast(next)
-          case next.kind
-          of yamlScalar: length += 2 + next.scalarContent.len
-          of yamlAlias: length += 6
-          of yamlEndSeq: break
-          else:
-            length = high(int)
-            break
-        nextState = if length <= 60: dFlowSequenceStart else: dBlockSequenceItem
-      of cFlow: nextState = dFlowSequenceStart
-      of cBlock:
+      if (ctx.levels.len > 0 and ctx.state.isFlow) or item.seqStyle == csFlow:
+        nextState = dFlowSequenceStart
+      elif item.seqStyle == csBlock:
         let next = s.peek()
-        if next.kind == yamlEndSeq: nextState = dFlowSequenceStart
-        else: nextState = dBlockSequenceItem
+        nextState = if next.kind == yamlEndSeq: dFlowSequenceStart else: dBlockSequenceItem
+      else:
+        case ctx.options.containers
+        of cMixed:
+          var length = 0
+          while true:
+            let next = s.next()
+            cached.addLast(next)
+            case next.kind
+            of yamlScalar:
+              length += 2 + next.scalarContent.len
+              if next.scalarStyle in [ssFolded, ssLiteral]:
+                length = high(int)
+                break
+            of yamlAlias: length += 6
+            of yamlEndSeq: break
+            else:
+              length = high(int)
+              break
+          nextState = if length <= 60: dFlowSequenceStart else: dBlockSequenceItem
+        of cFlow: nextState = dFlowSequenceStart
+        of cBlock:
+          let next = s.peek()
+          if next.kind == yamlEndSeq: nextState = dFlowSequenceStart
+          else: nextState = dBlockSequenceItem
 
       var indentation = 0
       var singleLine = ctx.options.condenseFlow or ctx.options.newlines == nlNone
@@ -661,16 +842,16 @@ proc doPresent(
         if nextState == dFlowSequenceStart:
           indentation = ctx.options.indentationStep
       else:
-        ctx.startItem(true)
+        ctx.startItem(ikCollection)
         indentation = ctx.indentation + ctx.options.indentationStep
       
       let wroteAttrs = ctx.writeTagAndAnchor(item.seqProperties)
-      if wroteAttrs or (wroteDirectivesEnd and ctx.levels.len == 0):
+      if wroteAttrs or (ctx.wroteDirectivesEnd and ctx.levels.len == 0):
         wroteAnything = true
 
       if nextState == dFlowSequenceStart:
         if ctx.levels.len == 0:
-          if wroteAttrs or wroteDirectivesEnd: ctx.safeNewline()
+          if wroteAttrs or ctx.wroteDirectivesEnd: ctx.safeNewline()
         ctx.safeWrite('[')
       
       if ctx.levels.len > 0 and not ctx.options.condenseFlow and
@@ -680,26 +861,46 @@ proc doPresent(
       ctx.levels.add (nextState, indentation, singleLine, wroteAnything)
     of yamlStartMap:
       var nextState: DumperState
-      case ctx.options.containers
-      of cMixed:
-        type MapParseState = enum
-          mpInitial, mpKey, mpValue, mpNeedBlock
-        var mps: MapParseState = mpInitial
-        while mps != mpNeedBlock:
-          case s.peek().kind
-          of yamlScalar, yamlAlias:
-            case mps
-            of mpInitial: mps = mpKey
-            of mpKey: mps = mpValue
-            else: mps = mpNeedBlock
-          of yamlEndMap: break
-          else: mps = mpNeedBlock
-        nextState = if mps == mpNeedBlock: dBlockMapValue else: dBlockInlineMap
-      of cFlow: nextState = dFlowMapStart
-      of cBlock:
+      if (ctx.levels.len > 0 and ctx.state.isFlow) or item.mapStyle == csFlow:
+        nextState = dFlowMapStart
+      elif item.mapStyle == csBlock:
         let next = s.peek()
-        if next.kind == yamlEndMap: nextState = dFlowMapStart
-        else: nextState = dBlockMapValue
+        nextState = if next.kind == yamlEndMap: dFlowMapStart else: dBlockMapValue
+      else:
+        case ctx.options.containers
+        of cMixed:
+          type MapParseState = enum
+            mpInitial, mpKey, mpValue, mpNeedBlock
+          var mps: MapParseState = mpInitial
+          while mps != mpNeedBlock:
+            let next = s.next()
+            cached.addLast(next)
+            case next.kind
+            of yamlScalar:
+              case mps
+              of mpInitial: mps = mpKey
+              of mpKey: mps = mpValue
+              else: mps = mpNeedBlock
+              if next.scalarStyle in [ssFolded, ssLiteral]:
+                mps = mpNeedBlock
+            of yamlAlias:
+              case mps
+              of mpInitial: mps = mpKey
+              of mpKey: mps = mpValue
+              else: mps = mpNeedBlock
+            of yamlEndMap: break
+            else: mps = mpNeedBlock
+          if mps == mpNeedBlock:
+            nextState = dBlockMapValue
+          elif ctx.levels.len == 0 or ctx.state == dBlockSequenceItem and item.emptyProperties:
+            nextState = dBlockInlineMap
+          else:
+            nextState = dFlowMapStart
+        of cFlow: nextState = dFlowMapStart
+        of cBlock:
+          let next = s.peek()
+          if next.kind == yamlEndMap: nextState = dFlowMapStart
+          else: nextState = dBlockMapValue
       
       var indentation = 0
       var singleLine = ctx.options.condenseFlow or ctx.options.newlines == nlNone
@@ -711,16 +912,16 @@ proc doPresent(
         if nextState == dFlowMapStart:
           indentation = ctx.options.indentationStep
       else:
-        ctx.startItem(true)
+        ctx.startItem(ikCollection)
         indentation = ctx.indentation + ctx.options.indentationStep
       
       let wroteAttrs = ctx.writeTagAndAnchor(item.properties)
-      if wroteAttrs or (wroteDirectivesEnd and ctx.levels.len == 0):
+      if wroteAttrs or (ctx.wroteDirectivesEnd and ctx.levels.len == 0):
         wroteAnything = true
 
       if nextState == dFlowMapStart:
         if ctx.levels.len == 0:
-          if wroteAttrs or wroteDirectivesEnd: ctx.safeNewline()
+          if wroteAttrs or ctx.wroteDirectivesEnd: ctx.safeNewline()
         ctx.safeWrite('{')
 
       if ctx.levels.len > 0 and not ctx.options.condenseFlow and
@@ -763,8 +964,12 @@ proc doPresent(
       of dBlockMapValue, dBlockInlineMap: discard
       else: internalError("Invalid level: " & $level)
     of yamlEndDoc:
-      firstDoc = false
       ctx.safeNewline()
+      if item.explicitDocumentEnd:
+        ctx.safeWrite("...")
+        ctx.safeNewline()
+      else:
+        unclosedDoc = true
 
 proc present*(
   s      : YamlStream,
@@ -802,37 +1007,38 @@ proc doTransform(
   parser.init()
   var events = parser.parse(input)
   try:
-    if ctx.options.explicitKeys:
-      var bys: YamlStream = newBufferYamlStream()
-      for e in events:
+    var bys: YamlStream = newBufferYamlStream()
+    for e in events:
+      var event = e
+      case event.kind
+      of yamlStartStream, yamlEndStream, yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
+        discard
+      of yamlStartMap:
+        event.mapStyle = csAny
         if resolveToCoreYamlTags:
-          var event = e
-          case event.kind
-          of yamlStartStream, yamlEndStream, yamlStartDoc, yamlEndDoc, yamlEndMap, yamlAlias, yamlEndSeq:
-            discard
-          of yamlStartMap:
-            if event.mapProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
-              event.mapProperties.tag = yTagMapping
-          of yamlStartSeq:
-            if event.seqProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
-              event.seqProperties.tag = yTagSequence
-          of yamlScalar:
-            if event.scalarProperties.tag == yTagQuestionMark:
-              case guessType(event.scalarContent)
-              of yTypeInteger: event.scalarProperties.tag = yTagInteger
-              of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
-                event.scalarProperties.tag = yTagFloat
-              of yTypeBoolTrue, yTypeBoolFalse: event.scalarProperties.tag = yTagBoolean
-              of yTypeNull: event.scalarProperties.tag = yTagNull
-              of yTypeTimestamp: event.scalarProperties.tag = yTagTimestamp
-              of yTypeUnknown: event.scalarProperties.tag = yTagString
-            elif event.scalarProperties.tag == yTagExclamationMark:
-              event.scalarProperties.tag = yTagString
-          BufferYamlStream(bys).put(event)
-        else: BufferYamlStream(bys).put(e)
-      doPresent(ctx, bys)
-    else:
-      doPresent(ctx, events)
+          if event.mapProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
+            event.mapProperties.tag = yTagMapping
+      of yamlStartSeq:
+        event.seqStyle = csAny
+        if resolveToCoreYamlTags:
+          if event.seqProperties.tag in [yTagQuestionMark, yTagExclamationMark]:
+            event.seqProperties.tag = yTagSequence
+      of yamlScalar:
+        event.scalarStyle = ssAny
+        if resolveToCoreYamlTags:
+          if event.scalarProperties.tag == yTagQuestionMark:
+            case guessType(event.scalarContent)
+            of yTypeInteger: event.scalarProperties.tag = yTagInteger
+            of yTypeFloat, yTypeFloatInf, yTypeFloatNaN:
+              event.scalarProperties.tag = yTagFloat
+            of yTypeBoolTrue, yTypeBoolFalse: event.scalarProperties.tag = yTagBoolean
+            of yTypeNull: event.scalarProperties.tag = yTagNull
+            of yTypeTimestamp: event.scalarProperties.tag = yTagTimestamp
+            of yTypeUnknown: event.scalarProperties.tag = yTagString
+          elif event.scalarProperties.tag == yTagExclamationMark:
+            event.scalarProperties.tag = yTagString
+      BufferYamlStream(bys).put(event)
+    doPresent(ctx, bys)
   except YamlStreamError as e:
     var curE: ref Exception = e
     while curE.parent of YamlStreamError: curE = curE.parent
