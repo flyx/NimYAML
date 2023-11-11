@@ -8,9 +8,9 @@
 ## Module yaml/stream
 ## ==================
 ##
-## The stream API provides the basic data structure on which all low-level APIs
-## operate. It is not named ``streams`` to not confuse it with the modle in the
-## stdlib with that name.
+## The stream API provides the basic data structure ``YamlStream`` on which all
+## low-level APIs operate. It is not named ``streams`` to not confuse it with
+## the module in the stdlib with that name.
 
 import data
 

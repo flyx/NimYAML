@@ -4,8 +4,17 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
+## ================
+## Module yaml/data
+## ================
+##
+## This module defines the event data structure which serves as internal
+## representation of YAML structures. Every YAML document can be described
+## as stream of events.
+
 import hashes
-import private/escaping
+import style, private/escaping
+export style
 
 type
   Anchor* = distinct string ## \
@@ -18,14 +27,6 @@ type
 
   Tag* = distinct string ## \
     ## A ``Tag`` contains an URI, like for example ``"tag:yaml.org,2002:str"``.
-
-  ScalarStyle* = enum
-    ## Original style of the scalar (for input),
-    ## or desired style of the scalar (for output).
-    ssAny, ssPlain, ssSingleQuoted, ssDoubleQuoted, ssLiteral, ssFolded
-
-  CollectionStyle* = enum
-    csAny, csBlock, csFlow, csPair
 
   EventKind* = enum
     ## Kinds of YAML events that may occur in an ``YamlStream``. Event kinds
@@ -303,8 +304,12 @@ proc `$`*(event: Event): string {.raises: [].} =
   of yamlEndDoc:
     result = "-DOC"
     if event.explicitDocumentEnd: result &= " ..."
-  of yamlStartMap: result = "+MAP" & renderAttrs(event.mapProperties)
-  of yamlStartSeq: result = "+SEQ" & renderAttrs(event.seqProperties)
+  of yamlStartMap:
+    result = "+MAP" & (if event.mapStyle == csFlow: " {}" else: "") &
+      renderAttrs(event.mapProperties)
+  of yamlStartSeq:
+    result = "+SEQ" & (if event.seqStyle == csFlow: " []" else: "") &
+      renderAttrs(event.seqProperties)
   of yamlScalar:
     result = "=VAL" & renderAttrs(event.scalarProperties,
                                   event.scalarStyle == ssPlain or

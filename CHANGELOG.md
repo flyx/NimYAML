@@ -2,6 +2,9 @@
 
 Features:
 
+ * New pragmas ``scalar`` and ``collection`` allow you to modify the
+   presentation style used for certain types and object fields.
+   Defined in new module ``yaml/style``.
  * The presenter now honors the node style set in the events it presents,
    if possible. So if a scalar is set to be a literal block scalar, it is
    presented as such unless impossible or presenter options specifically

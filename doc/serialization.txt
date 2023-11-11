@@ -247,7 +247,7 @@ These tags are generated on the fly based on the types you instantiate
 ``Table`` or ``seq`` with.
 
 You may customize the tags used for your types by using the template
-`setTagUri <yaml.taglib.html#setTagUri.t,typedesc,string>`_. It may not
+`setTagUri <api/taglib.html#setTagUri.t%2Ctypedesc%2Cstring>`_. It may not
 be applied to scalar and collection types implemented by NimYAML, but you can
 for example use it on a certain ``seq`` type:
 
@@ -386,7 +386,7 @@ serialization context via ``ctx.put``. Follow the following guidelines when
 implementing a custom ``representObject`` proc:
 
 - You can use the helper template
-  `presentTag <yaml.native.html#presentTag,SerializationContext,TagStyle>`_
+  `presentTag <api/native.html#presentTag%2CSerializationContext%2Ctypedesc>`_
   for outputting the tag.
 - Always output the first token with a ``yAnchorNone``. Anchors will be set
   automatically by ``ref`` type handling.

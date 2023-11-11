@@ -11,6 +11,9 @@
 ## This module provides annotations for object fields that customize
 ## (de)serialization behavior of those fields.
 
+import style
+export style
+
 template defaultVal*(value : typed) {.pragma.}
   ## This annotation can be put on an object field. During deserialization,
   ## if no value for this field is given, the ``value`` parameter of this

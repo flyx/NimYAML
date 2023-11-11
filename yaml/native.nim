@@ -62,6 +62,8 @@ type
     nextAnchorId: string
     options*: SerializationOptions
     putImpl*: proc(ctx: var SerializationContext, e: Event) {.raises: [], closure.}
+    overridingScalarStyle*: ScalarStyle = ssAny
+    overridingCollectionStyle*: CollectionStyle = csAny
 
   ConstructionContext* = object
     ## Context information for the process of constructing Nim values from YAML.
@@ -81,6 +83,30 @@ type
 
 proc put*(ctx: var SerializationContext, e: Event) {.raises: [].} =
   ctx.putImpl(ctx, e)
+
+proc scalarStyleFor(ctx: var SerializationContext, t: typedesc): ScalarStyle =
+  if ctx.overridingScalarStyle != ssAny:
+    result = ctx.overridingScalarStyle
+    ctx.overridingScalarStyle = ssAny
+  else:
+    when compiles(t.hasCustomPragma(scalar)):
+      when t.hasCustomPragma(scalar):
+        result = t.getCustomPragmaVal(scalar)
+      else: result = ssAny
+    else: result = ssAny
+  ctx.overridingCollectionStyle = csAny
+
+proc collectionStyleFor(ctx: var SerializationContext, t: typedesc): CollectionStyle =
+  if ctx.overridingCollectionStyle != csAny:
+    result = ctx.overridingCollectionStyle
+    ctx.overridingCollectionStyle = csAny
+  else:
+    when compiles(t.hasCustomPragma(collection)):
+      when t.hasCustomPragma(collection):
+        result = t.getCustomPragmaVal(collection)
+      else: result = csAny
+    else: result = csAny
+  ctx.overridingScalarStyle = ssAny
 
 # forward declares
 
@@ -175,7 +201,11 @@ proc safeTagUri(tag: Tag): string {.raises: [].} =
   except KeyError:
     internalError("Unexpected KeyError for Tag " & $tag)
 
-proc newYamlConstructionError*(s: YamlStream, mark: Mark, msg: string): ref YamlConstructionError =
+proc newYamlConstructionError*(
+  s: YamlStream,
+  mark: Mark,
+  msg: string,
+): ref YamlConstructionError =
   result = newException(YamlConstructionError, msg)
   result.mark = mark
   if not s.getLastTokenContext(result.lineContent):
@@ -226,7 +256,7 @@ proc representObject*(
   tag  : Tag,
 ) {.raises: [].} =
   ## represents a string as YAML scalar
-  ctx.put(scalarEvent(value, tag, yAnchorNone))
+  ctx.put(scalarEvent(value, tag, yAnchorNone, ctx.scalarStyleFor(string)))
 
 proc parseHex[T: int8|int16|int32|int64|uint8|uint16|uint32|uint64](
   s: YamlStream, mark: Mark, val: string
@@ -271,8 +301,10 @@ proc constructObject*[T: int8|int16|int32|int64](
   ## constructs an integer value from a YAML scalar
   ctx.input.constructScalarItem(item, T):
     case item.numberStyle
-    of nsHex: result = parseHex[T](ctx.input, item.startPos, item.scalarContent)
-    of nsOctal: result = parseOctal[T](ctx.input, item.startPos, item.scalarContent)
+    of nsHex:
+      result = parseHex[T](ctx.input, item.startPos, item.scalarContent)
+    of nsOctal:
+      result = parseOctal[T](ctx.input, item.startPos, item.scalarContent)
     of nsDecimal:
       let nInt = parseBiggestInt(item.scalarContent)
       if nInt <= T.high:
@@ -301,7 +333,7 @@ proc representObject*[T: int8|int16|int32|int64](
   tag  : Tag,
 ) {.raises: [].} =
   ## represents an integer value as YAML scalar
-  ctx.put(scalarEvent($value, tag, yAnchorNone))
+  ctx.put(scalarEvent($value, tag, yAnchorNone, ctx.scalarStyleFor(T)))
 
 proc representObject*(
   ctx  : var SerializationContext,
@@ -312,7 +344,9 @@ proc representObject*(
   ## on 64-bit systems, this may cause a RangeDefect.
 
   # currently, sizeof(int) is at least sizeof(int32).
-  try: ctx.put(scalarEvent($int32(value), tag, yAnchorNone))
+  try:
+    ctx.put(scalarEvent(
+      $int32(value), tag, yAnchorNone, ctx.scalarStyleFor(int)))
   except RangeDefect as rd:
     var e = newException(YamlSerializationError, rd.msg)
     e.parent = rd
@@ -330,8 +364,10 @@ proc constructObject*[T: DefiniteUIntTypes](
   ## construct an unsigned integer value from a YAML scalar
   ctx.input.constructScalarItem(item, T):
     case item.numberStyle
-    of nsHex: result = parseHex[T](ctx.input, item.startPos, item.scalarContent)
-    of nsOctal: result = parseOctal[T](ctx.input, item.startPos, item.scalarContent)
+    of nsHex:
+      result = parseHex[T](ctx.input, item.startPos, item.scalarContent)
+    of nsOctal:
+      result = parseOctal[T](ctx.input, item.startPos, item.scalarContent)
     else:
       let nUInt = parseBiggestUInt(item.scalarContent)
       if nUInt <= T.high:
@@ -365,7 +401,7 @@ proc representObject*[T: uint8|uint16|uint32|uint64](
   tag  : Tag,
 ) {.raises: [].} =
   ## represents an unsigned integer value as YAML scalar
-  ctx.put(scalarEvent($value, tag, yAnchorNone))
+  ctx.put(scalarEvent($value, tag, yAnchorNone, ctx.scalarStyleFor(T)))
 
 proc representObject*(
   ctx  : var SerializationContext,
@@ -374,7 +410,9 @@ proc representObject*(
 ) {.raises: [YamlSerializationError], inline.} =
   ## represent an unsigned integer of architecture-defined length by casting it
   ## to int32. on 64-bit systems, this may cause a RangeDefect.
-  try: ctx.put(scalarEvent($uint32(value), tag, yAnchorNone))
+  try:
+    ctx.put(scalarEvent(
+      $uint32(value), tag, yAnchorNone, ctx.scalarStyleFor(uint)))
   except RangeDefect as rd:
     var e = newException(YamlSerializationError, rd.msg)
     e.parent = rd
@@ -413,10 +451,10 @@ proc representObject*[T: float|float32|float64](
 ) {.raises: [].} =
   ## represents a float value as YAML scalar
   case value
-  of Inf: ctx.put(scalarEvent(".inf", tag))
-  of NegInf: ctx.put(scalarEvent("-.inf", tag))
-  of NaN: ctx.put(scalarEvent(".nan", tag))
-  else: ctx.put(scalarEvent($value, tag))
+  of Inf: ctx.put(scalarEvent(".inf", tag, ctx.scalarStyleFor(T)))
+  of NegInf: ctx.put(scalarEvent("-.inf", tag, ctx.scalarStyleFor(T)))
+  of NaN: ctx.put(scalarEvent(".nan", tag, ctx.scalarStyleFor(T)))
+  else: ctx.put(scalarEvent($value, tag, ctx.scalarStyleFor(T)))
 
 proc yamlTag*(T: typedesc[bool]): Tag {.inline, raises: [].} = yTagBoolean
 
@@ -441,7 +479,8 @@ proc representObject*(
   tag  : Tag,
 )  {.raises: [].} =
   ## represents a bool value as a YAML scalar
-  ctx.put(scalarEvent(if value: "true" else: "false", tag, yAnchorNone))
+  ctx.put(scalarEvent(if value: "true" else: "false",
+    tag, yAnchorNone, ctx.scalarStyleFor(bool)))
 
 proc constructObject*(
   ctx   : var ConstructionContext,
@@ -462,7 +501,7 @@ proc representObject*(
   tag  : Tag
 ) {.raises: [].} =
   ## represents a char value as YAML scalar
-  ctx.put(scalarEvent("" & value, tag, yAnchorNone))
+  ctx.put(scalarEvent("" & value, tag, yAnchorNone, ctx.scalarStyleFor(char)))
 
 proc yamlTag*(T: typedesc[Time]): Tag {.inline, raises: [].} = yTagTimestamp
 
@@ -534,7 +573,8 @@ proc representObject*(
   tag  : Tag,
 ) {.raises: [].} =
   let tmp = value.utc()
-  ctx.put(scalarEvent(tmp.format("yyyy-MM-dd'T'HH:mm:ss'Z'")))
+  ctx.put(scalarEvent(tmp.format(
+    "yyyy-MM-dd'T'HH:mm:ss'Z'"), tag, yAnchorNone, ctx.scalarStyleFor(Time)))
 
 proc yamlTag*[I](T: typedesc[seq[I]]): Tag {.inline, raises: [].} =
   return nimTag("system:seq(" & safeTagUri(yamlTag(I)) & ')')
@@ -578,7 +618,8 @@ proc representObject*[T](
   tag  : Tag,
 ) {.raises: [YamlSerializationError].} =
   ## represents a Nim seq as YAML sequence
-  ctx.put(startSeqEvent(tag = tag))
+  ctx.put(
+    startSeqEvent(tag = tag, style = ctx.collectionStyleFor(type(value))))
   for item in value: ctx.representChild(item)
   ctx.put(endSeqEvent())
 
@@ -610,7 +651,7 @@ proc representObject*[I, T](
   tag  : Tag,
 ) {.raises: [YamlSerializationError].} =
   ## represents a Nim array as YAML sequence
-  ctx.put(startSeqEvent(tag = tag))
+  ctx.put(startSeqEvent(tag = tag, style = ctx.collectionStyleFor(array[I, T])))
   for item in value: ctx.representChild(item)
   ctx.put(endSeqEvent())
 
@@ -646,7 +687,8 @@ proc representObject*[K, V](
   tag  : Tag,
 ) {.raises: [YamlSerializationError].} =
   ## represents a Nim Table as YAML mapping
-  ctx.put(startMapEvent(tag = tag))
+  ctx.put(
+    startMapEvent(tag = tag, style = ctx.collectionStyleFor(Table[K, V])))
   for key, value in value.pairs:
     ctx.representChild(key)
     ctx.representChild(value)
@@ -694,7 +736,8 @@ proc representObject*[K, V](
   value: OrderedTable[K, V],
   tag  : Tag,
 ) {.raises: [YamlSerializationError].} =
-  ctx.put(startSeqEvent(tag = tag))
+  ctx.put(startSeqEvent(
+    tag = tag, style = ctx.collectionStyleFor(OrderedTable[K, V])))
   for key, value in value.pairs:
     ctx.put(startMapEvent())
     ctx.representChild(key)
@@ -1198,6 +1241,11 @@ proc recGenFieldRepresenters(
           `fieldName`,
           tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark
         ))
+        when `fieldAccessor`.hasCustomPragma(scalar):
+          ctx.overridingScalarStyle = `fieldAccessor`.getCustomPragmaVal(scalar)
+          echo "set scalar style to ", $ctx.overridingScalarStyle
+        when `fieldAccessor`.hasCustomPragma(collection):
+          ctx.overridingCollectionStyle = `fieldAccessor`.getCustomPragmaVal(collection)
         ctx.representChild(`fieldAccessor`)
         ctx.put(endMapEvent())
       )
@@ -1231,6 +1279,11 @@ proc recGenFieldRepresenters(
                   `name`,
                   tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark 
                 ))
+                when `itemAccessor`.hasCustomPragma(scalar):
+                  ctx.overridingScalarStyle = `itemAccessor`.getCustomPragmaVal(scalar)
+                  echo "set scalar style to ", $ctx.overridingScalarStyle
+                when `itemAccessor`.hasCustomPragma(collection):
+                  ctx.overridingCollectionStyle = `itemAccessor`.getCustomPragmaVal(collection)
                 ctx.representChild(`itemAccessor`)
                 ctx.put(endMapEvent())
             )
@@ -1252,6 +1305,11 @@ proc recGenFieldRepresenters(
             if ctx.emitTag: yTagNimField else: yTagQuestionMark,
             yAnchorNone
           ))
+          when `childAccessor`.hasCustomPragma(scalar):
+            ctx.overridingScalarStyle = `childAccessor`.getCustomPragmaVal(scalar)
+            echo "set scalar style to ", $ctx.overridingScalarStyle
+          when `childAccessor`.hasCustomPragma(collection):
+            ctx.overridingCollectionStyle = `childAccessor`.getCustomPragmaVal(collection)
           ctx.representChild(`childAccessor`)
           when bool(`isVO`): ctx.put(endMapEvent())
         when not `childAccessor`.hasCustomPragma(transient):
@@ -1276,8 +1334,10 @@ proc representObject*[O: object](
   tag  : Tag,
 ) {.raises: [YamlSerializationError].} =
   ## represents a Nim object or tuple as YAML mapping
-  when isVariantObject(getType(O)): ctx.put(startSeqEvent(tag = tag))
-  else: ctx.put(startMapEvent(tag = tag))
+  when isVariantObject(getType(O)):
+    ctx.put(startSeqEvent(tag = tag, style = ctx.collectionStyleFor(O)))
+  else:
+    ctx.put(startMapEvent(tag = tag, style = ctx.collectionStyleFor(O)))
   genRepresentObject(O, value)
   when isVariantObject(getType(O)): ctx.put(endSeqEvent())
   else: ctx.put(endMapEvent())
@@ -1288,7 +1348,7 @@ proc representObject*[O: tuple](
   tag  : Tag,
 ) {.raises: [YamlSerializationError].} =
   var fieldIndex = 0'i16
-  ctx.put(startMapEvent(tag = tag))
+  ctx.put(startMapEvent(tag = tag, style = ctx.collectionStyleFor(O)))
   for name, fvalue in fieldPairs(value):
     ctx.put(scalarEvent(
       name,
@@ -1322,7 +1382,7 @@ proc representObject*[O: enum](
   tag  : Tag,
 ) {.raises: [].} =
   ## represents a Nim enum as YAML scalar
-  ctx.put(scalarEvent($value, tag, yAnchorNone))
+  ctx.put(scalarEvent($value, tag, yAnchorNone, ctx.scalarStyleFor(O)))
 
 proc yamlTag*[O](T: typedesc[ref O]): Tag {.inline, raises: [].} = yamlTag(O)
 
@@ -1621,7 +1681,7 @@ proc representChild*[O](
   ctx  : var SerializationContext,
   value: ref O,
 ) =
-  if isNil(value): ctx.put(scalarEvent("~", yTagNull))
+  if isNil(value): ctx.put(scalarEvent("~", yTagNull, style = ctx.scalarStyleFor(O)))
   else:
     when nimvm: discard
     else:
@@ -1643,6 +1703,8 @@ proc representChild*[O](
           if not val.referenced:
             ctx.refs[p] = (val.a, true)
           ctx.put(aliasEvent(val.a))
+          ctx.overridingScalarStyle = ssAny
+          ctx.overridingCollectionStyle = csAny
           return
       ctx.refs[p] = val
       nextAnchor(ctx.nextAnchorId, len(ctx.nextAnchorId) - 1)
@@ -1675,7 +1737,7 @@ proc representChild*[T](
   if value.isSome:
     ctx.representChild(value.get())
   else:
-    ctx.put(scalarEvent("~", yTagNull))
+    ctx.put(scalarEvent("~", yTagNull, style = ctx.scalarStyleFor(Option[T])))
 
 proc representChild*[O](
   ctx  : var SerializationContext,

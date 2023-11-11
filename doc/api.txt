@@ -26,7 +26,7 @@ Intermediate Representation
 
 The base of all YAML processing with NimYAML is the
 `YamlStream <api/stream.html#YamlStream>`_. This is basically an iterator over
-`YamlStreamEvent <api/stream.html#YamlStreamEvent>`_ objects. Every proc that
+`Event <api/data.html#Event>`_ objects. Every proc that
 represents a single stage of the loading or dumping process will either take a
 ``YamlStream`` as input or return a ``YamlStream``. Procs that implement the
 whole process in one step hide the ``YamlStream`` from the user. Every proc that
@@ -45,7 +45,7 @@ Loading YAML
 ============
 
 If you want to load YAML character data directly into a native Nim variable, you
-can use `load <api/serialization.html#load,,K>`_. This is the easiest and
+can use `load <api/loading.html#load%2C%2CK>`_. This is the easiest and
 recommended way to load YAML data. This section gives an overview about how
 ``load`` is implemented. It is absolutely possible to reimplement the loading
 step using the low-level API.
@@ -68,21 +68,21 @@ Dumping YAML
 ============
 
 Dumping is preferredly done with
-`dump <api/serialization.html#dump,K,Stream,TagStyle,AnchorStyle,PresentationOptions>`_,
-which serializes a native Nim variable to a character stream. As with ``load``,
+`dump <api/dumping.html#dump%2CDumper%2CK>`_,
+which serializes a native Nim value to a character stream. As with ``load``,
 the following paragraph describes how ``dump`` is implemented using the
 low-level API.
 
 A Nim value is transformed into a ``YamlStream`` with
-`represent <api/serialization.html#represent,T,TagStyle,AnchorStyle>`_.
-Depending on the ``AnchorStyle`` you specify, this will transform ``ref``
+`represent <api/native.html#represent%2CT%2CSerializationOptions>`_.
+Depending on the ``AnchorStyle`` you specify in the given ``SerializationOptions``, this will transform ``ref``
 variables with multiple instances into anchored elements and aliases (for
 ``asTidy`` and ``asAlways``) or write the same element into all places it
 occurs (for ``asNone``). Be aware that if you use ``asNone``, the value you
 serialize might not round-trip.
 
 Transforming a ``YamlStream`` into YAML character data is done with
-`present <api/presenter.html#present,YamlStream,Stream,TagLibrary,PresentationOptions>`_.
+`present <api/presenter.html#present%2CYamlStream%2CStream%2CPresentationOptions>`_.
 You can choose from multiple presentation styles. ``psJson`` is not able to
 process some features of ``YamlStream`` s, the other styles support all features
 and are guaranteed to round-trip to the same ``YamlStream`` if you parse the

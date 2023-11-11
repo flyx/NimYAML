@@ -66,6 +66,15 @@ type
     i*: int
   Child = object of Parent
     s*: string
+    
+  AsFlow {.collection: csFlow.} = object
+    a* {.scalar: ssSingleQuoted.}: string
+    b* {.scalar: ssDoubleQuoted.}: string
+    c* {.scalar: ssPlain.}: string
+  
+  OverrideColStyle = object
+    flowChild: AsFlow
+    blockChild {.collection: csBlock.}: AsFlow
 
 proc `$`(v: BetterInt): string {.borrow.}
 proc `==`(left, right: BetterInt): bool {.borrow.}
@@ -661,3 +670,20 @@ suite "Serialization":
         "- !test:BetterInt 1\n" &
         "- !test:BetterInt 9_998_887\n" &
         "- !test:BetterInt 98_312\n", output
+
+  test "Representation pragmas":
+    let input = OverrideColStyle(
+      flowChild: AsFlow(a: "abc", b: "abc", c: "abc"),
+      blockChild: AsFlow(a: "a\nc", b: "abc", c: "ab:")
+    )
+    var output = blockOnlyDumper().dump(input)
+    assertStringEqual "flowChild: {\n" &
+      "    a: 'abc',\n" &
+      "    b: \"abc\",\n" &
+      "    c: abc\n" &
+      "  }\n" &
+      "blockChild:\n" &
+      "  a: \"a\\\nc\"\n" &
+      "  b: \"abc\"\n" &
+      "  c: \"ab:\"\n", output
+  
