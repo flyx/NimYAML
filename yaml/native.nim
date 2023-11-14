@@ -1243,7 +1243,6 @@ proc recGenFieldRepresenters(
         ))
         when `fieldAccessor`.hasCustomPragma(scalar):
           ctx.overridingScalarStyle = `fieldAccessor`.getCustomPragmaVal(scalar)
-          echo "set scalar style to ", $ctx.overridingScalarStyle
         when `fieldAccessor`.hasCustomPragma(collection):
           ctx.overridingCollectionStyle = `fieldAccessor`.getCustomPragmaVal(collection)
         ctx.representChild(`fieldAccessor`)
@@ -1281,7 +1280,6 @@ proc recGenFieldRepresenters(
                 ))
                 when `itemAccessor`.hasCustomPragma(scalar):
                   ctx.overridingScalarStyle = `itemAccessor`.getCustomPragmaVal(scalar)
-                  echo "set scalar style to ", $ctx.overridingScalarStyle
                 when `itemAccessor`.hasCustomPragma(collection):
                   ctx.overridingCollectionStyle = `itemAccessor`.getCustomPragmaVal(collection)
                 ctx.representChild(`itemAccessor`)
@@ -1307,7 +1305,6 @@ proc recGenFieldRepresenters(
           ))
           when `childAccessor`.hasCustomPragma(scalar):
             ctx.overridingScalarStyle = `childAccessor`.getCustomPragmaVal(scalar)
-            echo "set scalar style to ", $ctx.overridingScalarStyle
           when `childAccessor`.hasCustomPragma(collection):
             ctx.overridingCollectionStyle = `childAccessor`.getCustomPragmaVal(collection)
           ctx.representChild(`childAccessor`)

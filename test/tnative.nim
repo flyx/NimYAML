@@ -676,14 +676,16 @@ suite "Serialization":
       flowChild: AsFlow(a: "abc", b: "abc", c: "abc"),
       blockChild: AsFlow(a: "a\nc", b: "abc", c: "ab:")
     )
-    var output = blockOnlyDumper().dump(input)
+    var dumper = blockOnlyDumper()
+    dumper.presentation.maxLineLength = some(20)
+    var output = dumper.dump(input)
     assertStringEqual "flowChild: {\n" &
       "    a: 'abc',\n" &
       "    b: \"abc\",\n" &
       "    c: abc\n" &
       "  }\n" &
       "blockChild:\n" &
-      "  a: \"a\\\nc\"\n" &
+      "  a: \"a\\nc\"\n" &
       "  b: \"abc\"\n" &
       "  c: \"ab:\"\n", output
   

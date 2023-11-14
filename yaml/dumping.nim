@@ -33,7 +33,8 @@ proc setMinimalStyle*(dumper: var Dumper) =
     suppressAttrs: false,
     quoting: sqJson,
     condenseFlow: true,
-    explicitKeys: false
+    explicitKeys: false,
+    maxLineLength: none(int)
   )
   dumper.serialization = SerializationOptions(
     tagStyle: tsNone,

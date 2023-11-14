@@ -53,7 +53,7 @@ suite "Presenter":
   
   test "Forced multiline flow sequence":
     var input = inputSingle(startSeqEvent(), scalarEvent("1"), scalarEvent("2"), endSeqEvent())
-    assertOutput(input, "[\n  1,\n  2\n]\n", PresentationOptions(outputVersion: ovNone, condenseFlow: false))
+    assertOutput(input, "[\n  1,\n  2\n]\n", PresentationOptions(outputVersion: ovNone, condenseFlow: false, containers: cFlow))
     
   test "Compact flow mapping":
     var input = inputSingle(startMapEvent(), scalarEvent("1"), scalarEvent("2"), endMapEvent())

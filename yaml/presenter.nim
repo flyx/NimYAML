@@ -111,9 +111,13 @@ type
     needsWhitespace: int
     wroteDirectivesEnd: bool
     lastImplicitKeyLen: int
+    cached: DeQue[Event]
   
   ItemKind = enum
     ikCompactScalar, ikMultilineFlowScalar, ikBlockScalar, ikCollection
+    
+  MapParseState = enum
+    mpInitial, mpKey, mpValue, mpNeedBlock
 
 proc level(ctx: var Context): var DumperLevel = ctx.levels[^1]
   
@@ -595,7 +599,7 @@ proc startItem(
     of dFlowSequenceItem:
       ctx.append(',')
       ctx.whitespace(true)
-      if not ctx.options.condenseFlow:
+      if not ctx.level.singleLine:
         ctx.newline()
         t.write(repeat(' ', ctx.indentation))
   except CatchableError as ce:
@@ -644,6 +648,49 @@ proc nextItem(
   else:
     result = s.next()
 
+proc checkSingleLine(
+  ctx    : var Context,
+  s      : YamlStream,
+  item   : Event,
+  mapping: bool
+): (bool, MapParseState)  =
+  let style = if mapping: item.mapStyle else: item.seqStyle
+  if ctx.options.newlines == nlNone: return (true, mpInitial)
+  if not ctx.options.condenseFlow: return (false, mpNeedBlock)
+  if (ctx.levels.len > 0 and ctx.state.isFlow) or style == csFlow or
+       (style == csAny and ctx.options.containers != cBlock):
+    result[1] = mpInitial
+    var length = 0
+    while not mapping or result[1] != mpNeedBlock:
+      let next = s.next()
+      ctx.cached.addLast(next)
+      case next.kind
+      of yamlScalar:
+        length += 2 + next.scalarContent.len
+        if next.scalarStyle in [ssFolded, ssLiteral]:
+          length = high(int)
+          result[1] = mpNeedBlock
+          break
+        case result[1]
+        of mpInitial: result[1] = mpKey
+        of mpKey: result[1] = mpValue
+        else: result[1] = mpNeedBlock
+      of yamlAlias:
+        length += 6
+        case result[1]
+        of mpInitial: result[1] = mpKey
+        of mpKey: result[1] = mpValue
+        else: result[1] = mpNeedBlock
+      of yamlEndSeq, yamlEndMap: break
+      else:
+        length = high(int)
+        result[1] = mpNeedBlock
+        break 
+    result[0] = (not mapping or result[1] != mpNeedBlock) and
+      (ctx.options.maxLineLength.isNone or
+      length < ctx.options.maxLineLength.get() - ctx.indentation - 2)
+  else: result = (false, mpNeedBlock) 
+
 proc doPresent(
   ctx: var Context,
   s  : YamlStream,
@@ -651,12 +698,11 @@ proc doPresent(
   YamlPresenterJsonError, YamlPresenterOutputError,
   YamlStreamError
 ].} =
-  var
-    cached = initDeQue[Event]()
-    unclosedDoc = false
+  var unclosedDoc = false
+  ctx.cached = initDeQue[Event]()
   ctx.wroteDirectivesEnd = false
   while true:
-    let item = nextItem(cached, s)
+    let item = nextItem(ctx.cached, s)
     case item.kind
     of yamlStartStream: discard
     of yamlEndStream: break
@@ -801,6 +847,7 @@ proc doPresent(
         e.parent = ce
         raise e
     of yamlStartSeq:
+      let (singleLine, _) = ctx.checkSingleLine(s, item, false)
       var nextState: DumperState
       if (ctx.levels.len > 0 and ctx.state.isFlow) or item.seqStyle == csFlow:
         nextState = dFlowSequenceStart
@@ -810,31 +857,13 @@ proc doPresent(
       else:
         case ctx.options.containers
         of cMixed:
-          var length = 0
-          while true:
-            let next = s.next()
-            cached.addLast(next)
-            case next.kind
-            of yamlScalar:
-              length += 2 + next.scalarContent.len
-              if next.scalarStyle in [ssFolded, ssLiteral]:
-                length = high(int)
-                break
-            of yamlAlias: length += 6
-            of yamlEndSeq: break
-            else:
-              length = high(int)
-              break
-          nextState = if length <= 60: dFlowSequenceStart else: dBlockSequenceItem
+          nextState = if singleLine: dFlowSequenceStart else: dBlockSequenceItem
         of cFlow: nextState = dFlowSequenceStart
         of cBlock:
           let next = s.peek()
-          if next.kind == yamlEndSeq: nextState = dFlowSequenceStart
-          else: nextState = dBlockSequenceItem
+          nextState = if next.kind == yamlEndSeq: dFlowSequenceStart else: dBlockSequenceItem
 
       var indentation = 0
-      var singleLine = ctx.options.condenseFlow or ctx.options.newlines == nlNone
-      
       var wroteAnything = false
       if ctx.levels.len > 0: wroteAnything = ctx.state == dBlockImplicitMapKey
       
@@ -844,6 +873,8 @@ proc doPresent(
       else:
         ctx.startItem(ikCollection)
         indentation = ctx.indentation + ctx.options.indentationStep
+        if nextState.isFlow and not ctx.state.isFlow:
+          inc(indentation, ctx.options.indentationStep)
       
       let wroteAttrs = ctx.writeTagAndAnchor(item.seqProperties)
       if wroteAttrs or (ctx.wroteDirectivesEnd and ctx.levels.len == 0):
@@ -854,12 +885,9 @@ proc doPresent(
           if wroteAttrs or ctx.wroteDirectivesEnd: ctx.safeNewline()
         ctx.safeWrite('[')
       
-      if ctx.levels.len > 0 and not ctx.options.condenseFlow and
-          ctx.state in [dBlockExplicitMapKey, dBlockMapValue,
-                        dBlockImplicitMapKey, dBlockSequenceItem]:
-        if ctx.options.newlines != nlNone: singleLine = false
       ctx.levels.add (nextState, indentation, singleLine, wroteAnything)
     of yamlStartMap:
+      let (singleLine, mps) = ctx.checkSingleLine(s, item, true)
       var nextState: DumperState
       if (ctx.levels.len > 0 and ctx.state.isFlow) or item.mapStyle == csFlow:
         nextState = dFlowMapStart
@@ -869,27 +897,6 @@ proc doPresent(
       else:
         case ctx.options.containers
         of cMixed:
-          type MapParseState = enum
-            mpInitial, mpKey, mpValue, mpNeedBlock
-          var mps: MapParseState = mpInitial
-          while mps != mpNeedBlock:
-            let next = s.next()
-            cached.addLast(next)
-            case next.kind
-            of yamlScalar:
-              case mps
-              of mpInitial: mps = mpKey
-              of mpKey: mps = mpValue
-              else: mps = mpNeedBlock
-              if next.scalarStyle in [ssFolded, ssLiteral]:
-                mps = mpNeedBlock
-            of yamlAlias:
-              case mps
-              of mpInitial: mps = mpKey
-              of mpKey: mps = mpValue
-              else: mps = mpNeedBlock
-            of yamlEndMap: break
-            else: mps = mpNeedBlock
           if mps == mpNeedBlock:
             nextState = dBlockMapValue
           elif ctx.levels.len == 0 or ctx.state == dBlockSequenceItem and item.emptyProperties:
@@ -903,8 +910,6 @@ proc doPresent(
           else: nextState = dBlockMapValue
       
       var indentation = 0
-      var singleLine = ctx.options.condenseFlow or ctx.options.newlines == nlNone
-      
       var wroteAnything = false
       if ctx.levels.len > 0: wroteAnything = ctx.state == dBlockImplicitMapKey
       
@@ -914,6 +919,8 @@ proc doPresent(
       else:
         ctx.startItem(ikCollection)
         indentation = ctx.indentation + ctx.options.indentationStep
+        if nextState.isFlow and not ctx.state.isFlow:
+          inc(indentation, ctx.options.indentationStep)
       
       let wroteAttrs = ctx.writeTagAndAnchor(item.properties)
       if wroteAttrs or (ctx.wroteDirectivesEnd and ctx.levels.len == 0):
@@ -924,10 +931,6 @@ proc doPresent(
           if wroteAttrs or ctx.wroteDirectivesEnd: ctx.safeNewline()
         ctx.safeWrite('{')
 
-      if ctx.levels.len > 0 and not ctx.options.condenseFlow and
-          ctx.state in [dBlockExplicitMapKey, dBlockMapValue,
-                        dBlockImplicitMapKey, dBlockSequenceItem]:
-        if ctx.options.newlines != nlNone: singleLine = false
       ctx.levels.add (nextState, indentation, singleLine, wroteAnything)
     of yamlEndSeq:
       yAssert ctx.levels.len > 0
@@ -937,7 +940,7 @@ proc doPresent(
         try:
           if not level.singleLine:
             ctx.newline()
-            ctx.target.write(repeat(' ', ctx.indentation))
+            ctx.target.write(repeat(' ', level.indentation - ctx.options.indentationStep))
           ctx.target.write(']')
         except CatchableError as ce:
           var e = newException(YamlPresenterOutputError, "")
@@ -954,7 +957,7 @@ proc doPresent(
         try:
           if not level.singleLine:
             ctx.safeNewline()
-            ctx.target.write(repeat(' ', ctx.indentation))
+            ctx.target.write(repeat(' ', level.indentation - ctx.options.indentationStep))
           ctx.append('}')
         except CatchableError as ce:
           var e = newException(YamlPresenterOutputError, "")
