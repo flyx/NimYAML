@@ -54,6 +54,11 @@
               };
               configurePhase = ''
                 mkdir -p docout/api
+                for srcFile in yaml/*.nim; do
+                  echo "generate index for $srcFile"
+                  ${pkgs.nim2}/bin/nim doc --index:only --outdir:docout/api/yaml $srcFile
+                done
+
                 (
                   cd doc
                   for rstFile in *.rst; do
@@ -62,16 +67,19 @@
                   ${pkgs.nim2}/bin/nim c --nimcache:.cache rstPreproc
                   for txtFile in *.txt; do
                     ./rstPreproc -o:tmp.rst $txtFile
-                    ${pkgs.nim2}/bin/nim rst2html -o:../docout/''${txtFile%.txt}.html tmp.rst
+                    fn=$(basename -- "$txtFile")
+                    ${pkgs.nim2}/bin/nim rst2html -o:../docout/''${fn%.txt}.html tmp.rst
+                    rm tmp.rst
                   done
                   cp docutils.css style.css processing.svg github-mark-white.svg ../docout
                 )
-                ${pkgs.nim2}/bin/nim doc2 -o:docout/api/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/${
+
+                ${pkgs.nim2}/bin/nim doc -o:docout/api/yaml.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/${
                   self.rev or "master"
                 } yaml
                 for srcFile in yaml/*.nim; do
                   bn=''${srcFile#yaml/}
-                  ${pkgs.nim2}/bin/nim doc2 -o:docout/api/''${bn%.nim}.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/yaml/${
+                  ${pkgs.nim2}/bin/nim doc -o:docout/api/yaml/''${bn%.nim}.html --docSeeSrcUrl:https://github.com/flyx/NimYAML/blob/yaml/${
                     self.rev or "master"
                   } $srcFile
                 done

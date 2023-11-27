@@ -17,7 +17,7 @@
 ## available as source files for automatic testing. This way, we can make sure
 ## that the code in the docs actually works.
 
-import parseopt, streams, tables, strutils, os, options, algorithm
+import parseopt, streams, tables, strutils, unicode, os, options, algorithm
 
 var
   infile = ""
@@ -62,7 +62,7 @@ var tmpOut = newFileStream(path.get(), fmWrite)
 proc append(s: string) =
   tmpOut.writeLine(s)
 
-const headingChars = ['=', '-', '`', ':', '\'']
+const headingChars = ['=', '-', '^', ':', '\'']
 
 proc outputExamples(curPath: string, level: int = 0) =
   let titlePath = curPath / "title"

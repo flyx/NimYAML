@@ -2,6 +2,12 @@
 API Overview
 ============
 
+.. importdoc::
+  api/yaml/loading.nim, api/yaml/dumping.nim, api/yaml/annotations.nim,
+  api/yaml/taglib.nim, api/yaml/style.nim, api/yaml/dom.nim, api/yaml/tojson.nim,
+  api/yaml/parser.nim, api/yaml/presenter.nim, api/yaml/data.nim,
+  api/yaml/stream.nim  
+
 Introduction
 ============
 
@@ -24,19 +30,18 @@ processing pipeline. The items and terminology YAML defines is shown in
 Intermediate Representation
 ===========================
 
-The base of all YAML processing with NimYAML is the
-`YamlStream <api/stream.html#YamlStream>`_. This is basically an iterator over
-`Event <api/data.html#Event>`_ objects. Every proc that
-represents a single stage of the loading or dumping process will either take a
-``YamlStream`` as input or return a ``YamlStream``. Procs that implement the
-whole process in one step hide the ``YamlStream`` from the user. Every proc that
-returns a ``YamlStream`` guarantees that this stream is well-formed according to
-the YAML specification.
+The base of all YAML processing with NimYAML is the `YamlStream`_. This is an
+iterator over `Event`_ objects. Every proc that represents a single stage of
+the loading or dumping process will either take a ``YamlStream`` as input or
+return a ``YamlStream``. Procs that implement the whole process in one step
+hide the ``YamlStream`` from the caller. Every proc that returns a
+``YamlStream`` guarantees that this stream is well-formed according to the
+YAML specification.
 
 This stream-oriented API can efficiently be used to parse large amounts of data.
 The drawback is that errors in the input are only discovered while processing
 the ``YamlStream``. If the ``YamlStream`` encounters an exception while
-producing the next event, it will throw a ``YamlStreamError`` which contains the
+producing the next event, it will throw a `YamlStreamError`_ which contains the
 original exception as ``parent``. The caller should know which exceptions are
 possible as parents of ``YamlStream`` because they know the source of the
 ``YamlStream`` they provided.
@@ -44,21 +49,19 @@ possible as parents of ``YamlStream`` because they know the source of the
 Loading YAML
 ============
 
-If you want to load YAML character data directly into a native Nim variable, you
-can use `load <api/loading.html#load%2C%2CK>`_. This is the easiest and
-recommended way to load YAML data. This section gives an overview about how
-``load`` is implemented. It is absolutely possible to reimplement the loading
-step using the low-level API.
+If you want to load YAML character data directly into a native Nim variable,
+you can use `load`_. This is the easiest and recommended way to load YAML
+data. This section gives an overview about how ``load`` is implemented. It is
+absolutely possible to reimplement the loading step using the low-level API.
 
-For parsing, a `YamlParser <api/parser.html#YamlParser>`_ object is needed.
-This object stores some state while parsing that may be useful for error
-reporting to the user. The `parse <api/parser.html#parse,YamlParser,Stream>`_
+For parsing, a `YamlParser`_ object is needed. This object stores some state
+while parsing that may be useful for error reporting to the user. The `parse`_
 proc implements the YAML processing step of the same name. All syntax errors in
 the input character stream are processed by ``parse``, which will raise a
-``YamlParserError`` if it encounters a syntax error.
+`YamlParserError`_ if it encounters a syntax error.
 
 Transforming a ``YamlStream`` to a native YAML object is done via
-``construct``. It skips the ``compose`` step for efficiency reasons. As Nim is
+`construct`_. It skips the **compose** step for efficiency reasons. As Nim is
 statically typed, you have to know the target type when you write your loading
 code. This is different from YAML APIs of dynamically typed languages. If you
 cannot know the type of your YAML input at compile time, you have to manually
@@ -67,43 +70,40 @@ process the ``YamlStream`` to serve your needs.
 Dumping YAML
 ============
 
-Dumping is preferredly done with
-`dump <api/dumping.html#dump%2CDumper%2CK>`_,
-which serializes a native Nim value to a character stream. As with ``load``,
-the following paragraph describes how ``dump`` is implemented using the
-low-level API.
+Dumping is preferably done with `dump`_, which serializes a native Nim value
+to a character stream. As with ``load``, this section describes how
+``dump`` is implemented using the low-level API.
 
-A Nim value is transformed into a ``YamlStream`` with
-`represent <api/native.html#represent%2CT%2CSerializationOptions>`_.
-Depending on the ``AnchorStyle`` you specify in the given ``SerializationOptions``, this will transform ``ref``
-variables with multiple instances into anchored elements and aliases (for
-``asTidy`` and ``asAlways``) or write the same element into all places it
-occurs (for ``asNone``). Be aware that if you use ``asNone``, the value you
-serialize might not round-trip.
+A Nim value is transformed into a ``YamlStream`` with `represent`_.
+Depending on the `AnchorStyle`_ you specify in the `SerializationOptions`_ of
+your `Dumper`_, this will transform ``ref`` variables with multiple instances
+into anchored elements and aliases (for ``asTidy`` and ``asAlways``) or write
+the same element into all places it occurs (for ``asNone``). Be aware that if
+you use ``asNone``, the value you serialize might not round-trip.
 
 Transforming a ``YamlStream`` into YAML character data is done with
-`present <api/presenter.html#present%2CYamlStream%2CStream%2CPresentationOptions>`_.
-You can choose from multiple presentation styles. ``psJson`` is not able to
-process some features of ``YamlStream`` s, the other styles support all features
-and are guaranteed to round-trip to the same ``YamlStream`` if you parse the
-generated YAML character stream again.
+`present`_ which is customized by your Dumper's `PresentationOptions`_. The
+Dumper provides multiple presets, for example the `jsonDumper`_ dumps your
+value in JSON style (which is also valid YAML since YAML is a superset of
+JSON).
 
 The Document Object Model
 =========================
 
 Unlike XML, YAML does not define an official *document object model*. However,
 if you cannot or do not want to load a YAML input stream to native Nim types,
-you can load it into the predefined type `YamlNode <api/dom.html#YamlNode>`_.
-You can also use this type inside your native types to deserialize parts of the
-YAML input into it. Likewise, you can serialize a ``YamlNode`` into YAML. You
-can use this to preserve parts of YAML data you do not wish to or cannot fully
-deserialize.
+you can load it into the predefined type `YamlNode`_. You can also use this
+type inside your native types to deserialize parts of the YAML input into it.
+Likewise, you can serialize a ``YamlNode`` into YAML. You can use this to
+preserve parts of YAML data you do not wish to or cannot fully deserialize.
 
-A ``YamlNode`` preserves its given tag and the tags of any child nodes. However,
-anchors will be resolved during loading and re-added during serialization. It is
-allowed for a ``YamlNode`` to occur multiple times within source/target root
-object, in which case it will be serialized once and referred to afterwards via
-aliases.
+A ``YamlNode`` preserves its given tag and the tags of any child nodes, and
+also its style (which means, unless you override style with Dumper options,
+the node will be serialized with the same style it had originally).
+However, anchors will be resolved during loading and re-added during
+serialization. It is possible for a ``YamlNode`` to occur multiple times within
+source/target root object, in which case it will be serialized once and
+referred to afterwards via aliases.
 
 ``YamlNode`` is allocated on the heap and using it will be slower and consume
 more memory than deserializing into native types.

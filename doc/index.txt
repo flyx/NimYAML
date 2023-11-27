@@ -16,6 +16,9 @@ install it with `Nimble <https://github.com/nim-lang/nimble>`_:
 .. code-block:: bash
   nimble install yaml
 
+You can find a conceptual overview of the library `here <api.html>`_ and an 
+overview over the library's API `here <api/yaml.html>`_.
+
 NimYAML 2.x
 ===========
 

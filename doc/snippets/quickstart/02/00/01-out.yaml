@@ -1,0 +1,12 @@
+strings:
+  first: 'foo'
+  second: |
+    bar
+  third: "baz"
+numbers: {
+    start: 0,
+    stop: 23
+  }
+blockNumbers:
+  start: 23
+  stop: 42

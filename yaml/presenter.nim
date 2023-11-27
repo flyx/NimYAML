@@ -188,6 +188,8 @@ proc inspect(
   ## For example, the presenter is currently unable to emit multi-line plain
   ## scalars, therefore multi-line string will never yield ssPlain. Similarly,
   ## ssFolded will never be returned if there are more-indented lines.
+  lines.setLen(0)
+  words.setLen(0)
   var
     inLine = false
     inWord = false
