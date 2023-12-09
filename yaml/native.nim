@@ -1456,7 +1456,7 @@ proc constructChild*[T](
   let item = ctx.input.peek()
   when isImplicitVariantObject(T):
     const checkRes = canBeImplicit(T)
-    when not len(checkRes) > 0:
+    when len(checkRes) > 0:
       {. fatal: "cannot be marked as implicit: " & checkRes .}
     var possibleTags = newSeq[Tag]()
     case item.kind
