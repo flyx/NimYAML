@@ -1434,20 +1434,20 @@ proc isImplicitVariantObject(t: typedesc): bool {.compileTime.} =
   else:
     return false
 
-proc canBeImplicit(t: typedesc): bool {.compileTime.} =
+proc canBeImplicit(t: typedesc): string {.compileTime.} =
+  ## returns empty string if type can be implicit, else the reason why it can't
   let tDesc = getType(t)
-  if tDesc.kind != nnkObjectTy: return false
-  if tDesc[2].len != 1: return false
-  if tDesc[2][0].kind != nnkRecCase: return false
+  if tDesc.kind != nnkObjectTy: return "type is not an object"
+  if tDesc[2].len != 1 or tDesc[2][0].kind != nnkRecCase:
+    return "type doesn't exclusively contain record case"
   var foundEmptyBranch = false
   for i in 1.. tDesc[2][0].len - 1:
     case tDesc[2][0][i][1].recListlen # branch contents
     of 0:
-      if foundEmptyBranch: return false
+      if foundEmptyBranch: return "record case has more than one empty branch"
       else: foundEmptyBranch = true
     of 1: discard
-    else: return false
-  return true
+    else: return "record case contains more than one field"
 
 proc constructChild*[T](
   ctx   : var ConstructionContext,
@@ -1455,8 +1455,9 @@ proc constructChild*[T](
 ) =
   let item = ctx.input.peek()
   when isImplicitVariantObject(T):
-    when not canBeImplicit(T):
-      {. fatal: "This type cannot be marked as implicit" .}
+    const checkRes = canBeImplicit(T)
+    when not len(checkRes) > 0:
+      {. fatal: "cannot be marked as implicit: " & checkRes .}
     var possibleTags = newSeq[Tag]()
     case item.kind
     of yamlScalar:
