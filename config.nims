@@ -6,7 +6,7 @@ task build, "Compile the YAML module into a library":
 task test, "Run all tests":
   --r
   --verbosity:0
-  setCommand "c", "test/tests"
+  setCommand "c", "test/tnimregress"
 
 task lexerTests, "Run lexer tests":
   --r

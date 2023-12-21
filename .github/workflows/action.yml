@@ -13,9 +13,8 @@ jobs:
           - windows-latest
           - macOS-latest
         nim-version:
-          - '2.0.x'
-          - stable
-          - devel
+          - '2.0.0'
+          - '2.0.2'
     steps:
     - name: Checkout
       uses: actions/checkout@v2
@@ -47,11 +46,4 @@ jobs:
 
     - name: Test
       run: |
-        nim lexerTests
-        nim parserTests
-        nim jsonTests
-        nim domTests
-        nim nativeTests
-        nim quickstartTests
-        nim hintsTests
-        nim presenterTests
+        nim test
