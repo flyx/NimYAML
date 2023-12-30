@@ -963,6 +963,12 @@ proc recEnsureAllFieldsPresent(
       stmt.add(checkMissing(s, tDecl, tName, child, field, matched, o, m))
     inc(field)
 
+proc getTypedescType(t: typedesc): NimNode {.compileTime.} =
+  ## workaround for https://github.com/nim-lang/Nim/issues/23112
+  result = getType(t)
+  while result.kind == nnkBracketExpr and result[0].eqIdent"typeDesc":
+    result = getType(result[1])
+
 macro ensureAllFieldsPresent(
   s      : YamlStream,
   t      : typedesc,
@@ -1436,7 +1442,7 @@ proc isImplicitVariantObject(t: typedesc): bool {.compileTime.} =
 
 proc canBeImplicit(t: typedesc): string {.compileTime.} =
   ## returns empty string if type can be implicit, else the reason why it can't
-  let tDesc = getType(t)
+  let tDesc = getTypedescType(t)
   if tDesc.kind != nnkObjectTy: return "type is not an object"
   if tDesc[2].len != 1 or tDesc[2][0].kind != nnkRecCase:
     return "type doesn't exclusively contain record case"
