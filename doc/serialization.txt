@@ -2,17 +2,22 @@
 Serialization Overview
 ======================
 
+.. importdoc::
+  api/yaml/loading.nim, api/yaml/dumping.nim, api/yaml/native.nim,
+  api/yaml/annotations.nim, api/yaml/taglib.nim, api/yaml/style.nim,
+  api/yaml/dom.nim, api/yaml/tojson.nim,
+  api/yaml/parser.nim, api/yaml/presenter.nim, api/yaml/data.nim,
+  api/yaml/stream.nim 
+
 Introduction
 ============
 
 NimYAML tries hard to make transforming YAML characters streams to native Nim
 types and vice versa as easy as possible. In simple scenarios, you might not
-need anything else than the two procs
-`dump <api/dumping.html#dump%2CDumper%2CK>`_
-and `load <api/loading.html#load%2C%2CK>`_. On the other side, the process
-should be as customizable as possible to allow the user to tightly control how
-the generated YAML character stream will look and how a YAML character stream is
-interpreted.
+need anything else than the two procs `dump`_ and `load`_. On the other side,
+the process should be as customizable as possible to allow the user to tightly
+control how the generated YAML character stream will look and how a YAML
+character stream is interpreted.
 
 An important thing to remember in NimYAML is that unlike in interpreted
 languages like Ruby, Nim cannot load a YAML character stream without knowing the
@@ -89,7 +94,7 @@ However, it doesn't need to. For example, if you have a YAML file like this:
     - 1
     - 2
 
-You can simply load it into a `seq[int]`. If your YAML file contains differently
+You can simply load it into a ``seq[int]``. If your YAML file contains differently
 typed values in the same collection, you can use an implicit variant object, see
 below.
 
@@ -247,9 +252,8 @@ These tags are generated on the fly based on the types you instantiate
 ``Table`` or ``seq`` with.
 
 You may customize the tags used for your types by using the template
-`setTagUri <api/taglib.html#setTagUri.t%2Ctypedesc%2Cstring>`_. It may not
-be applied to scalar and collection types implemented by NimYAML, but you can
-for example use it on a certain ``seq`` type:
+`setTagUri`_. It may not be applied to scalar and collection types implemented
+by NimYAML, but you can for example use it on a certain ``seq`` type:
 
 .. code-block:: nim
 
@@ -378,22 +382,20 @@ representObject
     proc representObject*(
       ctx  : var SerializationContext,
       value: MyObject,
-      tag  : TagId,
+      tag  : Tag,
     ): {.raises: [YamlSerializationError].}
 
 This proc should push a list of tokens that represent the type into the
 serialization context via ``ctx.put``. Follow the following guidelines when
 implementing a custom ``representObject`` proc:
 
-- You can use the helper template
-  `presentTag <api/native.html#presentTag%2CSerializationContext%2Ctypedesc>`_
-  for outputting the tag.
 - Always output the first token with a ``yAnchorNone``. Anchors will be set
   automatically by ``ref`` type handling.
 - When outputting non-scalar types, you should use ``representChild`` for
   contained values.
 - Always use the ``tag`` parameter as tag for the first token you generate.
-- Never write a ``representObject`` proc for ``ref`` types.
+- Never write a ``representObject`` proc for ``ref`` types, instead write the
+  proc for the ref'd type.
 
 The following example for representing to a YAML scalar is the actual
 implementation of representing ``int`` types:

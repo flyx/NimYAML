@@ -1,4 +1,4 @@
-## 2.1.0 (upcoming)
+## 2.1.0
 
 Features:
 
@@ -39,6 +39,8 @@ Bugfixes:
  * Fixed a bug that prevented the presenter from outputting compact
    flow mappings in cMixed mode.
  * Fixed block scalars as mapping keys not being presented properly.
+ * Added workaround for a regression bug in Nim 2.0.2
+   (https://github.com/nim-lang/Nim/issues/23112)
 
 ## 2.0.0
 

@@ -1,9 +1,6 @@
-%YAML 1.2
-%TAG !n! tag:nimyaml.org,2016:
----
 - this is a string
 - 42
 - false
 - !!str 23
-- !n!demo:Person {name: Trillian}
+- !Person {name: Trillian}
 - !!null

@@ -3,10 +3,11 @@ API Overview
 ============
 
 .. importdoc::
-  api/yaml/loading.nim, api/yaml/dumping.nim, api/yaml/annotations.nim,
-  api/yaml/taglib.nim, api/yaml/style.nim, api/yaml/dom.nim, api/yaml/tojson.nim,
+  api/yaml/loading.nim, api/yaml/dumping.nim, api/yaml/native.nim,
+  api/yaml/annotations.nim, api/yaml/taglib.nim, api/yaml/style.nim,
+  api/yaml/dom.nim, api/yaml/tojson.nim,
   api/yaml/parser.nim, api/yaml/presenter.nim, api/yaml/data.nim,
-  api/yaml/stream.nim  
+  api/yaml/stream.nim 
 
 Introduction
 ============

@@ -23,7 +23,7 @@ type
     of ckNone:
       discard
 
-setTag(Person, nimTag("demo:Person"))
+setTag(Person, Tag("!Person"))
 
 var list: seq[Container]
 

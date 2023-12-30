@@ -2,7 +2,7 @@ import yaml, yaml/data, yaml/parser, yaml/hints, streams
 type Person = object
   name: string
 
-setTag(Person, nimTag("demo:Person"), yTagPerson)
+setTag(Person, Tag("!Person"), yTagPerson)
 
 var
   s = newFileStream("in.yaml", fmRead)
