@@ -1,6 +1,6 @@
 # Package
 
-version       = "2.1.0"
+version       = "2.1.1"
 author        = "Felix Krause"
 description   = "YAML 1.2 implementation for Nim"
 license       = "MIT"

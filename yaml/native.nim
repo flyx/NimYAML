@@ -451,10 +451,10 @@ proc representObject*[T: float|float32|float64](
 ) {.raises: [].} =
   ## represents a float value as YAML scalar
   case value
-  of Inf: ctx.put(scalarEvent(".inf", tag, ctx.scalarStyleFor(T)))
-  of NegInf: ctx.put(scalarEvent("-.inf", tag, ctx.scalarStyleFor(T)))
-  of NaN: ctx.put(scalarEvent(".nan", tag, ctx.scalarStyleFor(T)))
-  else: ctx.put(scalarEvent($value, tag, ctx.scalarStyleFor(T)))
+  of Inf: ctx.put(scalarEvent(".inf", tag, yAnchorNone, ctx.scalarStyleFor(T)))
+  of NegInf: ctx.put(scalarEvent("-.inf", tag, yAnchorNone, ctx.scalarStyleFor(T)))
+  of NaN: ctx.put(scalarEvent(".nan", tag, yAnchorNone, ctx.scalarStyleFor(T)))
+  else: ctx.put(scalarEvent($value, tag, yAnchorNone, ctx.scalarStyleFor(T)))
 
 proc yamlTag*(T: typedesc[bool]): Tag {.inline, raises: [].} = yTagBoolean
 

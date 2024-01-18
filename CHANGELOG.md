@@ -1,3 +1,9 @@
+## 2.1.1
+
+Bugfixes:
+
+ * Fixed a bug that prevented float values to be serialized (#141)
+
 ## 2.1.0
 
 Features:

@@ -35,7 +35,7 @@ type
     name: string
     case kind: AnimalKind
     of akCat:
-      purringIntensity: int
+      purringIntensity: float
     of akDog: barkometer: int
 
   DumbEnum = enum
@@ -488,26 +488,26 @@ suite "Serialization":
 
   dualTest "Load custom variant object":
     let input =
-      "---\n- - name: Bastet\n  - kind: akCat\n  - purringIntensity: 7\n" &
+      "---\n- - name: Bastet\n  - kind: akCat\n  - purringIntensity: 7.2\n" &
       "- - name: Anubis\n  - kind: akDog\n  - barkometer: 13"
     var result: seq[Animal]
     load(input, result)
     assert result.len == 2
     assert result[0].name == "Bastet"
     assert result[0].kind == akCat
-    assert result[0].purringIntensity == 7
+    assert abs(result[0].purringIntensity - 7.2) < 1E-7
     assert result[1].name == "Anubis"
     assert result[1].kind == akDog
     assert result[1].barkometer == 13
 
   test "Dump custom variant object":
-    let input = @[Animal(name: "Bastet", kind: akCat, purringIntensity: 7),
+    let input = @[Animal(name: "Bastet", kind: akCat, purringIntensity: 7.2),
                   Animal(name: "Anubis", kind: akDog, barkometer: 13)]
     var output = blockOnlyDumper().dump(input)
     assertStringEqual "" &
         "- - name: Bastet\n" &
         "  - kind: akCat\n" &
-        "  - purringIntensity: 7\n" &
+        "  - purringIntensity: 7.2\n" &
         "- - name: Anubis\n" &
         "  - kind: akDog\n" &
         "  - barkometer: 13\n", output
