@@ -541,7 +541,12 @@ proc startItem(
         ctx.whitespace()
         ctx.state = dBlockExplicitMapKey
       else: ctx.state = dBlockImplicitMapKey
-    of dBlockInlineMap: ctx.state = dBlockImplicitMapKey
+    of dBlockInlineMap:
+      if kind != ikCompactScalar or ctx.options.explicitKeys:
+        ctx.append('?')
+        ctx.whitespace()
+        ctx.state = dBlockExplicitMapKey
+      else: ctx.state = dBlockImplicitMapKey
     of dBlockExplicitMapKey:
       ctx.newline()
       t.write(repeat(' ', ctx.indentation))
