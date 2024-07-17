@@ -14,6 +14,8 @@
 import json, streams, strutils, tables
 import data, hints, native, stream, private/internal, parser
 
+export YamlConstructionError, YamlParserError
+
 # represents a single YAML level. The `node` with name `key`.
 # `expKey` is used to indicate that an empty node shall be filled
 type Level = tuple[node: JsonNode, key: string, expKey: bool]

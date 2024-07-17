@@ -14,7 +14,7 @@
 
 import std / [ streams ]
 import native, parser, private/internal
-export native
+export native, YamlConstructionError, YamlParserError
 
 proc load*[K](input: Stream | string, target: var K)
     {.raises: [YamlConstructionError, IOError, OSError, YamlParserError].} =
