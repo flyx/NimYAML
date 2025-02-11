@@ -18,29 +18,23 @@ jobs:
           - devel
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         submodules: true
 
-    - name: Cache choosenim
-      id: cache-choosenim
-      uses: actions/cache@v2
-      with:
-        path: ~/.choosenim
-        key: ${{ runner.os }}-choosenim-${{ matrix.nim-version}}
-
     - name: Cache nimble
       id: cache-nimble
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: ~/.nimble
         key: ${{ runner.os }}-nimble-${{ matrix.nim-version}}-${{ hashFiles('yaml.nimble') }}
         restore-keys: |
           ${{ runner.os }}-nimble-${{ matrix.nim-version}}-
     - name: Setup nim
-      uses: jiro4989/setup-nim-action@v1
+      uses: jiro4989/setup-nim-action@v2
       with:
         nim-version: ${{ matrix.nim-version }}
+        repo-token: ${{ github.token }}
 
     - name: Install Packages
       run: nimble install -y
@@ -55,3 +49,4 @@ jobs:
         nim quickstartTests
         nim hintsTests
         nim presenterTests
+        nim annotationTests
