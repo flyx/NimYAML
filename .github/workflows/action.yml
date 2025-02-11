@@ -16,6 +16,10 @@ jobs:
           - '2.0.x'
           - stable
           - devel
+        exclude:
+          # setup-nim-action doesn't support this
+          - os: windows-latest
+            nim-version: devel
     steps:
     - name: Checkout
       uses: actions/checkout@v4
