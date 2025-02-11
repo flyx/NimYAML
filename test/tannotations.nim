@@ -31,10 +31,15 @@ type
        strVal: string
      of ckInt:
        intVal: int
-  
+
   Sparse {.sparse.} = ref object of RootObj
      name*: Option[string]
      description*: Option[string]
+
+  DifferentKeys = object
+    xx {.yamlKey: "xy".}: string
+    xy {.yamlKey: "zz".}: int
+    xz {.yamlKey: "a".}, xa {.yamlKey: "y".}: string
 
 suite "Serialization Annotations":
   test "load default value":
@@ -70,10 +75,30 @@ suite "Serialization Annotations":
     assert len(result) == 2
     assert result[0].kind == ckString
     assert result[1].kind == ckInt
-  
+
   test "load sparse type":
     let input = "{}"
     var result: Sparse
     load(input, result)
     assert result.name.isNone
     assert result.description.isNone
+
+  test "load different keys":
+    let input = "{xy: foo, zz: 42, a: bar, y: baz}"
+    var result: DifferentKeys
+    load(input, result)
+    assert result.xx == "foo"
+    assert result.xy == 42
+    assert result.xz == "bar"
+    assert result.xa == "baz"
+
+  test "write different keys":
+    let input = DifferentKeys(
+      xx: "foo",
+      xy: 42,
+      xz: "bar",
+      xa: "baz"
+    )
+    var dumper = minimalDumper()
+    let result = dumper.dump(input)
+    assert result == "{xy: foo, zz: 42, a: bar, y: baz}\n"

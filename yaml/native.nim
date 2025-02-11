@@ -34,7 +34,7 @@ type
     ##   where necessary.
     ## - ``tsAll``: Tags will be outputted for every object.
     tsNone, tsRootOnly, tsAll
-  
+
   AnchorStyle* = enum
     ## How ref object should be serialized.
     ##
@@ -841,7 +841,7 @@ macro matchMatrix(t: typedesc): untyped =
     result = quote do:
       (seq[bool])(@[])
     return
-  
+
   result = newNimNode(nnkBracket)
   for i in 0..<numFields:
     result.add(newLit(false))
@@ -906,7 +906,7 @@ proc ifNotTransient(
   o, field : NimNode,
   content  : openarray[NimNode],
   elseError: bool,
-  s, m : NimNode, 
+  s, m : NimNode,
   tName: string = "",
   fName: string = "",
 ):
@@ -993,6 +993,35 @@ proc skipOverValue(s: var YamlStream) =
       of yamlScalar, yamlAlias: discard
       else: internalError("Unexpected event kind.")
 
+proc checkYamlKeyPragma(fieldName: string, implRecList: NimNode, keyName: var string) {.compileTime.} =
+  ## checks whether the field with the given name has a yamlKey pragma and if so,
+  ## assigns its value to keyName.
+  ## the implRecList must be the nnkRecList of the type instance's impl.
+
+  # multiple fields can be defined in each entry of the reclist.
+  # therefore, we search through each of them until we find the symbol
+  for defs in implRecList.children:
+    yAssert defs.kind == nnkIdentDefs
+    # the last two items are the type and usually nnkEmpty (not sure what might be there).
+    for i in 0..defs.len - 3:
+      let fieldDecl = defs[i]
+      if fieldDecl.kind == nnkPragmaExpr:
+        var name: string
+        if fieldDecl[0].kind == nnkPostfix:
+          name = $fieldDecl[0][1]
+        else:
+          name = $fieldDecl[0]
+        if name == fieldName:
+          let pragmaNode = fieldDecl[1]
+          yAssert pragmaNode.kind == nnkPragma
+          if pragmaNode[0].kind == nnkExprColonExpr:
+            if $pragmaNode[0][0] == "yamlKey":
+              keyName = $pragmaNode[0][1]
+          return
+      elif fieldDecl.kind == nnkPostfix:
+        if $fieldDecl[1] == fieldName: return
+      elif $fieldDecl == fieldName: return
+
 proc addFieldCases(
   tDecl, context  : NimNode,
   name, o, matched: NimNode,
@@ -1001,11 +1030,18 @@ proc addFieldCases(
   caseStmt  : NimNode,
   fieldIndex: var int,
 ) {.compileTime.} =
-  var
+  let
     tDesc = getType(tDecl[1])
     tParent = parentType(tDesc)
   if tParent != nil:
     addFieldCases(tParent, context, name, o, matched, failOnUnknown, m, tName, caseStmt, fieldIndex)
+
+  # we need the type impl declaration to check for the yamlKey pragma
+  let
+    tInst = tDesc.getTypeInst
+    tImpl = tInst.getImpl
+    tRecList = tImpl[2][2]
+
   for child in tDesc[2].children:
     if child.kind == nnkRecCase:
       let
@@ -1068,7 +1104,11 @@ proc addFieldCases(
           caseStmt.add(ob)
     else:
       yAssert child.kind == nnkSym
-      var ob = newNimNode(nnkOfBranch).add(newStrLitNode($child))
+
+      var keyName = $child
+      checkYamlKeyPragma($child, tRecList, keyName)
+
+      var ob = newNimNode(nnkOfBranch).add(newStrLitNode(keyName))
       let field = newDotExpr(o, newIdentNode($child))
       ob.add(ifNotTransient(o, child,
           [checkDuplicate(input(context), tName, $child, fieldIndex, matched, m),
@@ -1078,7 +1118,7 @@ proc addFieldCases(
     inc(fieldIndex)
 
 macro constructFieldValue(
-  t: typedesc, 
+  t: typedesc,
   context, name, o, matched: untyped,
   failOnUnknown: bool,
   m: untyped,
@@ -1282,7 +1322,7 @@ proc recGenFieldRepresenters(
                 ctx.put(startMapEvent())
                 ctx.put(scalarEvent(
                   `name`,
-                  tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark 
+                  tag = if ctx.emitTag: yTagNimField else: yTagQuestionMark
                 ))
                 when `itemAccessor`.hasCustomPragma(scalar):
                   ctx.overridingScalarStyle = `itemAccessor`.getCustomPragmaVal(scalar)
@@ -1304,11 +1344,18 @@ proc recGenFieldRepresenters(
       result.add(quote do:
         template `templName` {.used.} =
           when bool(`isVO`): ctx.put(startMapEvent())
-          ctx.put(scalarEvent(
-            `name`,
-            if ctx.emitTag: yTagNimField else: yTagQuestionMark,
-            yAnchorNone
-          ))
+          when `childAccessor`.hasCustomPragma(yamlKey):
+            ctx.put(scalarEvent(
+              `childAccessor`.getCustomPragmaVal(yamlKey),
+              if ctx.emitTag: yTagNimField else: yTagQuestionMark,
+              yAnchorNone
+            ))
+          else:
+            ctx.put(scalarEvent(
+              `name`,
+              if ctx.emitTag: yTagNimField else: yTagQuestionMark,
+              yAnchorNone
+            ))
           when `childAccessor`.hasCustomPragma(scalar):
             ctx.overridingScalarStyle = `childAccessor`.getCustomPragmaVal(scalar)
           when `childAccessor`.hasCustomPragma(collection):
@@ -1805,4 +1852,3 @@ proc represent*[T](
       of yamlAlias: item.aliasTarget = ctx.map(item.aliasTarget)
       else: discard
   result = bys
-  

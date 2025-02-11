@@ -48,6 +48,11 @@ task presenterTests, "Run presenter tests":
   --verbosity:0
   setCommand "c", "test/tpresenter"
 
+task annotationTests, "Run annotation tests":
+  --r
+  --verbosity:0
+  setCommand "c", "test/tannotations"
+
 task bench, "Benchmarking":
   --r
   --w:off

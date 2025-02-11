@@ -22,7 +22,7 @@ type
     ## Default initialization yields the style that can be set via
     ## ``setDefaultStyle``.
     presentation* : PresentationOptions
-    serialization*: SerializationOptions 
+    serialization*: SerializationOptions
 
 proc setMinimalStyle*(dumper: var Dumper) =
   ## Output preset. Tries to output single line flow-only output.
@@ -31,7 +31,7 @@ proc setMinimalStyle*(dumper: var Dumper) =
     containers: cFlow,
     directivesEnd: deIfNecessary,
     suppressAttrs: false,
-    quoting: sqJson,
+    quoting: sqUnset,
     condenseFlow: true,
     explicitKeys: false,
     maxLineLength: none(int)
@@ -43,7 +43,7 @@ proc setMinimalStyle*(dumper: var Dumper) =
 
 proc minimalDumper*(): Dumper =
   result.setMinimalStyle()
-  
+
 proc setExplanatoryStyle*(dumper: var Dumper) =
   ## Output preset. Generates specific tags for all nodes, uses flow style,
   ## quotes all string scalars. Enables the ``!n!`` tag shorthand.
@@ -129,7 +129,7 @@ proc dump*[K](
   try: present(events, target, dumper.presentation)
   except YamlStreamError as e:
     internalError("Unexpected exception: " & $e.name)
-  
+
 proc dump*[K](
   dumper: Dumper,
   value: K,

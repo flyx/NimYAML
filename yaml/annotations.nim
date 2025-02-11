@@ -85,3 +85,15 @@ template implicit*() {.pragma.}
   ##       strVal: string
   ##     of ckInt:
   ##       intVal: int
+
+template yamlKey*(value: string) {.pragma.}
+  ## This annotation can be put on an object field.
+  ## It causes NimYAML to load the field's value from a
+  ## YAML value whose key matches the given argument, instead
+  ## of the field name.
+  ##
+  ## Example usage:
+  ##
+  ## .. code-block::
+  ##   type MyObject = object
+  ##     a {.yamlKey: "b".}: string
