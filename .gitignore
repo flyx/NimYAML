@@ -1,5 +1,6 @@
 nimcache
 test/tests
+test/tannotations
 test/tlex
 test/tdom
 test/tnative

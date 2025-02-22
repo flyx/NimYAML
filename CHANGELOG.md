@@ -1,3 +1,15 @@
+## 2.2.0
+
+Features:
+
+ * added `yamlKey` annotation that lets you load/write an object field
+   from/to a YAML value with a key different from the field name. (#146)
+
+Bugfixes:
+
+ * Fixed a bug that made presenter sometimes emit incorrect YAML
+   in a mapping with long entries (#143)
+
 ## 2.1.1
 
 Bugfixes:
