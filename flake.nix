@@ -122,10 +122,14 @@
             systemd.services.nimyaml-webdocs = {
               wantedBy = [ "multi-user.target" ];
               after = [ "network.target" ];
-              serviceConfig.ExecStart = ''
-                ${webdocs}/bin/nimyaml-docs-server --address="${cfg.address}" --port=${
-                  toString cfg.port
-                }'';
+              serviceConfig = {
+                Restart = "on-failure";
+                RestartSec = "5s";
+                ExecStart = ''
+                  ${webdocs}/bin/nimyaml-docs-server --address="${cfg.address}" --port=${
+                    toString cfg.port
+                  }'';
+              };
             };
           };
         };
