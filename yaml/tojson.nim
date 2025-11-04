@@ -70,7 +70,7 @@ proc jsonFromScalar(
       result = JsonNode(kind: JNull)
     else:
       result = JsonNode(kind: JString)
-      when defined(gcArc) or defined(gcOrc):
+      when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
         result.str = content
       else:
         shallowCopy(result.str, content)

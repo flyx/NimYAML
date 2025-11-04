@@ -164,7 +164,7 @@ proc constructChild*(
       c.refs[target] = (tag: yamlTag(YamlNode), p: cast[pointer](result))
 
   var start: Event
-  when defined(gcArc) or defined(gcOrc):
+  when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
     start = ctx.input.next()
   else:
     shallowCopy(start, ctx.input.next())
@@ -213,7 +213,7 @@ proc constructChild*(
       endPos: start.endPos,
     )
     ctx.addAnchor(start.scalarProperties.anchor)
-    when defined(gcArc) or defined(gcOrc):
+    when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
       result.content = move start.scalarContent
     else:
       shallowCopy(result.content, start.scalarContent)
