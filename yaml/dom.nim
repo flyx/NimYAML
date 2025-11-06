@@ -164,10 +164,11 @@ proc constructChild*(
       c.refs[target] = (tag: yamlTag(YamlNode), p: cast[pointer](result))
 
   var start: Event
-  when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
-    start = ctx.input.next()
-  else:
+  # instead of checking whether gcArc, gcOrc, or gcAtomicArc are defined, we use compiles to make it future proof. note that shallowCopy is only defined when for mm:arc/orc/atomicArc
+  when compiles(shallowCopy(start, ctx.input.next())):
     shallowCopy(start, ctx.input.next())
+  else:
+    start = ctx.input.next()
 
   case start.kind
   of yamlStartMap:
@@ -213,10 +214,10 @@ proc constructChild*(
       endPos: start.endPos,
     )
     ctx.addAnchor(start.scalarProperties.anchor)
-    when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
-      result.content = move start.scalarContent
-    else:
+    when compiles(shallowCopy(result.content, start.scalarContent)):
       shallowCopy(result.content, start.scalarContent)
+    else:
+      result.content = move start.scalarContent
   of yamlAlias:
     result = cast[YamlNode](ctx.refs.getOrDefault(start.aliasTarget).p)
   else: internalError("Malformed YamlStream")

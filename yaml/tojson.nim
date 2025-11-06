@@ -70,10 +70,10 @@ proc jsonFromScalar(
       result = JsonNode(kind: JNull)
     else:
       result = JsonNode(kind: JString)
-      when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
-        result.str = content
-      else:
+      when compiles(shallowCopy(result.str, content)): # instead of checking whether gcArc, gcOrc, or gcAtomicArc are defined, we use compiles to make it future proof. note that shallowCopy is only defined when for mm:arc/orc/atomicArc
         shallowCopy(result.str, content)
+      else:
+        result.str = content
   except ValueError as ve:
     var e = newException(YamlConstructionError, "Cannot parse numeric value")
     e.parent = ve
