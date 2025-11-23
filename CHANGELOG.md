@@ -1,3 +1,9 @@
+## 2.2.1
+
+Bugfixes:
+
+ * fixed a compilation error when compiling with mm:atomicArc flag (#148)
+
 ## 2.2.0
 
 Features:

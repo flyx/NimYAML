@@ -6,7 +6,7 @@
   };
   outputs = { self, nixpkgs, utils, nix-filter }:
     let
-      version = "2.2.0";
+      version = "2.2.1";
       systemDependent = with utils.lib;
         eachSystem allSystems (system:
           let pkgs = nixpkgs.legacyPackages.${system};
