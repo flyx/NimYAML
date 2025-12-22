@@ -718,7 +718,8 @@ proc doPresent(
         ctx.safeWrite("...")
         ctx.safeNewline()
       ctx.wroteDirectivesEnd =
-        item.explicitDirectivesEnd or ctx.options.directivesEnd == deAlways or not s.peek().emptyProperties()
+        item.explicitDirectivesEnd or ctx.options.directivesEnd == deAlways or (
+        ctx.options.directivesEnd != deNever and not s.peek().emptyProperties())
 
       if ctx.options.directivesEnd != deNever:
         resetHandles(ctx.handles)
@@ -804,7 +805,7 @@ proc doPresent(
       case ctx.options.quoting
       of sqJson:
         var hint = yTypeUnknown
-        if ctx.levels.len > 0 and ctx.state == dFlowMapValue: hint = guessType(item.scalarContent)
+        if ctx.levels.len == 0 or ctx.state == dFlowMapValue: hint = guessType(item.scalarContent)
         let tag = item.scalarProperties.tag
         if tag in [yTagQuestionMark, yTagBoolean] and
             hint in {yTypeBoolTrue, yTypeBoolFalse}:

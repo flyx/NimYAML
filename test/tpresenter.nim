@@ -169,3 +169,11 @@ suite "Presenter":
       startMapEvent(), scalarEvent("foo"), scalarEvent("bar"), scalarEvent("baz"),
       startSeqEvent(), endSeqEvent(), endMapEvent())
     assertOutput(input, "{\n  \"foo\": \"bar\",\n  \"baz\": []\n}\n", jsonOptions)
+
+  test "JSON output with keyword values":
+    var input = inputSingle(scalarEvent("true"))
+    assertOutput(input, "true\n", jsonOptions)
+    input = inputSingle(scalarEvent("false", yTagBoolean))
+    assertOutput(input, "false\n", jsonOptions)
+    input = inputSingle(scalarEvent("~", yTagNull))
+    assertOutput(input, "null\n", jsonOptions)
