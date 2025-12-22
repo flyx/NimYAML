@@ -57,7 +57,7 @@ type
     ## - ``sqJson``: Force JSON-compatible double-quoted style for every scalar
     ##   except for scalars of other JSON types (bool, int, double)
     sqUnset, sqDouble, sqJson
-    
+
   DirectivesEndStyle* = enum
     ## Whether to write a directives end marker '---'
     ## - ``deAlways``: Always write it.
@@ -96,7 +96,7 @@ type
     dBlockExplicitMapKey, dBlockImplicitMapKey, dBlockMapValue,
     dBlockInlineMap, dBlockSequenceItem, dFlowImplicitMapKey, dFlowMapValue,
     dFlowExplicitMapKey, dFlowSequenceItem, dFlowMapStart, dFlowSequenceStart
-  
+
   DumperLevel = tuple
     state: DumperState
     indentation: int
@@ -112,15 +112,15 @@ type
     wroteDirectivesEnd: bool
     lastImplicitKeyLen: int
     cached: DeQue[Event]
-  
+
   ItemKind = enum
     ikCompactScalar, ikMultilineFlowScalar, ikBlockScalar, ikCollection
-    
+
   MapParseState = enum
     mpInitial, mpKey, mpValue, mpNeedBlock
 
 proc level(ctx: var Context): var DumperLevel = ctx.levels[^1]
-  
+
 proc level(ctx: Context): DumperLevel = ctx.levels[^1]
 
 proc state(ctx: Context): DumperState = ctx.level.state
@@ -181,7 +181,7 @@ proc inspect(
   ## style if folded style is not possible but literal is. Otherwise, if the
   ## proposed style is not a valid style, it is ignored.
   ##
-  ## A proposed style of ssAny is not valid and is therefore always ignored. 
+  ## A proposed style of ssAny is not valid and is therefore always ignored.
   ## This proc will never emit ssAny.
   ##
   ## This inspector will not always allow a style that would be possible.
@@ -246,7 +246,7 @@ proc inspect(
       inc(curDqLen, 2)
     else:
       inc(curDqLen, if c in {'"', '\\', '\t', '\''}: 2 else: 1)
-      
+
       if c in {'{', '}', '[', ']', ',', '#', '-', ':', '?', '%', '"', '\''}:
         canUsePlain = false
       elif c.ord < 32:
@@ -284,7 +284,7 @@ proc inspect(
     lines.add(curLine)
   if lineLength.isSome and curDqLen > lineLength.get():
     canUseSingleQuoted = false
-  
+
   case proposed
   of ssLiteral:
     if canUseLiteral: return ssLiteral
@@ -299,7 +299,7 @@ proc inspect(
     multiLine = lineLength.isSome and curDqLen > lineLength.get()
     return ssDoubleQuoted
   else: discard
-  
+
   if lineLength.isNone or scalar.len <= lineLength.get() - indentation:
     result = if canUsePlain: ssPlain else: ssDoubleQuoted
   elif canUseLiteral: result = ssLiteral
@@ -347,7 +347,7 @@ proc writeDoubleQuoted(
       else:
         if ord(c) < 32:
           nextLength = 4
-      
+
       if ctx.options.maxLineLength.isSome and
          (curPos + nextLength >= ctx.options.maxLineLength.get() or
           curPos + nextLength == ctx.options.maxLineLength.get() - 1 and i == scalar.len - 2):
@@ -692,11 +692,11 @@ proc checkSingleLine(
       else:
         length = high(int)
         result[1] = mpNeedBlock
-        break 
+        break
     result[0] = (not mapping or result[1] != mpNeedBlock) and
       (ctx.options.maxLineLength.isNone or
       length < ctx.options.maxLineLength.get() - ctx.indentation - 2)
-  else: result = (false, mpNeedBlock) 
+  else: result = (false, mpNeedBlock)
 
 proc doPresent(
   ctx: var Context,
@@ -719,12 +719,12 @@ proc doPresent(
         ctx.safeNewline()
       ctx.wroteDirectivesEnd =
         item.explicitDirectivesEnd or ctx.options.directivesEnd == deAlways or not s.peek().emptyProperties()
-      
+
       if ctx.options.directivesEnd != deNever:
         resetHandles(ctx.handles)
         for v in item.handles:
           discard registerHandle(ctx.handles, v.handle, v.uriPrefix)
-      
+
         try:
           case ctx.options.outputVersion
           of ov1_2:
@@ -804,7 +804,7 @@ proc doPresent(
       case ctx.options.quoting
       of sqJson:
         var hint = yTypeUnknown
-        if ctx.state == dFlowMapValue: hint = guessType(item.scalarContent)
+        if ctx.levels.len > 0 and ctx.state == dFlowMapValue: hint = guessType(item.scalarContent)
         let tag = item.scalarProperties.tag
         if tag in [yTagQuestionMark, yTagBoolean] and
             hint in {yTypeBoolTrue, yTypeBoolFalse}:
@@ -873,7 +873,7 @@ proc doPresent(
       var indentation = 0
       var wroteAnything = false
       if ctx.levels.len > 0: wroteAnything = ctx.state == dBlockImplicitMapKey
-      
+
       if ctx.levels.len == 0:
         if nextState == dFlowSequenceStart:
           indentation = ctx.options.indentationStep
@@ -882,7 +882,7 @@ proc doPresent(
         indentation = ctx.indentation + ctx.options.indentationStep
         if nextState.isFlow and not ctx.state.isFlow:
           inc(indentation, ctx.options.indentationStep)
-      
+
       let wroteAttrs = ctx.writeTagAndAnchor(item.seqProperties)
       if wroteAttrs or (ctx.wroteDirectivesEnd and ctx.levels.len == 0):
         wroteAnything = true
@@ -891,7 +891,7 @@ proc doPresent(
         if ctx.levels.len == 0:
           if wroteAttrs or ctx.wroteDirectivesEnd: ctx.safeNewline()
         ctx.safeWrite('[')
-      
+
       ctx.levels.add (nextState, indentation, singleLine, wroteAnything)
     of yamlStartMap:
       let (singleLine, mps) = ctx.checkSingleLine(s, item, true)
@@ -915,11 +915,11 @@ proc doPresent(
           let next = s.peek()
           if next.kind == yamlEndMap: nextState = dFlowMapStart
           else: nextState = dBlockMapValue
-      
+
       var indentation = 0
       var wroteAnything = false
       if ctx.levels.len > 0: wroteAnything = ctx.state == dBlockImplicitMapKey
-      
+
       if ctx.levels.len == 0:
         if nextState == dFlowMapStart:
           indentation = ctx.options.indentationStep
@@ -928,7 +928,7 @@ proc doPresent(
         indentation = ctx.indentation + ctx.options.indentationStep
         if nextState.isFlow and not ctx.state.isFlow:
           inc(indentation, ctx.options.indentationStep)
-      
+
       let wroteAttrs = ctx.writeTagAndAnchor(item.properties)
       if wroteAttrs or (ctx.wroteDirectivesEnd and ctx.levels.len == 0):
         wroteAnything = true
