@@ -118,13 +118,13 @@
         {
           config,
           lib,
-          pkg,
+          pkgs,
           ...
         }:
         with lib;
         let
           cfg = config.services.nimyaml-webdocs;
-          webdocs = systemDependent.packages.${config.nixpkgs.system}.webdocs;
+          webdocs = systemDependent.packages.${pkgs.stdenv.hostPlatform.system}.webdocs;
         in
         {
           options.services.nimyaml-webdocs = {
