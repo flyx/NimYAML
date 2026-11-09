@@ -4,8 +4,9 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import os, strutils, macros, unittest, sets
+import os, strutils, macros, unittest, sets, algorithm
 when not defined(js): import terminal
+when (NimMajor, NimMinor) >= (2, 2): import std/staticos
 import testEventParser, commonTestUtils
 import ../yaml/[ data, parser, stream ]
 
@@ -66,24 +67,38 @@ proc parserTest(input, expectedEvents: string, errorExpected : bool): bool =
     expected = parseEventString(expectedEvents)
   result = doParserTest(expected, actual, errorExpected)
 
-proc staticFileExists(path: string): bool {.compileTime.} =
-  # os.fileExists is not available when compiling for the JS backend,
-  # not even at compile time.
-  when defined(js):
-    staticExec("test -e \"" & path & "\" && echo yes").strip == "yes"
-  else: fileExists(path)
+# Compile-time file system access for generating the tests.
+# std/staticos (Nim 2.2+) works with all backends. On Nim 2.0, os's file system
+# procs work at compile time, but are not available when compiling for JS; in
+# that case, we fall back to shell commands (requires a POSIX shell).
+
+proc testFileExists(path: string): bool {.compileTime.} =
+  when (NimMajor, NimMinor) >= (2, 2): staticos.staticFileExists(path)
+  elif not defined(js): fileExists(path)
+  else: staticExec("test -e \"" & path & "\" && echo yes").strip == "yes"
+
+proc listDir(dir: string): seq[string] {.compileTime.} =
+  ## returns the full paths of all entries in ``dir``, sorted by name.
+  when (NimMajor, NimMinor) >= (2, 2):
+    for item in staticWalkDir(dir): result.add(item.path)
+  elif not defined(js):
+    for _, path in walkDir(dir): result.add(path)
+  else:
+    # only output file names, which we join with ``dir`` ourselves, so that
+    # this does not depend on how the shell formats paths.
+    for name in staticExec("ls -1 \"" & dir & "\"").splitLines():
+      if name.strip.len > 0: result.add(dir / name.strip)
+  result.sort()
 
 macro genTests(): untyped =
-  let
-    pwd = staticExec("pwd").strip
-    absolutePath = '"' & (pwd / testSuiteFolder) & '"'
-  echo "[tparser] Generating tests from " & absolutePath
+  let suitePath = currentSourcePath().parentDir / testSuiteFolder
+  echo "[tparser] Generating tests from " & suitePath
 
   var ignored = toHashSet([".git", "name", "tags", "meta"])
 
   proc genTest(target: var NimNode, dirPath: string, testId: string) {.compileTime.} =
     let title = slurp(dirPath / "===")
-    let isErrorTest = staticFileExists(dirPath / "error")
+    let isErrorTest = testFileExists(dirPath / "error")
     let testName = strip(title) & " [" & testId & ']'
 
     # TODO: this code executes the test at compile time.
@@ -109,21 +124,15 @@ macro genTests(): untyped =
 
   result = newStmtList()
 
-  # walkDir for some crude reason does not work with travis build
-  let dirItems = staticExec("ls -1d " & absolutePath / "*")
-  for dirPath in dirItems.splitLines():
-    if dirPath.strip.len == 0: continue
-    let testId = dirPath[^4..^1]
+  for dirPath in listDir(suitePath):
+    let testId = dirPath.extractFilename
     if ignored.contains(testId): continue
-    if staticFileExists(dirPath / "==="):
+    if testFileExists(dirPath / "==="):
       genTest(result, dirPath, testId)
     else:
-      let testItems = staticExec("ls -1d " & dirPath / "*")
-      var start = len(dirPath) + 1
-      for itemPath in testItems.splitLines():
-        if itemPath.strip.len == 0: continue
-        let testItemId = testId / itemPath[start..^1]
-        if staticFileExists(itemPath / "==="):
+      for itemPath in listDir(dirPath):
+        let testItemId = testId & "/" & itemPath.extractFilename
+        if testFileExists(itemPath / "==="):
           genTest(result, itemPath, testItemId)
 
 

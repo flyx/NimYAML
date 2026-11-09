@@ -6,12 +6,13 @@
 
 import unittest, os, osproc, macros, strutils, streams
 
-const baseDir = parentDir(staticExec("pwd"))
-let (nimPathRaw, nimPathRet) =
-    execCmdEx("which nim", {poStdErrToStdOut, poUsePath})
-if nimPathRet != 0: quit "could not locate nim executable:\n" & nimPathRaw
-let nimPath =
-    if nimPathRaw[0] == '/': nimPathRaw.strip else: baseDir / nimPathRaw.strip
+const
+  # root directory of the repository. Derived from this file's path instead of
+  # querying the shell, since shells on Windows (e.g. Git Bash) may return
+  # paths that cannot be used by Nim.
+  baseDir = currentSourcePath().parentDir.parentDir
+  # compile the snippets with the same compiler that compiles the tests
+  nimPath = getCurrentCompilerExe()
 
 proc inputTest(basePath, path: string): bool =
   let
@@ -27,7 +28,7 @@ proc inputTest(basePath, path: string): bool =
   defer:
     removeFile(inFileDest)
     removeFile(codeFileDest)
-  var process = startProcess(nimPath & " c --hints:off -p:" & escape(basePath) &
+  var process = startProcess(quoteShell(nimPath) & " c --hints:off -p:" & escape(basePath) &
       " code.nim", absolutePath, [], nil, {poStdErrToStdOut, poEvalCommand})
   defer:
     process.close()
@@ -59,7 +60,7 @@ proc outputTest(basePath, path: string): bool =
     outFileActual = absolutePath / "out.yaml"
   copyFile(codeFileOrig, codeFileDest)
   defer: removeFile(codeFileDest)
-  var process = startProcess(nimPath & " c --hints:off -p:" & escape(basePath) &
+  var process = startProcess(quoteShell(nimPath) & " c --hints:off -p:" & escape(basePath) &
       " code.nim", absolutePath, [], nil, {poStdErrToStdOut, poEvalCommand})
   defer: process.close()
   if process.waitForExit() != 0:

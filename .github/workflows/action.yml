@@ -18,13 +18,13 @@ jobs:
           - stable
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         submodules: true
 
     - name: Cache nimble
       id: cache-nimble
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.nimble
         key: ${{ runner.os }}-nimble-${{ matrix.nim-version}}-${{ hashFiles('yaml.nimble') }}
