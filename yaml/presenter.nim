@@ -104,7 +104,8 @@ type
     wroteAnything: bool
 
   Context = object
-    target: Stream
+    target: Stream ## if nil, output is written to ``buffer``
+    buffer: string ## used when presenting to a string; works at compile time
     options: PresentationOptions
     handles: seq[tuple[handle, uriPrefix: string]]
     levels: seq[DumperLevel]
@@ -309,11 +310,18 @@ proc inspect(
   if result == ssDoubleQuoted:
     multiLine = lineLength.isSome and curDqLen > lineLength.get()
 
+proc write(ctx: var Context, val: string | char) {.inline.} =
+  # Writing to a StringStream does not work at compile time, since its
+  # writeData implementation is not available in the VM. Therefore, when
+  # presenting to a string, we write directly into a string buffer.
+  if ctx.target.isNil: ctx.buffer.add(val)
+  else: ctx.target.write(val)
+
 proc append(ctx: var Context, val: string | char) {.inline.} =
   if ctx.needsWhitespace > 0:
-    ctx.target.write(repeat(' ', ctx.needsWhitespace))
+    ctx.write(repeat(' ', ctx.needsWhitespace))
     ctx.needsWhitespace = 0
-  ctx.target.write(val)
+  ctx.write(val)
   if ctx.levels.len > 0: ctx.level.wroteAnything = true
 
 proc whitespace(ctx: var Context, single: bool = false) {.inline.} =
@@ -322,9 +330,9 @@ proc whitespace(ctx: var Context, single: bool = false) {.inline.} =
 
 proc newline(ctx: var Context) {.inline.} =
   case ctx.options.newlines
-  of nlCRLF: ctx.target.write("\c\l")
-  of nlLF: ctx.target.write("\l")
-  else: ctx.target.write("\n")
+  of nlCRLF: ctx.write("\c\l")
+  of nlLF: ctx.write("\l")
+  else: ctx.write("\n")
   ctx.needsWhitespace = 0
   if ctx.levels.len > 0: ctx.level.wroteAnything = true
 
@@ -334,7 +342,6 @@ proc writeDoubleQuoted(
 ): int {.raises: [YamlPresenterOutputError].} =
   let indentation = ctx.indentation + ctx.options.indentationStep
   var curPos = indentation
-  let t = ctx.target
   try:
     result = 2
     ctx.append('"')
@@ -351,27 +358,27 @@ proc writeDoubleQuoted(
       if ctx.options.maxLineLength.isSome and
          (curPos + nextLength >= ctx.options.maxLineLength.get() or
           curPos + nextLength == ctx.options.maxLineLength.get() - 1 and i == scalar.len - 2):
-        t.write('\\')
+        ctx.write('\\')
         ctx.newline()
-        t.write(repeat(' ', indentation))
+        ctx.write(repeat(' ', indentation))
         result.inc(2 + indentation)
         curPos = indentation
         if c == ' ':
-          t.write('\\')
+          ctx.write('\\')
           curPos.inc()
           result.inc()
       else:
         curPos.inc(nextLength)
         result.inc(nextLength)
       case c
-      of '"': t.write("\\\"")
-      of '\l': t.write("\\n")
-      of '\t': t.write("\\t")
-      of '\\': t.write("\\\\")
+      of '"': ctx.write("\\\"")
+      of '\l': ctx.write("\\n")
+      of '\t': ctx.write("\\t")
+      of '\\': ctx.write("\\\\")
       else:
-        if ord(c) < 32: t.write("\\x" & toHex(ord(c), 2))
-        else: t.write(c)
-    t.write('"')
+        if ord(c) < 32: ctx.write("\\x" & toHex(ord(c), 2))
+        else: ctx.write(c)
+    ctx.write('"')
   except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
@@ -382,38 +389,37 @@ proc writeDoubleQuotedJson(
   ctx   : var Context,
   scalar: string,
 ): int {.raises: [YamlPresenterOutputError].} =
-  let t = ctx.target
   try:
     ctx.append('"')
     result = 2
     for c in scalar:
       case c
       of '"':
-        t.write("\\\"")
+        ctx.write("\\\"")
         result.inc(2)
       of '\\':
-        t.write("\\\\")
+        ctx.write("\\\\")
         result.inc(2)
       of '\l':
-        t.write("\\n")
+        ctx.write("\\n")
         result.inc(2)
       of '\t':
-        t.write("\\t")
+        ctx.write("\\t")
         result.inc(2)
       of '\f':
-        t.write("\\f")
+        ctx.write("\\f")
         result.inc(2)
       of '\b':
-        t.write("\\b")
+        ctx.write("\\b")
         result.inc(2)
       else:
         if ord(c) < 32:
-          t.write("\\u" & toHex(ord(c), 4))
+          ctx.write("\\u" & toHex(ord(c), 4))
           result.inc(4)
         else:
-          t.write(c)
+          ctx.write(c)
           result.inc()
-    t.write('"')
+    ctx.write('"')
   except:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
@@ -424,17 +430,16 @@ proc writeSingleQuoted(
   ctx   : var Context,
   scalar: string,
 ): int {.raises: [YamlPresenterOutputError].} =
-  let t = ctx.target
   try:
     # writing \39 instead of \' because my syntax highlighter is dumb
     ctx.append('\39')
     result = 2
     for c in scalar:
       if c == '\39':
-        t.write("''")
+        ctx.write("''")
         result.inc(2)
       else:
-        t.write(c)
+        ctx.write(c)
         result.inc()
     ctx.append('\39')
   except:
@@ -450,16 +455,15 @@ proc writeLiteral(
 ) {.raises: [YamlPresenterOutputError].} =
   var indentation = ctx.indentation
   if ctx.levels.len > 0: inc(indentation, ctx.options.indentationStep)
-  let t = ctx.target
   try:
     ctx.append('|')
-    if scalar[^1] != '\l': t.write('-')
-    if scalar[0] in [' ', '\t']: t.write($ctx.options.indentationStep)
+    if scalar[^1] != '\l': ctx.write('-')
+    if scalar[0] in [' ', '\t']: ctx.write($ctx.options.indentationStep)
     for line in lines:
       ctx.newline()
-      t.write(repeat(' ', indentation))
+      ctx.write(repeat(' ', indentation))
       if line.finish >= line.start:
-        t.write(scalar[line.start .. line.finish])
+        ctx.write(scalar[line.start .. line.finish])
   except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
                          "Error while writing to output stream")
@@ -471,30 +475,29 @@ proc writeFolded(
   scalar: string,
   words : seq[tuple[start, finish: int]],
 ) {.raises: [YamlPresenterOutputError].} =
-  let t = ctx.target
   let indentation = ctx.indentation + ctx.options.indentationStep
   let lineLength = (
     if ctx.options.maxLineLength.isSome:
       ctx.options.maxLineLength.get() else: 1024)
   try:
     ctx.append('>')
-    if scalar[^1] != '\l': t.write('-')
-    if scalar[0] in [' ', '\t']: t.write($ctx.options.indentationStep)
+    if scalar[^1] != '\l': ctx.write('-')
+    if scalar[0] in [' ', '\t']: ctx.write($ctx.options.indentationStep)
     var curPos = lineLength
     for word in words:
       if word.start > 0 and scalar[word.start - 1] == '\l':
         ctx.newline()
         ctx.newline()
-        t.write(repeat(' ', indentation))
+        ctx.write(repeat(' ', indentation))
         curPos = indentation
       elif curPos + (word.finish - word.start + 1) > lineLength:
         ctx.newline()
-        t.write(repeat(' ', indentation))
+        ctx.write(repeat(' ', indentation))
         curPos = indentation
       else:
-        t.write(' ')
+        ctx.write(' ')
         curPos.inc()
-      t.write(scalar[word.start .. word.finish])
+      ctx.write(scalar[word.start .. word.finish])
       curPos += word.finish - word.start + 1
   except CatchableError as ce:
     var e = newException(YamlPresenterOutputError,
@@ -527,13 +530,12 @@ proc startItem(
         ctx.safeWrite("---")
         ctx.whitespace(true)
     return
-  let t = ctx.target
   try:
     case ctx.state
     of dBlockMapValue:
       if ctx.level.wroteAnything or ctx.options.indentationStep < 2:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
       else:
         ctx.level.wroteAnything = true
       if kind != ikCompactScalar or ctx.options.explicitKeys:
@@ -549,8 +551,8 @@ proc startItem(
       else: ctx.state = dBlockImplicitMapKey
     of dBlockExplicitMapKey:
       ctx.newline()
-      t.write(repeat(' ', ctx.indentation))
-      t.write(':')
+      ctx.write(repeat(' ', ctx.indentation))
+      ctx.write(':')
       ctx.whitespace()
       ctx.state = dBlockMapValue
     of dBlockImplicitMapKey:
@@ -560,7 +562,7 @@ proc startItem(
     of dFlowExplicitMapKey:
       if ctx.options.newlines != nlNone:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
       ctx.append(':')
       ctx.whitespace()
       ctx.state = dFlowMapValue
@@ -569,17 +571,17 @@ proc startItem(
       ctx.whitespace(true)
       if not ctx.level.singleLine:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
       if kind == ikCompactScalar and not ctx.options.explicitKeys:
         ctx.state = dFlowImplicitMapKey
       else:
-        t.write('?')
+        ctx.write('?')
         ctx.whitespace()
         ctx.state = dFlowExplicitMapKey
     of dFlowMapStart:
       if not ctx.level.singleLine:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
       if kind == ikCompactScalar and not ctx.options.explicitKeys:
         ctx.state = dFlowImplicitMapKey
       else:
@@ -593,7 +595,7 @@ proc startItem(
     of dBlockSequenceItem:
       if ctx.level.wroteAnything or ctx.options.indentationStep < 2:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
       else:
         ctx.level.wroteAnything = true
       ctx.append('-')
@@ -601,14 +603,14 @@ proc startItem(
     of dFlowSequenceStart:
       if not ctx.level.singleLine:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
       ctx.state = dFlowSequenceItem
     of dFlowSequenceItem:
       ctx.append(',')
       ctx.whitespace(true)
       if not ctx.level.singleLine:
         ctx.newline()
-        t.write(repeat(' ', ctx.indentation))
+        ctx.write(repeat(' ', ctx.indentation))
   except CatchableError as ce:
     var e = newException(YamlPresenterOutputError, "")
     e.parent = ce
@@ -619,7 +621,6 @@ proc writeTagAndAnchor(
   props: Properties,
 ): bool {.raises: [YamlPresenterOutputError].} =
   if ctx.options.suppressAttrs: return false
-  let t = ctx.target
   result = false
   try:
     if props.tag notin [yTagQuestionMark, yTagExclamationMark]:
@@ -627,17 +628,17 @@ proc writeTagAndAnchor(
       let (handle, length) = ctx.searchHandle(tagUri)
       if length > 0:
         ctx.append(handle)
-        t.write(tagUri[length..tagUri.high])
+        ctx.write(tagUri[length..tagUri.high])
         ctx.whitespace(true)
       else:
         ctx.append("!<")
-        t.write(tagUri)
-        t.write('>')
+        ctx.write(tagUri)
+        ctx.write('>')
         ctx.whitespace(true)
       result = true
     if props.anchor != yAnchorNone:
       ctx.append("&")
-      t.write($props.anchor)
+      ctx.write($props.anchor)
       ctx.whitespace(true)
       result = true
   except CatchableError as ce:
@@ -729,27 +730,27 @@ proc doPresent(
         try:
           case ctx.options.outputVersion
           of ov1_2:
-              ctx.target.write("%YAML 1.2")
+              ctx.write("%YAML 1.2")
               ctx.newline()
               ctx.wroteDirectivesEnd = true
           of ov1_1:
-              ctx.target.write("%YAML 1.1")
+              ctx.write("%YAML 1.1")
               ctx.newline()
               ctx.wroteDirectivesEnd = true
           of ovNone: discard
           for v in ctx.handles:
             if v.handle == "!":
               if v.uriPrefix != "!":
-                ctx.target.write("%TAG ! " & v.uriPrefix)
+                ctx.write("%TAG ! " & v.uriPrefix)
                 ctx.newline()
                 ctx.wroteDirectivesEnd = true
             elif v.handle == "!!":
               if v.uriPrefix != yamlTagRepositoryPrefix:
-                ctx.target.write("%TAG !! " & v.uriPrefix)
+                ctx.write("%TAG !! " & v.uriPrefix)
                 ctx.newline()
                 ctx.wroteDirectivesEnd = true
             else:
-              ctx.target.write("%TAG " & v.handle & ' ' & v.uriPrefix)
+              ctx.write("%TAG " & v.handle & ' ' & v.uriPrefix)
               ctx.newline()
               ctx.wroteDirectivesEnd = true
         except CatchableError as ce:
@@ -849,7 +850,7 @@ proc doPresent(
       ctx.startItem(ikCompactScalar)
       try:
         ctx.append('*')
-        ctx.target.write($item.aliasTarget)
+        ctx.write($item.aliasTarget)
       except CatchableError as ce:
         var e = newException(YamlPresenterOutputError, "")
         e.parent = ce
@@ -948,8 +949,8 @@ proc doPresent(
         try:
           if not level.singleLine:
             ctx.newline()
-            ctx.target.write(repeat(' ', level.indentation - ctx.options.indentationStep))
-          ctx.target.write(']')
+            ctx.write(repeat(' ', level.indentation - ctx.options.indentationStep))
+          ctx.write(']')
         except CatchableError as ce:
           var e = newException(YamlPresenterOutputError, "")
           e.parent = ce
@@ -965,7 +966,7 @@ proc doPresent(
         try:
           if not level.singleLine:
             ctx.safeNewline()
-            ctx.target.write(repeat(' ', level.indentation - ctx.options.indentationStep))
+            ctx.write(repeat(' ', level.indentation - ctx.options.indentationStep))
           ctx.append('}')
         except CatchableError as ce:
           var e = newException(YamlPresenterOutputError, "")
@@ -1003,11 +1004,9 @@ proc present*(
 ].} =
   ## Convert ``s`` to a YAML character stream and return it as string.
 
-  var
-    ss = newStringStream()
-    c = Context(target: ss, options: options)
+  var c = Context(target: nil, options: options)
   doPresent(c, s)
-  return ss.data
+  return c.buffer
 
 proc doTransform(
   ctx  : var Context,
@@ -1089,8 +1088,6 @@ proc transform*(
   ## using the given presentation options. Returns the resulting string.
   ## If ``resolveToCoreYamlTags`` is ``true``, non-specific tags will
   ## be replaced by specific tags according to the YAML core schema.
-  var
-    ss = newStringStream()
-    c = Context(target: ss, options: options)
+  var c = Context(target: nil, options: options)
   doTransform(c, genInput(input), resolveToCoreYamlTags)
-  return ss.data
+  return c.buffer
