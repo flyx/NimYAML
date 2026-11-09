@@ -1,6 +1,11 @@
 name: Test nimYAML
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [devel]
+  pull_request:
+  # allows running the tests manually on any branch via the Actions tab
+  workflow_dispatch:
 
 jobs:
   test:
