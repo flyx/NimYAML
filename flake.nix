@@ -22,7 +22,12 @@
           in
           with nix-filter.lib;
           {
-            devShell = pkgs.mkShell { buildInputs = with pkgs; [ nim2 ]; };
+            devShell = pkgs.mkShell {
+              buildInputs = with pkgs; [
+                nim2
+                nodejs-slim # runs tests compiled with `nim js -r`
+              ];
+            };
             packages.webdocs =
               let
                 nim-jester = pkgs.stdenv.mkDerivation {

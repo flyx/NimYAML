@@ -4,7 +4,8 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 
-import os, terminal, strutils, streams, macros, unittest, sets
+import os, strutils, macros, unittest, sets
+when not defined(js): import terminal
 import testEventParser, commonTestUtils
 import ../yaml/[ data, parser, stream ]
 
@@ -12,7 +13,8 @@ const
   testSuiteFolder = "yaml-test-suite"
 
 proc echoError(msg: string) =
-  styledWriteLine(stdout, fgRed, "[error] ", fgWhite, msg, resetStyle)
+  when defined(js): echo "[error] ", msg
+  else: styledWriteLine(stdout, fgRed, "[error] ", fgWhite, msg, resetStyle)
 
 proc doParserTest(expected, actual: YamlStream, errorExpected: bool): bool =
   var i = 1
@@ -31,9 +33,10 @@ proc doParserTest(expected, actual: YamlStream, errorExpected: bool): bool =
           echo "  ", actualEvent
           echo ".. difference:"
           when nimvm: discard
-          else: stdout.write("  ")
+          else:
+            when not defined(js): stdout.write("  ")
           printDifference(expectedEvent, actualEvent)
-  
+
         return
       i.inc()
       if actualEvent.kind == yamlEndStream:
@@ -52,34 +55,37 @@ proc doParserTest(expected, actual: YamlStream, errorExpected: bool): bool =
         echo pe.lineContent
       else: echo e.msg
 
-proc parserTest(path: string, errorExpected : bool): bool =
+proc parserTest(input, expectedEvents: string, errorExpected : bool): bool =
+  # input and expected events are embedded at compile time, since the JS
+  # backend cannot read files at runtime.
   var
     parser: YamlParser
   parser.init()
   var
-    actualIn = newFileStream(path / "in.yaml")
-    actual = parser.parse(actualIn)
-    expectedIn = newFileStream(path / "test.event")
-    expected = parseEventStream(expectedIn)
-  defer:
-    actualIn.close()
-    expectedIn.close()
+    actual = parser.parse(input)
+    expected = parseEventString(expectedEvents)
   result = doParserTest(expected, actual, errorExpected)
+
+proc staticFileExists(path: string): bool {.compileTime.} =
+  # os.fileExists is not available when compiling for the JS backend,
+  # not even at compile time.
+  when defined(js):
+    staticExec("test -e \"" & path & "\" && echo yes").strip == "yes"
+  else: fileExists(path)
 
 macro genTests(): untyped =
   let
     pwd = staticExec("pwd").strip
     absolutePath = '"' & (pwd / testSuiteFolder) & '"'
   echo "[tparser] Generating tests from " & absolutePath
-  discard staticExec("git submodule init && git submodule update --remote")
 
   var ignored = toHashSet([".git", "name", "tags", "meta"])
-  
+
   proc genTest(target: var NimNode, dirPath: string, testId: string) {.compileTime.} =
     let title = slurp(dirPath / "===")
-    let isErrorTest = fileExists(dirPath / "error")
+    let isErrorTest = staticFileExists(dirPath / "error")
     let testName = strip(title) & " [" & testId & ']'
-    
+
     # TODO: this code executes the test at compile time.
     # sadly it doesn't work currently since the VM doesn't support
     # closure iterators (in parseEventStream).
@@ -93,20 +99,23 @@ macro genTests(): untyped =
     #
     #if not doParserTest(expected, actual, isErrorTest):
     # target.add(newCall("test", newLit(testName & " [comptime]"), newCall("fail")))
-    
+
+    let
+      input = slurp(dirPath / "in.yaml")
+      expectedEvents = slurp(dirPath / "test.event")
     target.add(newCall("test",
         newLit(testName), newCall("doAssert", newCall("parserTest",
-        newLit(dirPath), newLit(isErrorTest)))))
-  
+        newLit(input), newLit(expectedEvents), newLit(isErrorTest)))))
+
   result = newStmtList()
-  
+
   # walkDir for some crude reason does not work with travis build
   let dirItems = staticExec("ls -1d " & absolutePath / "*")
   for dirPath in dirItems.splitLines():
     if dirPath.strip.len == 0: continue
     let testId = dirPath[^4..^1]
     if ignored.contains(testId): continue
-    if fileExists(dirPath / "==="):
+    if staticFileExists(dirPath / "==="):
       genTest(result, dirPath, testId)
     else:
       let testItems = staticExec("ls -1d " & dirPath / "*")
@@ -114,10 +123,10 @@ macro genTests(): untyped =
       for itemPath in testItems.splitLines():
         if itemPath.strip.len == 0: continue
         let testItemId = testId / itemPath[start..^1]
-        if fileExists(itemPath / "==="):
+        if staticFileExists(itemPath / "==="):
           genTest(result, itemPath, testItemId)
-        
-    
+
+
   result = newCall("suite", newLit("Parser Tests (from yaml-test-suite)"), result)
 
 genTests()

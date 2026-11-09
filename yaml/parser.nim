@@ -114,6 +114,13 @@ proc afterPairValue(ctx: Context, e: var Event): bool {.hint[XCannotRaiseY]: off
 proc emitCached(ctx: Context, e: var Event): bool {.hint[XCannotRaiseY]: off.}
 {.pop.}
 
+template cacheEvent(ctx: Context, e: var Event) =
+  # On the JS backend, move() does not copy the object, so the cached event
+  # and ``e`` would refer to the same JS object. Since ``e`` is reassigned
+  # afterwards, this would overwrite the cached event.
+  when defined(js): ctx.keyCache.add(e)
+  else: ctx.keyCache.add(move(e))
+
 template pushLevel(ctx: Context, newState: State, newIndent: int) =
   debug("parser: push " & newState.astToStr & ", indent = " & $newIndent)
   ctx.levels.add(Level(state: newState, indentation: newIndent))
@@ -401,7 +408,7 @@ proc atBlockIndentation(ctx: Context, e: var Event): bool =
         raise ctx.generateError("Implicit mapping key may not be multiline")
       let props = e.scalarProperties
       e.scalarProperties = autoScalarTag(defaultProperties, scalarToken)
-      ctx.keyCache.add(move(e))
+      ctx.cacheEvent(e)
       e = startMapEvent(csBlock, props, ctx.headerStart, headerEnd)
       ctx.transition(afterImplicitKey)
       ctx.pushLevel(emitCached)
@@ -415,7 +422,7 @@ proc atBlockIndentation(ctx: Context, e: var Event): bool =
     let headerEnd = ctx.lex.curStartPos
     ctx.safeNext()
     if ctx.lex.cur == Token.MapValueInd:
-      ctx.keyCache.add(move(e))
+      ctx.cacheEvent(e)
       e = startMapEvent(csBlock, ctx.headerProps, ctx.headerStart, headerEnd)
       ctx.headerProps = defaultProperties
       ctx.transition(afterImplicitKey)
@@ -449,7 +456,7 @@ proc atBlockIndentationProps(ctx: Context, e: var Event): bool =
     if ctx.lex.cur == Token.MapValueInd:
       if ctx.lex.lastScalarWasMultiline():
         raise ctx.generateError("Implicit mapping key may not be multiline")
-      ctx.keyCache.add(move(e))
+      ctx.cacheEvent(e)
       e = startMapEvent(csBlock, ctx.headerProps, ctx.headerStart, headerEnd)
       ctx.headerProps = defaultProperties
       ctx.transition(afterImplicitKey)
@@ -574,7 +581,7 @@ proc afterCompactParentProps(ctx: Context, e: var Event): bool =
     let headerEnd = ctx.lex.curStartPos
     ctx.safeNext()
     if ctx.lex.cur == Token.MapValueInd:
-      ctx.keyCache.add(move(e))
+      ctx.cacheEvent(e)
       e = startMapEvent(csBlock, defaultProperties, headerEnd, headerEnd)
       ctx.transition(afterImplicitKey)
       ctx.pushLevel(emitCached)
@@ -591,7 +598,7 @@ proc afterCompactParentProps(ctx: Context, e: var Event): bool =
     if ctx.lex.cur == Token.MapValueInd:
       if ctx.lex.lastScalarWasMultiline():
         raise ctx.generateError("Implicit mapping key may not be multiline")
-      ctx.keyCache.add(move(e))
+      ctx.cacheEvent(e)
       e = startMapEvent(csBlock, defaultProperties, headerEnd, headerEnd)
       ctx.transition(afterImplicitKey)
       ctx.pushLevel(emitCached)
@@ -956,7 +963,7 @@ proc afterFlowSeqSepProps(ctx: Context, e: var Event): bool =
       if ctx.caching:
         ctx.keyCache.add(startMapEvent(csFlow, defaultProperties, ctx.lex.curStartPos, ctx.lex.curStartPos))
       else:
-        ctx.keyCache.add(move(e))
+        ctx.cacheEvent(e)
         e = startMapEvent(csFlow, defaultProperties, ctx.lex.curStartPos, ctx.lex.curStartPos)
         ctx.pushLevel(emitCached)
     return true

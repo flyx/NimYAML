@@ -44,14 +44,15 @@ Be aware that serialization currently doesn't support the following features in 
 Nix users can `nix develop` to get a devshell with the required Nim version. You'll need to have Flakes enabled.
 
 ```bash
-nim test # runs all tests
-nim lexerTests # run lexer tests
-nim parserTests # run parser tests (git-clones yaml-dev-kit)
-nim nativeTests # runs native value tests
-nim quickstartTests # run tests for quickstart snippets from documentation
+nim test # runs all tests with the C backend
+nim test tlex # runs a single test file (test/tlex.nim) with the C backend
+nim testJS # runs all tests except tquickstart with the JS backend (requires Node.js)
+nim testJS tparser # runs a single test file with the JS backend
 nim clean # guess
 nim build # build a library
 ```
+
+Available test files are `tlex`, `tparser`, `tjson`, `tdom`, `tnative`, `thints`, `tpresenter`, `tannotations` and `tquickstart` (tests the quickstart snippets from the documentation; C backend only).
 
 When debugging crashes in this library, use the `d:debug` compile flag to enable printing of the internal stack traces for calls to `internalError` and `yAssert`.
 

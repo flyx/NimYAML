@@ -7,6 +7,48 @@
 import tables
 import ../data
 
+# Tracking refs by identity (for anchors and aliases). On native backends, this
+# uses raw pointers. The JS backend has no raw pointers (casting a ref to
+# ``pointer`` generates invalid code), so there we use a JS ``Map``, which
+# compares object keys by identity.
+when defined(js):
+  type
+    RefPtr* = ref object
+      ## opaque reference to an arbitrary ref value
+    RefTable*[V] {.importjs: "Map".} = ref object
+      ## maps refs, compared by identity, to values of type ``V``
+
+  proc toRefPtr*[T](r: ref T): RefPtr {.importjs: "(#)".}
+  proc fromRefPtr*[T](p: RefPtr): T {.importjs: "(#)".}
+
+  proc initRefTable*[V](): RefTable[V] {.importjs: "new Map()".}
+  proc hasKey*[V](t: RefTable[V], key: RefPtr): bool {.importjs: "#.has(#)".}
+  proc jsGet[V](t: RefTable[V], key: RefPtr): V {.importjs: "#.get(#)".}
+  proc jsSet[V](t: RefTable[V], key: RefPtr, val: V) {.importjs: "#.set(#, #)".}
+  proc jsValues[V](t: RefTable[V]): seq[V] {.importjs: "Array.from(#.values())".}
+
+  proc `[]=`*[V](t: RefTable[V], key: RefPtr, val: V) =
+    var copy = val # do not alias the caller's value
+    t.jsSet(key, copy)
+
+  proc getOrDefault*[V](t: RefTable[V], key: RefPtr, default: V): V =
+    if t.hasKey(key): t.jsGet(key) else: default
+
+  proc getOrDefault*[V](t: RefTable[V], key: RefPtr): V =
+    if t.hasKey(key): result = t.jsGet(key)
+
+  iterator values*[V](t: RefTable[V]): V =
+    for v in t.jsValues(): yield v
+else:
+  type
+    RefPtr* = pointer
+    RefTable*[V] = Table[pointer, V]
+
+  template toRefPtr*(r: ref): RefPtr = cast[pointer](r)
+  proc fromRefPtr*[T](p: RefPtr): T {.inline.} = cast[T](p)
+
+  proc initRefTable*[V](): RefTable[V] = initTable[pointer, V]()
+
 template internalError*(s: string) =
   # Note: to get the internal stacktrace that caused the error
   # compile with the `d:debug` flag.
@@ -76,9 +118,9 @@ proc initAnchorContext*(): AnchorContext =
   return AnchorContext(nextAnchorId: "a", mapping: initTable[Anchor, Anchor]())
 
 proc process*(context: var AnchorContext,
-    target: var Properties, refs: Table[pointer, tuple[a: Anchor, referenced: bool]]) =
+    target: var Properties, refs: RefTable[tuple[a: Anchor, referenced: bool]]) =
   if target.anchor == yAnchorNone: return
-  for key, val in refs:
+  for val in refs.values:
     if val.a == target.anchor:
       if not val.referenced:
         target.anchor = yAnchorNone
