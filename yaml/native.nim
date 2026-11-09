@@ -1196,7 +1196,9 @@ proc constructObjectDefault*[O: object|tuple](
     )
   let startPos = e.startPos
   when hasIgnore(O):
-    const ignoredKeyList = O.getCustomPragmaVal(ignore)
+    # Nim 2.4+ types the pragma value as openArray[string], which cannot be a
+    # const, so convert it to a seq.
+    const ignoredKeyList: seq[string] = @(O.getCustomPragmaVal(ignore))
     const failOnUnknown = len(ignoredKeyList) > 0
   else:
     const failOnUnknown = true
