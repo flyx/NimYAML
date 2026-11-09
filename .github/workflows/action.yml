@@ -6,7 +6,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # so that problems in nim devel don't stop other tests
+      fail-fast: false # so that problems in one Nim version don't stop other tests
       matrix:
         os:
           - ubuntu-latest
@@ -14,12 +14,8 @@ jobs:
           - macOS-latest
         nim-version:
           - '2.0.x'
+          - '2.2.x'
           - stable
-          - devel
-        exclude:
-          # setup-nim-action doesn't support this
-          - os: windows-latest
-            nim-version: devel
     steps:
     - name: Checkout
       uses: actions/checkout@v4

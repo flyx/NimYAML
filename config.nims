@@ -1,3 +1,8 @@
+# Nim 2.2.14+ spawns a separate codegen process by default, which parses the
+# raw command line and fails when a task switches commands via setCommand.
+when (NimMajor, NimMinor, NimPatch) >= (2, 2, 14):
+  switch("spawnCodegen", "off")
+
 task build, "Compile the YAML module into a library":
   --app:lib
   --d:release
