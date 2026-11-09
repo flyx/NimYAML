@@ -2,41 +2,12 @@
 Testing Ground
 ==============
 
-Input is being processed on the fly by a friendly web service and output is
-updated as you type.
+Input is processed on the fly by NimYAML, compiled to JavaScript and running
+locally in your browser. Your input is not sent anywhere. Output is updated as
+you type.
 
 .. raw:: html
   <section id="testingground">
-    <table style="width: 100%; table-layout: fixed">
-      <thead>
-        <tr>
-          <th>Input</th>
-          <th>Output</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td style="width: 50%; height: 550px; vertical-align: top;">
-            <textarea id="yaml-input" style="width: 100%; height: 100%">
-  - test some
-  - {YAML: here}
-  - foo: bar
-    ? [1, 2, 3]
-    : !!str "string"
-  -
-    ? &amp;a anchor
-    : !!bool yes
-    ? reference to anchor
-    : *a</textarea>
-          </td>
-          <td style="width: 50%; vertical-align: top; height: 550px; padding-left: 10px">
-            <div style="width:100%; height:100%; overflow: scroll">
-              <pre id="yaml-output" style="width: 100%"/>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
     <div id="style-options">
       <div class="style-option">Output style:</div>
       <div class="style-option">
@@ -64,53 +35,100 @@ updated as you type.
         <label for="style-tokens">Tokens</label>
       </div>
     </div>
+    <div id="split-view">
+      <div class="pane">
+        <h2>Input</h2>
+        <textarea id="yaml-input" spellcheck="false">
+  - test some
+  - {YAML: here}
+  - foo: bar
+    ? [1, 2, 3]
+    : !!str "string"
+  -
+    ? &amp;a anchor
+    : !!bool yes
+    ? reference to anchor
+    : *a</textarea>
+      </div>
+      <div class="pane">
+        <h2>Output</h2>
+        <div class="output-scroll">
+          <pre id="yaml-output"></pre>
+        </div>
+      </div>
+    </div>
   </section>
   <script type="text/javascript">
-    function setTextContent(element, text) {
-      element.innerHTML = text;
+    // NimYAML runs in a Web Worker (testingground.js, compiled from
+    // doc/testingground.nim) so that large inputs do not block the page.
+    var output = document.getElementById("yaml-output");
+    var worker = null;
+    var busySince = null; // time the current request was sent, null if idle
+    var pending = null;   // latest request that has not been sent yet
+
+    function showText(text, color) {
+      output.textContent = text;
+      output.style.color = color;
     }
-    function parse() {
-      var r = new XMLHttpRequest();
-      var params = "style=" + encodeURIComponent(document.querySelector(
-        "input[name=style]:checked").value) + "&input=" + encodeURIComponent(
-        document.getElementById("yaml-input").value);
-      r.open("POST", "/webservice/", true);
-      r.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-      r.onreadystatechange = function() {
-        if (r.readyState == 4) {
-          var output = document.getElementById("yaml-output");
-          if (r.status == 200) {
-            var result = JSON.parse(r.responseText);
-            switch(result.code) {
-            case 0:
-              setTextContent(output, result.output);
-              output.style.color = "black";
-              break;
-            case 1:
-              setTextContent(output, "Parser error at line " + result.line +
-                  ", column " + result.column + ":\n" + result.message +
-                  "\n\n" + result.detail);
-              output.style.color = "orange";
-              break;
-            case 2:
-              setTextContent(output, "Presenter error:\n" + result.message);
-              output.style.color = "orange";
-              break;
-            }
-          } else if (r.status == 0) {
-            setTextContent(output,
-              "YAML parser server does not seem to be available.");
-            output.style.color = "red";
-          } else {
-            setTextContent(output, "Status: " + r.status +
-              "\nException occurred on server:\n\n" + r.responseText);
-            output.style.color = "red";
-          }
+
+    function startWorker() {
+      worker = new Worker("testingground.js");
+      worker.onmessage = function(e) {
+        var result = e.data;
+        switch (result.code) {
+        case 0:
+          // output is HTML-escaped by the worker
+          output.innerHTML = result.output;
+          output.style.color = "black";
+          break;
+        case 1:
+          showText("Parser error at line " + result.line + ", column " +
+              result.column + ":\n" + result.message + "\n\n" +
+              result.detail, "orange");
+          break;
+        case 2:
+          showText("Presenter error:\n" + result.message, "orange");
+          break;
+        default:
+          showText("Unexpected error:\n" + result.message, "red");
         }
-      }
-      r.send(params);
+        busySince = null;
+        sendPending();
+      };
+      worker.onerror = function(e) {
+        showText("The YAML processor could not be loaded or crashed: " +
+            e.message, "red");
+        busySince = null;
+        e.preventDefault();
+      };
     }
-    document.getElementById("yaml-input").addEventListener('input', parse,
+
+    function sendPending() {
+      if (pending === null) return;
+      worker.postMessage(pending);
+      pending = null;
+      busySince = Date.now();
+    }
+
+    function parse() {
+      pending = {
+        input: document.getElementById("yaml-input").value,
+        style: document.querySelector("input[name=style]:checked").value
+      };
+      if (busySince === null) {
+        sendPending();
+      } else if (Date.now() - busySince > 1000) {
+        // the previous input takes long to process; do not wait for it.
+        worker.terminate();
+        startWorker();
+        busySince = null;
+        sendPending();
+      }
+      // otherwise, the pending request is sent when the current one finishes.
+    }
+
+    startWorker();
+    document.getElementById("yaml-input").addEventListener("input", parse,
         false);
     var radios = document.querySelectorAll("input[name=style]");
     for (var i = 0; i < radios.length; ++i) {

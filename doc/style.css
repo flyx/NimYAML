@@ -4,99 +4,156 @@ h1.title {
   padding-bottom: .5em;
 }
 
-header {
-    position: sticky;
+/* navigation sidebar. On small screens, it is shown above the content. */
+
+#sidebar {
+  background: #111;
+  color: white;
+  font-family: "Raleway", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+#sidebar .sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .8em 1em;
+}
+
+#sidebar a.pagetitle {
+  font-size: x-large;
+  font-weight: 900;
+}
+
+#nav-toggle {
+  display: none; /* only shown on small screens */
+  background: none;
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: .3em .8em;
+  font: inherit;
+  cursor: pointer;
+}
+
+#nav-toggle:hover,
+#nav-toggle:focus {
+  color: white;
+  border-color: #aaa;
+}
+
+#nav-links {
+  padding: 0 0 1em 0;
+}
+
+#nav-links h2 {
+  font-size: small;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #777;
+  margin: 1.2em 1em .3em 1em;
+  padding: 0;
+  border: 0;
+}
+
+#nav-links ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* sub-pages, indented below their parent page */
+#nav-links ul ul a {
+  /* rem, so that indentation does not depend on the link's font size */
+  padding-left: 2.2rem;
+  font-family: inherit;
+  font-size: 95%;
+}
+
+/* module names */
+#nav-links ul.monospace a {
+  font-family: "Source Code Pro", Menlo, "Courier New", Courier, monospace;
+  font-size: smaller;
+}
+
+#nav-links a {
+  display: block;
+  padding: .3em 1rem;
+  border-left: 3px solid transparent;
+}
+
+#nav-links a.github {
+  margin-top: 1.5em;
+}
+
+#nav-links a.github img {
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: -.2em;
+  margin-right: .3em;
+}
+
+#sidebar a:link,
+#sidebar a:visited {
+  background: inherit;
+  color: #aaa;
+  text-decoration: none;
+}
+
+#sidebar a:hover,
+#sidebar a:focus {
+  background: #222;
+  color: white;
+  text-decoration: none;
+}
+
+#sidebar a.pagetitle:link,
+#sidebar a.pagetitle:visited,
+#sidebar a.pagetitle:hover {
+  background: inherit;
+  color: white;
+}
+
+#nav-links a[aria-current="page"] {
+  color: white;
+  background: #2a2a2a;
+  border-left-color: #c96;
+}
+
+@media (min-width: 801px) {
+  body {
     display: flex;
-    flex-wrap: wrap;
-    background: #111;
-    margin: 0;
-    padding: 0 .5em;
+    align-items: flex-start;
+  }
+
+  #sidebar {
+    position: sticky;
     top: 0;
-    z-index: 1;
-    font-size: large;
+    flex: 0 0 15em;
+    width: 15em;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  article {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
-header > a {
+@media (max-width: 800px) {
+  #nav-toggle {
     display: block;
-    flex-grow: 0;
-    padding: .8em .2em;
-}
+  }
 
-header a.active {
-    background: #877 !important;
-    color: black !important;
-}
-
-header > span {
-    display: block;
-    flex-grow: 0;
-    font-size: large;
-    color: white;
-    padding: .8em .2em;
-    padding-left: .6em;
-}
-
-header > span.space {
-  flex-grow: 1;
-}
-
-header > span > a {
-    display: block;
-}
-
-header span ul {
+  #sidebar.collapsed #nav-links {
     display: none;
-    position: absolute;
-    top: 100%;
-    list-style: none;
-    background: #111;
-    margin: 0;
-    padding-bottom: .5em;
-}
+  }
 
-header span ul:after {
-    content: ""; clear: both; display: block;
-}
-
-header span:hover > ul {
-    display: block;
-}
-
-header span ul a {
-    padding: 0 .8em;
-    line-height: 1.8em;
-}
-
-header span ul.monospace a {
-    font-size: smaller;
-    font-family: "Source Code Pro", Menlo, "Courier New", Courier, monospace;
-}
-
-header a:link,
-header a:visited {
-    background: inherit;
-    color: #aaa;
-}
-
-header a:hover {
-    background: inherit;
-    color: white;
-    text-decoration: inherit;
-}
-
-header a:active {
-    background: #222;
-    color: white;
-    text-decoration: inherit;
-}
-
-a.pagetitle:link,
-a.pagetitle:hover,
-a.pagetitle:active,
-a.pagetitle:visited {
-    background: inherit;
-    color: white;
-    text-decoration: inherit;
+  #nav-links {
+    border-top: 1px solid #333;
+  }
 }
 
 body {
@@ -108,40 +165,113 @@ html {
     background-color: rgba(252, 248, 244, 0.75);
 }
 
-/* necessary for links to scroll to the right position */
-dt a:before {
-    margin-top: -2em;
-    height: 2em;
-    content: ' ';
-    display: block;
-    visibility: hidden;
+#testingground #style-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .3em 1.5em;
+  margin-bottom: 1em;
 }
 
-#testingground {
-    margin-left: -2em;
-    margin-right: -2em;
+#testingground #split-view {
+  display: flex;
+  gap: 1em;
+  height: 550px; /* on wide screens, replaced by the available height (below) */
+}
+
+/* On wide screens, the testing ground fills the window: the article is at
+   least as high as the window, and the split view gets all space not taken by
+   the other content. */
+@media (min-width: 801px) {
+  article:has(#testingground) {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  article .container:has(> #testingground) {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #testingground {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #testingground #split-view {
+    /* basis 0 and an explicit min-height, so that long output scrolls inside
+       its pane instead of growing the page. */
+    flex: 1 1 0;
+    min-height: 300px;
+    height: auto;
+  }
+}
+
+#testingground .pane {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#testingground .pane h2 {
+  font-size: medium;
+  margin: 0 0 .3em 0;
+  padding: 0;
+  border: 0;
+}
+
+#testingground textarea,
+#testingground .output-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 3px;
 }
 
 #testingground textarea {
   width: 100%;
-  height: 100%;
+  resize: none;
+  padding: .5em;
 }
+
+#testingground .output-scroll {
+  overflow: auto;
+  /* same as code blocks; shows that the output is not editable */
+  background: whitesmoke;
+}
+
 #testingground textarea,
 #testingground pre {
   font-family: "Source Code Pro", Menlo, "Courier New", Courier, monospace;
+  font-size: small;
   margin: 0;
 }
+
 #testingground pre {
-  font-size: small;
+  border: 0;
+  background: none;
+  padding: .5em;
+  white-space: pre;
 }
-#testingground #style-options {
-    margin-top: 10px;
-    width: 100%;
-    text-align: center;
-}
-#testingground .style-option {
-  display: inline-block;
-  margin-right: 20px;
+
+@media (max-width: 800px) {
+  #testingground #split-view {
+    flex-direction: column;
+    height: auto;
+  }
+
+  #testingground textarea {
+    height: 18em;
+  }
+
+  #testingground .output-scroll {
+    height: 24em;
+  }
 }
 
 object {

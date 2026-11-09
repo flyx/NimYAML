@@ -28,7 +28,7 @@ h1, h2, h3, h4, h5, h6, p.module-desc, table.docinfo + blockquote p, table.docin
   font-family: "Raleway", "Helvetica Neue", "HelveticaNeue", Helvetica, Arial, sans-serif !important; }
 
 h1.title {
-  font-weight: 900; }
+  font-weight: bold; }
 
 article {
   font-family: "Helvetica Neue", "HelveticaNeue", "Raleway", Helvetica, Arial, sans-serif;
@@ -115,7 +115,7 @@ article {
 .footer {
   text-align: center;
   color: #969696;
-  padding-top: 10%; }
+  padding-top: 2em; }
 
 p.module-desc {
   font-size: 1.1em;

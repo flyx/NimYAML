@@ -54,3 +54,6 @@ jobs:
 
     - name: Test (JS backend)
       run: nim testJS
+
+    - name: Build testing ground (JS)
+      run: nim testingGround

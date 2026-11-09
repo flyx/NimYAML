@@ -72,6 +72,11 @@ task clean, "Remove all generated files":
   exec "rm -rf libyaml.* test/tests test/parsing test/lexing bench/json docout"
   setCommand "nop"
 
+task testingGround, "Compile the testing ground of the web documentation to docout/testingground.js":
+  --d:release
+  --out:"docout/testingground.js"
+  compileCommand "doc/testingground", "js"
+
 task testSuiteEvents, "Compile the testSuiteEvents tool":
   --d:release
   compileCommand "tools/testSuiteEvents"

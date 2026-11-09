@@ -13,7 +13,6 @@ test/*.exe
 test/*.pdb
 test/*.ilk
 test/*.js
-server/server
 bench/jsonBench
 bench/yamlBench
 bench/bench
@@ -26,7 +25,6 @@ doc/rstPreproc
 doc/tmp.rst
 doc/**/code
 nimsuggest.log
-server/server_cfg.nim
 result
 vendor
 .vscode

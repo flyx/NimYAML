@@ -61,20 +61,14 @@ When debugging crashes in this library, use the `d:debug` compile flag to enable
 The online documentation on [nimyaml.org][1], including the
 testing ground, is generated via [Nix Flake][3].
 
-You can build & run the docs server at via
+You can build the documentation via
 
 ```bash
-nix run .#webdocs
+nix build .#webdocs
 ```
 
-It can be deployed to NixOS by importing the Flake's NixOS module and then doing
-
-```nix
-services.nimyaml-webdocs.enable = true;
-```
-
-This will run the documentation server locally at `127.0.0.1:5000`.
-Since there isn't much of a use-case for third parties to host this documentation, there is no support for running the server without Nix.
+The result is a set of static files that can be served by any web server. It must be served at the root of a domain, since pages link to each other with absolute paths.
+The testing ground runs NimYAML compiled to JavaScript in the browser; it can be built separately with `nim testingGround`, which writes `docout/testingground.js`.
 
 ## License
 
