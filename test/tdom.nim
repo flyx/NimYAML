@@ -72,8 +72,8 @@ suite "DOM":
     assert result[0].content == "foo"
     assert result[1].kind == yScalar
     assert result[1].content == "bar"
-    assert cast[pointer](result[0]) == cast[pointer](result[2])
-    assert cast[pointer](result[1]) == cast[pointer](result[3])
+    assert system.`==`(result[0], result[2]) # same node, not just equal
+    assert system.`==`(result[1], result[3]) # same node, not just equal
   test "Serializing with anchors":
     let
       a = newYamlNode("a")

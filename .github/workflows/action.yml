@@ -39,14 +39,13 @@ jobs:
     - name: Install Packages
       run: nimble install -y
 
-    - name: Test
-      run: |
-        nim lexerTests
-        nim parserTests
-        nim jsonTests
-        nim domTests
-        nim nativeTests
-        nim quickstartTests
-        nim hintsTests
-        nim presenterTests
-        nim annotationTests
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+
+    - name: Test (C backend)
+      run: nim test
+
+    - name: Test (JS backend)
+      run: nim testJS

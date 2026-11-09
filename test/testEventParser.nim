@@ -128,7 +128,7 @@ template assertInEvent(name: string) {.dirty.} =
 
 template yieldEvent() {.dirty.} =
   if inEvent:
-    yield curEvent
+    events.put(curEvent)
     inEvent = false
 
 template setTag(t: Tag) {.dirty.} =
@@ -186,7 +186,7 @@ template setCurAnchor(val: Anchor) =
 
 template eventStart(k: EventKind) {.dirty.} =
   if streamPos == beforeStream:
-    yield Event(kind: yamlStartStream)
+    events.put(Event(kind: yamlStartStream))
     streamPos = inStream
   else: yieldEvent()
   curEvent = Event(kind: k)
@@ -195,100 +195,102 @@ template eventStart(k: EventKind) {.dirty.} =
   inEvent = true
 
 proc parseEventStream*(input: Stream): YamlStream =
-  var backend = iterator(): Event =
-    var lex: EventLexer
-    lex.open(input)
-    var
-      inEvent = false
-      curEvent: Event
-      streamPos: StreamPos = beforeStream
-    while lex.buf[lex.bufpos] != EndOfFile:
-      let token = lex.nextToken()
-      case token
-      of plusStr:
-        if streamPos != beforeStream:
-          raise newException(EventStreamError, "Illegal +STR")
-        streamPos = inStream
-        eventStart(yamlStartStream)
-      of minusStr:
-        if streamPos != inStream:
-          raise newException(EventStreamError, "Illegal -STR")
-        streamPos = afterStream
-        eventStart(yamlEndStream)
-      of plusDoc: eventStart(yamlStartDoc)
-      of minusDoc: eventStart(yamlEndDoc)
-      of plusMap: eventStart(yamlStartMap)
-      of minusMap: eventStart(yamlEndMap)
-      of plusSeq: eventStart(yamlStartSeq)
-      of minusSeq: eventStart(yamlEndSeq)
-      of eqVal: eventStart(yamlScalar)
-      of eqAli: eventStart(yamlAlias)
-      of mapBraces:
-        assertInEvent("braces")
-        curEvent.mapStyle = csFlow
-      of seqBrackets:
-        assertInEvent("brackets")
-        curEvent.seqStyle = csFlow
-      of chevTag:
-        assertInEvent("tag")
-        if curTag() != yTagQuestionMark:
-          raise newException(EventStreamError,
-                             "Duplicate tag in " & $curEvent.kind)
-        setCurTag(Tag(lex.content))
-      of andAnchor:
-        assertInEvent("anchor")
-        if curAnchor() != yAnchorNone:
-          raise newException(EventStreamError,
-                             "Duplicate anchor in " & $curEvent.kind)
-        setCurAnchor(lex.content.Anchor)
-      of starAnchor:
-        assertInEvent("alias")
-        if curEvent.kind != yamlAlias:
-          raise newException(EventStreamError, "Unexpected alias: " &
-              escape(lex.content))
-        elif curEvent.aliasTarget != yAnchorNone:
-          raise newException(EventStreamError, "Duplicate alias target: " &
-              escape(lex.content))
-        else:
-          curEvent.aliasTarget = lex.content.Anchor
-      of colonContent:
-        assertInEvent("scalar content")
-        curEvent.scalarContent = lex.content
-        if curEvent.kind != yamlScalar:
-          raise newException(EventStreamError,
-                             "scalar content in non-scalar tag")
-      of sqContent:
-        assertInEvent("scalar content")
-        curEvent.scalarContent = lex.content
-        if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
-        curEvent.scalarStyle = ssSingleQuoted
-      of dqContent:
-        assertInEvent("scalar content")
-        curEvent.scalarContent = lex.content
-        if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
-        curEvent.scalarStyle = ssDoubleQuoted
-      of litContent:
-        assertInEvent("scalar content")
-        curEvent.scalarContent = lex.content
-        curEvent.scalarStyle = ssLiteral
-      of foContent:
-        assertInEvent("scalar content")
-        curEvent.scalarContent = lex.content
-        curEvent.scalarStyle = ssFolded
-      of explDirEnd:
-        assertInEvent("explicit directives end")
-        if curEvent.kind != yamlStartDoc:
-          raise newException(EventStreamError,
-                             "Unexpected explicit directives end")
-      of explDocEnd:
-        if curEvent.kind != yamlEndDoc:
-          raise newException(EventStreamError,
-                             "Unexpected explicit document end")
-      of noToken: discard
-    yieldEvent()
-    if streamPos == inStream:
-      yield Event(kind: yamlEndStream)
-  result = initYamlStream(backend)
+  # Events are collected eagerly into a buffer since closure iterators
+  # (and thus initYamlStream) are not available on the JS backend.
+  let events = newBufferYamlStream()
+  var lex: EventLexer
+  lex.open(input)
+  var
+    inEvent = false
+    curEvent: Event
+    streamPos: StreamPos = beforeStream
+  while lex.buf[lex.bufpos] != EndOfFile:
+    let token = lex.nextToken()
+    case token
+    of plusStr:
+      if streamPos != beforeStream:
+        raise newException(EventStreamError, "Illegal +STR")
+      streamPos = inStream
+      eventStart(yamlStartStream)
+    of minusStr:
+      if streamPos != inStream:
+        raise newException(EventStreamError, "Illegal -STR")
+      streamPos = afterStream
+      eventStart(yamlEndStream)
+    of plusDoc: eventStart(yamlStartDoc)
+    of minusDoc: eventStart(yamlEndDoc)
+    of plusMap: eventStart(yamlStartMap)
+    of minusMap: eventStart(yamlEndMap)
+    of plusSeq: eventStart(yamlStartSeq)
+    of minusSeq: eventStart(yamlEndSeq)
+    of eqVal: eventStart(yamlScalar)
+    of eqAli: eventStart(yamlAlias)
+    of mapBraces:
+      assertInEvent("braces")
+      curEvent.mapStyle = csFlow
+    of seqBrackets:
+      assertInEvent("brackets")
+      curEvent.seqStyle = csFlow
+    of chevTag:
+      assertInEvent("tag")
+      if curTag() != yTagQuestionMark:
+        raise newException(EventStreamError,
+                           "Duplicate tag in " & $curEvent.kind)
+      setCurTag(Tag(lex.content))
+    of andAnchor:
+      assertInEvent("anchor")
+      if curAnchor() != yAnchorNone:
+        raise newException(EventStreamError,
+                           "Duplicate anchor in " & $curEvent.kind)
+      setCurAnchor(lex.content.Anchor)
+    of starAnchor:
+      assertInEvent("alias")
+      if curEvent.kind != yamlAlias:
+        raise newException(EventStreamError, "Unexpected alias: " &
+            escape(lex.content))
+      elif curEvent.aliasTarget != yAnchorNone:
+        raise newException(EventStreamError, "Duplicate alias target: " &
+            escape(lex.content))
+      else:
+        curEvent.aliasTarget = lex.content.Anchor
+    of colonContent:
+      assertInEvent("scalar content")
+      curEvent.scalarContent = lex.content
+      if curEvent.kind != yamlScalar:
+        raise newException(EventStreamError,
+                           "scalar content in non-scalar tag")
+    of sqContent:
+      assertInEvent("scalar content")
+      curEvent.scalarContent = lex.content
+      if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
+      curEvent.scalarStyle = ssSingleQuoted
+    of dqContent:
+      assertInEvent("scalar content")
+      curEvent.scalarContent = lex.content
+      if curTag() == yTagQuestionMark: setCurTag(yTagExclamationMark)
+      curEvent.scalarStyle = ssDoubleQuoted
+    of litContent:
+      assertInEvent("scalar content")
+      curEvent.scalarContent = lex.content
+      curEvent.scalarStyle = ssLiteral
+    of foContent:
+      assertInEvent("scalar content")
+      curEvent.scalarContent = lex.content
+      curEvent.scalarStyle = ssFolded
+    of explDirEnd:
+      assertInEvent("explicit directives end")
+      if curEvent.kind != yamlStartDoc:
+        raise newException(EventStreamError,
+                           "Unexpected explicit directives end")
+    of explDocEnd:
+      if curEvent.kind != yamlEndDoc:
+        raise newException(EventStreamError,
+                           "Unexpected explicit document end")
+    of noToken: discard
+  yieldEvent()
+  if streamPos == inStream:
+    events.put(Event(kind: yamlEndStream))
+  result = events
   
 proc parseEventString*(input: sink string): YamlStream =
   var str = newStringStream(input)

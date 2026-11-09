@@ -57,7 +57,7 @@ type
 
   SerializationContext* = object
     ## Context information for the process of serializing YAML from Nim values.
-    refs: Table[pointer, tuple[a: Anchor, referenced: bool]]
+    refs: RefTable[tuple[a: Anchor, referenced: bool]]
     emitTag: bool
     nextAnchorId: string
     options*: SerializationOptions
@@ -68,7 +68,7 @@ type
   ConstructionContext* = object
     ## Context information for the process of constructing Nim values from YAML.
     input*: YamlStream
-    refs* : Table[Anchor, tuple[tag: Tag, p: pointer]]
+    refs* : Table[Anchor, tuple[tag: Tag, p: RefPtr]]
 
   YamlConstructionError* = object of YamlLoadingError
     ## Exception that may be raised when constructing data objects from a
@@ -165,7 +165,7 @@ proc representChild*[O](
 proc initConstructionContext*(input: YamlStream): ConstructionContext =
   result = ConstructionContext(
     input: input,
-    refs : initTable[Anchor, tuple[tag: Tag, p: pointer]](),
+    refs : initTable[Anchor, tuple[tag: Tag, p: RefPtr]](),
   )
 
 proc initSerializationContext*(
@@ -173,7 +173,7 @@ proc initSerializationContext*(
   putImpl: proc(ctx: var SerializationContext, e: Event) {.raises: [], closure.}
 ): SerializationContext =
   result = SerializationContext(
-    refs: initTable[pointer, tuple[a: Anchor, referenced: bool]](),
+    refs: initRefTable[tuple[a: Anchor, referenced: bool]](),
     emitTag: options.tagStyle != tsNone,
     nextAnchorId: "a",
     options: options,
@@ -1673,14 +1673,14 @@ proc constructChild*[O](
       raise ctx.input.constructionError(e.startPos,
         "aliases are not supported at compile time")
     else:
-      let val = ctx.refs.getOrDefault(e.aliasTarget, (yTagNull, pointer(nil)))
+      let val = ctx.refs.getOrDefault(e.aliasTarget, (yTagNull, RefPtr(nil)))
       if val.p == nil:
         raise ctx.input.constructionError(e.startPos,
           "alias node refers to anchor in ignored scope")
       if val.tag != yamlTag(O):
         raise ctx.input.constructionError(e.startPos,
           "alias node refers to object of incompatible type")
-      result = cast[ref O](val.p)
+      result = fromRefPtr[ref O](val.p)
       discard ctx.input.next()
       return
   new(result)
@@ -1688,7 +1688,7 @@ proc constructChild*[O](
     if anchor != yAnchorNone:
       yAssert(not ctx.refs.hasKey(anchor))
       when nimvm: discard # no aliases supported at compile time
-      else: ctx.refs[anchor] = (yamlTag(O), cast[pointer](result))
+      else: ctx.refs[anchor] = (yamlTag(O), toRefPtr(result))
       anchor = yAnchorNone
 
   case e.kind
@@ -1738,7 +1738,7 @@ proc representChild*[O](
   else:
     when nimvm: discard
     else:
-      let p = cast[pointer](value)
+      let p = toRefPtr(value)
       # when c.anchorStyle == asNone, `referenced` is used as indicator that we are
       # currently in the process of serializing this node. This enables us to
       # detect cycles and raise an error.

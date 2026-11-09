@@ -62,18 +62,38 @@ proc hash*(o: YamlNode): Hash =
       result = result !& item.hash
   result = !$result
 
-proc eqImpl(x, y: YamlNode, alreadyVisited: var HashSet[pointer]): bool =
+# The JS backend has no raw pointers (casting a ref to pointer generates
+# invalid code), so there we track visited nodes by identity in a RefTable.
+when defined(js):
+  type VisitedSet = RefTable[bool]
+
+  proc initVisitedSet(): VisitedSet = initRefTable[bool]()
+
+  proc contains(s: VisitedSet, n: YamlNode): bool = s.hasKey(toRefPtr(n))
+
+  proc incl(s: var VisitedSet, n: YamlNode) = s[toRefPtr(n)] = true
+else:
+  type VisitedSet = HashSet[pointer]
+
+  proc initVisitedSet(): VisitedSet = initHashSet[pointer]()
+
+  proc contains(s: VisitedSet, n: YamlNode): bool =
+    sets.contains(s, cast[pointer](n))
+
+  proc incl(s: var VisitedSet, n: YamlNode) =
+    sets.incl(s, cast[pointer](n))
+
+proc eqImpl(x, y: YamlNode, alreadyVisited: var VisitedSet): bool =
   template compare(a, b: YamlNode) {.dirty.} =
-    if cast[pointer](a) != cast[pointer](b):
-      if cast[pointer](a) in alreadyVisited and
-          cast[pointer](b) in alreadyVisited:
+    if not system.`==`(a, b):
+      if a in alreadyVisited and b in alreadyVisited:
         # prevent infinite loop!
         return false
       elif a != b: return false
 
   if x.kind != y.kind or x.tag != y.tag: return false
-  alreadyVisited.incl(cast[pointer](x))
-  alreadyVisited.incl(cast[pointer](y))
+  alreadyVisited.incl(x)
+  alreadyVisited.incl(y)
   case x.kind
   of yScalar: result = x.content == y.content
   of ySequence:
@@ -83,11 +103,11 @@ proc eqImpl(x, y: YamlNode, alreadyVisited: var HashSet[pointer]): bool =
   of yMapping:
     if x.fields.len != y.fields.len: return false
     for xKey, xValue in x.fields.pairs:
-      let xKeyVisited = cast[pointer](xKey) in alreadyVisited
+      let xKeyVisited = xKey in alreadyVisited
       var matchingValue: ref YamlNodeObj = nil
       for yKey, yValue in y.fields.pairs:
-        if cast[pointer](yKey) != cast[pointer](xKey):
-          if cast[pointer](yKey) in alreadyVisited and xKeyVisited:
+        if not system.`==`(yKey, xKey):
+          if yKey in alreadyVisited and xKeyVisited:
             # prevent infinite loop!
             continue
           if xKey == yKey:
@@ -100,7 +120,7 @@ proc eqImpl(x, y: YamlNode, alreadyVisited: var HashSet[pointer]): bool =
       compare(xValue, matchingValue)
 
 proc `==`*(x, y: YamlNode): bool =
-  var alreadyVisited = initHashSet[pointer]()
+  var alreadyVisited = initVisitedSet()
   result = eqImpl(x, y, alreadyVisited)
 
 proc `$`*(n: YamlNode): string =
@@ -161,7 +181,7 @@ proc constructChild*(
   template addAnchor(c: var ConstructionContext, target: Anchor) =
     if target != yAnchorNone:
       yAssert(not ctx.refs.hasKey(target))
-      c.refs[target] = (tag: yamlTag(YamlNode), p: cast[pointer](result))
+      c.refs[target] = (tag: yamlTag(YamlNode), p: toRefPtr(result))
 
   var start: Event
   # instead of checking whether gcArc, gcOrc, or gcAtomicArc are defined, we use compiles to make it future proof. note that shallowCopy is only defined when for mm:arc/orc/atomicArc
@@ -219,7 +239,7 @@ proc constructChild*(
     else:
       result.content = move start.scalarContent
   of yamlAlias:
-    result = cast[YamlNode](ctx.refs.getOrDefault(start.aliasTarget).p)
+    result = fromRefPtr[YamlNode](ctx.refs.getOrDefault(start.aliasTarget).p)
   else: internalError("Malformed YamlStream")
 
 proc representChild*(
