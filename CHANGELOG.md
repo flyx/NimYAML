@@ -1,3 +1,24 @@
+## 2.3.0
+
+Security Patches:
+ * Fixed a crash due to a recursive call chain in the parser.
+   this could be exploited by a malicious actor with crafted input.
+ * Parser now has a `maxDepth` parameter, which by default is 1024.
+   Input with higher nesting depth will raise a `YamlParserError`.
+   This guards against the crash described above, but also against
+   possible crashes in the `dom` and `native` loading API.
+
+Features:
+
+ * compiles and works with JavaScript backend.
+ * website now uses JavaScript for testing ground; no more server-side code.
+
+Bugfixes:
+
+ * fixed a crash in the presenter when outputting a single scalar as JSON
+ * fixed presenting keywords (`true`, `false`, `null`) in JSON style
+ * fixed a compiler error in Nim 2.4.x
+
 ## 2.2.1
 
 Bugfixes:

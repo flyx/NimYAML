@@ -12,7 +12,7 @@
       nix-filter,
     }:
     let
-      version = "2.2.1";
+      version = "2.3.0";
       systemDependent =
         with utils.lib;
         eachSystem allSystems (
