@@ -25,6 +25,7 @@ type
     ## only until the document goes out of scope (i.e. until
     ## ``yamlEndDocument`` is yielded).
     issueWarnings: bool
+    maxDepth: int
 
   YamlParserError* = object of YamlLoadingError
     ## A parser error is raised if the character stream that is parsed is
@@ -78,6 +79,8 @@ type
     keyCachePos: int
     cacheLevels: seq[CacheLevel]
     lookAheadIsBlock: bool
+    maxDepth: int    # maximum nesting depth of collections; 0 = unlimited
+    depth: int       # nesting depth of collections in the emitted events
 
     headerProps, inlineProps: Properties
     headerStart, inlineStart: Mark
@@ -172,18 +175,32 @@ proc init[T](ctx: Context, p: YamlParser, source: T) {.inline.} =
   ctx.headerProps = defaultProperties
   ctx.inlineProps = defaultProperties
   ctx.issueWarnings = p.issueWarnings
+  ctx.maxDepth = p.maxDepth
   ctx.lex.init(source)
   ctx.keyCachePos = 0
 
 # interface
 
-proc init*(p: var YamlParser, issueWarnings: bool = false) =
-  ## Initializes a YAML parser.
-  p.issueWarnings = issueWarnings
+const defaultMaxDepth* = 1024
+  ## Default value for the ``maxDepth`` parameter of the parser.
 
-proc initYamlParser*(issueWarnings: bool = false): YamlParser =
-  ## Creates an initializes YAML parser and returns it
-  result.issueWarnings = issueWarnings
+proc init*(p: var YamlParser, issueWarnings: bool = false,
+           maxDepth: Natural = defaultMaxDepth) =
+  ## Initializes a YAML parser.
+  ##
+  ## ``maxDepth`` is the maximum nesting depth of collections (mappings and
+  ## sequences). Parsing input that exceeds it raises a ``YamlParserError``.
+  ## This protects code that processes the parsed events recursively, e.g.
+  ## loading into a ``YamlNode``, against a stack overflow caused by crafted
+  ## input. ``0`` disables the limit.
+  p.issueWarnings = issueWarnings
+  p.maxDepth = maxDepth
+
+proc initYamlParser*(issueWarnings: bool = false,
+                     maxDepth: Natural = defaultMaxDepth): YamlParser =
+  ## Creates an initializes YAML parser and returns it.
+  ## See `init <#init,YamlParser,bool,Natural>`_ for the parameters.
+  result.init(issueWarnings, maxDepth)
 
 proc parse*(p: YamlParser, s: Stream): YamlStream =
   let ctx = new(Context)
@@ -207,9 +224,29 @@ proc generateError(ctx: Context, message: string):
     msg: message, parent: nil, mark: ctx.lex.curStartPos,
     lineContent: ctx.lex.currentLine())
 
+proc trackDepth(c: Context, e: Event) {.raises: [YamlParserError].} =
+  ## Tracks the nesting depth of the emitted events and enforces ``maxDepth``.
+  ## This is done on emission because events may be cached during look-ahead,
+  ## where map start events are inserted afterwards.
+  case e.kind
+  of yamlStartMap, yamlStartSeq:
+    inc(c.depth)
+    if c.maxDepth > 0 and c.depth > c.maxDepth:
+      # cached events may be emitted after the lexer moved to another line.
+      let lineContent =
+        if e.startPos.line == c.lex.curStartPos.line: c.lex.currentLine()
+        else: ""
+      raise (ref YamlParserError)(
+        msg: "Maximum nesting depth exceeded (" & $c.maxDepth & ")",
+        parent: nil, mark: e.startPos, lineContent: lineContent)
+  of yamlEndMap, yamlEndSeq:
+    dec(c.depth)
+  else: discard
+
 proc baseNextImpl(s: YamlStream, e: var Event): bool {. raises: [CatchableError].} =
   let c = Context(s)
-  return c.levels[^1].state(c, e)
+  result = c.levels[^1].state(c, e)
+  if result: c.trackDepth(e)
 
 proc lookaheadNextImpl(s: YamlStream, e: var Event): bool {.raises: [CatchableError].} =
   let c = Context(s)
@@ -229,6 +266,7 @@ proc lookaheadNextImpl(s: YamlStream, e: var Event): bool {.raises: [CatchableEr
         else:
           e = startMapEvent(csPair, defaultProperties, cached.startPos, cached.startPos)
         c.pushLevel(emitCached)
+        c.trackDepth(e)
         return true
       else:
         c.pushLevel(afterImplicitPairStart, cached.indent)

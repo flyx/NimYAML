@@ -139,3 +139,67 @@ macro genTests(): untyped =
   result = newCall("suite", newLit("Parser Tests (from yaml-test-suite)"), result)
 
 genTests()
+
+proc nestingDepth(input: string, maxDepth: Natural): int =
+  ## Parses ``input`` and returns the maximum nesting depth of its
+  ## collections. Raises the YamlParserError if the parser fails.
+  let parser = initYamlParser(maxDepth = maxDepth)
+  var
+    events = parser.parse(input)
+    depth = 0
+  try:
+    for event in events:
+      case event.kind
+      of yamlStartMap, yamlStartSeq:
+        inc(depth)
+        result = max(result, depth)
+      of yamlEndMap, yamlEndSeq: dec(depth)
+      else: discard
+  except YamlStreamError as e:
+    raise (ref YamlParserError)(e.parent)
+
+proc flowSeqs(n: int): string = "[".repeat(n) & "]".repeat(n)
+
+suite "Nesting depth":
+  test "Default limit":
+    check nestingDepth(flowSeqs(defaultMaxDepth), defaultMaxDepth) == defaultMaxDepth
+    expect YamlParserError:
+      discard nestingDepth(flowSeqs(defaultMaxDepth + 1), defaultMaxDepth)
+
+  test "Error position":
+    try:
+      discard nestingDepth("[[[a]]]", 2)
+      fail()
+    except YamlParserError as e:
+      check e.mark.line == 1
+      check e.mark.column == 3
+
+  test "Flow mappings":
+    let input = "{a: ".repeat(10) & "b" & "}".repeat(10)
+    check nestingDepth(input, 10) == 10
+    expect YamlParserError:
+      discard nestingDepth(input, 9)
+
+  test "Block collections":
+    var input = ""
+    for i in 0..<10: input.add(" ".repeat(i * 2) & "- a:\n")
+    check nestingDepth(input, 20) == 20
+    expect YamlParserError:
+      discard nestingDepth(input, 19)
+
+  test "Implicit pairs in flow sequences":
+    # each level is a sequence containing a pair whose key is the next level
+    let input = "[".repeat(10) & "a" & "]: b".repeat(9) & "]"
+    check nestingDepth(input, 19) == 19
+    expect YamlParserError:
+      discard nestingDepth(input, 18)
+
+  test "Flow collection as implicit block key":
+    let input = flowSeqs(10) & ": a"
+    check nestingDepth(input, 11) == 11
+    expect YamlParserError:
+      discard nestingDepth(input, 10)
+
+  test "Disabled limit":
+    # the parser does not recurse, so deep input works without the limit
+    check nestingDepth(flowSeqs(100_000), 0) == 100_000
