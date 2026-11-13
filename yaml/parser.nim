@@ -25,7 +25,7 @@ type
     ## only until the document goes out of scope (i.e. until
     ## ``yamlEndDocument`` is yielded).
     issueWarnings: bool
-  
+
   YamlParserError* = object of YamlLoadingError
     ## A parser error is raised if the character stream that is parsed is
     ## not a valid YAML character stream. This stream cannot and will not be
@@ -63,6 +63,12 @@ type
     state: State
     indentation: int
 
+  CacheLevel = object
+    start: int
+    startPos: Mark
+    indent: int
+    depth: int
+
   Context = ref object of YamlStream
     handles: seq[tuple[handle, uriPrefix: string]]
     issueWarnings: bool
@@ -70,7 +76,8 @@ type
     levels: seq[Level]
     keyCache: seq[Event]
     keyCachePos: int
-    caching: bool
+    cacheLevels: seq[CacheLevel]
+    lookAheadIsBlock: bool
 
     headerProps, inlineProps: Properties
     headerStart, inlineStart: Mark
@@ -151,11 +158,14 @@ proc resolveHandle(ctx: Context, handle: string): string {.raises: [].} =
       return item.uriPrefix
   return ""
 
+proc baseNextImpl(s: YamlStream, e: var Event): bool {.gcSafe, raises: [CatchableError].}
+
+proc lookaheadNextImpl(s: YamlStream, e: var Event): bool {.gcSafe, raises: [CatchableError].}
+
 proc init[T](ctx: Context, p: YamlParser, source: T) {.inline.} =
   ctx.pushLevel(atStreamStart, -2)
-  ctx.nextImpl = proc(s: YamlStream, e: var Event): bool {.raises: [CatchableError].} =
-    let c = Context(s)
-    return c.levels[^1].state(c, e)
+  ctx.nextImpl = baseNextImpl
+
   ctx.lastTokenContextImpl = proc(s: YamlStream, lineContent: var string): bool =
     lineContent = Context(s).lex.currentLine()
     return true
@@ -164,7 +174,6 @@ proc init[T](ctx: Context, p: YamlParser, source: T) {.inline.} =
   ctx.issueWarnings = p.issueWarnings
   ctx.lex.init(source)
   ctx.keyCachePos = 0
-  ctx.caching = false
 
 # interface
 
@@ -197,6 +206,41 @@ proc generateError(ctx: Context, message: string):
   result = (ref YamlParserError)(
     msg: message, parent: nil, mark: ctx.lex.curStartPos,
     lineContent: ctx.lex.currentLine())
+
+proc baseNextImpl(s: YamlStream, e: var Event): bool {. raises: [CatchableError].} =
+  let c = Context(s)
+  return c.levels[^1].state(c, e)
+
+proc lookaheadNextImpl(s: YamlStream, e: var Event): bool {.raises: [CatchableError].} =
+  let c = Context(s)
+  if c.levels[^1].state(c, e):
+    c.keyCache.add(e)
+  if c.levels.len == c.cacheLevels[^1].depth:
+    let cached = c.cacheLevels.pop()
+    if c.lex.cur == Token.MapValueInd:
+      if c.lex.curStartPos.line != cached.startPos.line:
+        raise c.generateError("Implicit mapping key may not be multiline")
+      if c.cacheLevels.len == 0:
+        c.nextImpl = baseNextImpl
+        if c.lookAheadIsBlock:
+          c.pushLevel(afterImplicitKey, cached.indent)
+          e = startMapEvent(csBlock, c.headerProps, c.headerStart, cached.startPos)
+          c.headerProps = defaultProperties
+        else:
+          e = startMapEvent(csPair, defaultProperties, cached.startPos, cached.startPos)
+        c.pushLevel(emitCached)
+        return true
+      else:
+        c.pushLevel(afterImplicitPairStart, cached.indent)
+        # we are already filling a cache.
+        # so we just squeeze the map start in.
+        c.keyCache.insert(startMapEvent(csPair, defaultProperties, cached.startPos, cached.startPos), cached.start)
+        return false
+    else:
+      if c.cacheLevels.len == 0:
+        c.pushLevel(emitCached)
+        c.nextImpl = baseNextImpl
+      return false
 
 proc safeNext(ctx: Context) =
   try:
@@ -466,26 +510,17 @@ proc atBlockIndentationProps(ctx: Context, e: var Event): bool =
       ctx.popLevel()
     return true
   of MapStart, SeqStart:
-    let
-      startPos = ctx.lex.curStartPos
-      indent = ctx.lex.currentIndentation()
-      levelDepth = ctx.levels.len
+    if ctx.cacheLevels.len == 0:
+      ctx.lookAheadIsBlock = true
+    ctx.cacheLevels.add(CacheLevel(
+      start: ctx.keyCache.len,
+      startPos: ctx.lex.curStartPos,
+      indent: ctx.lex.currentIndentation(),
+      depth: ctx.levels.len - 1
+    ))
     ctx.transition(beforeFlowItemProps)
-    ctx.caching = true
-    while ctx.levels.len >= levelDepth:
-      ctx.keyCache.add(ctx.next())
-    ctx.caching = false
-    if ctx.lex.cur == Token.MapValueInd:
-      ctx.pushLevel(afterImplicitKey, indent)
-      ctx.pushLevel(emitCached)
-      if ctx.lex.curStartPos.line != startPos.line:
-        raise ctx.generateError("Implicit mapping key may not be multiline")
-      e = startMapEvent(csBlock, ctx.headerProps, ctx.headerStart, startPos)
-      ctx.headerProps = defaultProperties
-      return true
-    else:
-      ctx.pushLevel(emitCached)
-      return false
+    ctx.nextImpl = lookaheadNextImpl
+    return false
   of Literal, Folded:
     ctx.mergeProps(ctx.inlineProps, ctx.headerProps)
     e = scalarEvent(ctx.lex.evaluated, ctx.headerProps, toStyle(ctx.lex.cur),
@@ -960,7 +995,7 @@ proc afterFlowSeqSepProps(ctx: Context, e: var Event): bool =
     ctx.safeNext()
     if ctx.lex.cur == Token.MapValueInd:
       ctx.pushLevel(afterImplicitPairStart)
-      if ctx.caching:
+      if ctx.cacheLevels.len > 0:
         ctx.keyCache.add(startMapEvent(csFlow, defaultProperties, ctx.lex.curStartPos, ctx.lex.curStartPos))
       else:
         ctx.cacheEvent(e)
@@ -968,34 +1003,17 @@ proc afterFlowSeqSepProps(ctx: Context, e: var Event): bool =
         ctx.pushLevel(emitCached)
     return true
   of MapStart, SeqStart:
-    let
-      startPos = ctx.lex.curStartPos
-      indent = ctx.levels[^1].indentation
-      cacheStart = ctx.keyCache.len
-      levelDepth = ctx.levels.len
-      alreadyCaching = ctx.caching
+    if ctx.cacheLevels.len == 0:
+      ctx.lookAheadIsBlock = false
+    ctx.cacheLevels.add(CacheLevel(
+      start: ctx.keyCache.len,
+      startPos: ctx.lex.curStartPos,
+      indent: ctx.levels[^1].indentation,
+      depth: ctx.levels.len
+    ))
     ctx.pushLevel(beforeFlowItemProps)
-    ctx.caching = true
-    while ctx.levels.len > levelDepth:
-      ctx.keyCache.add(ctx.next())
-    ctx.caching = alreadyCaching
-    if ctx.lex.cur == Token.MapValueInd:
-      ctx.pushLevel(afterImplicitPairStart, indent)
-      if ctx.lex.curStartPos.line != startPos.line:
-        raise ctx.generateError("Implicit mapping key may not be multiline")
-      if not alreadyCaching:
-        ctx.pushLevel(emitCached)
-        e = startMapEvent(csPair, defaultProperties, startPos, startPos)
-        return true
-      else:
-        # we are already filling a cache.
-        # so we just squeeze the map start in.
-        ctx.keyCache.insert(startMapEvent(csPair, defaultProperties, startPos, startPos), cacheStart)
-        return false
-    else:
-      if not alreadyCaching:
-        ctx.pushLevel(emitCached)
-      return false
+    ctx.nextImpl = lookaheadNextImpl
+    return false
   else:
     ctx.pushLevel(beforeFlowItem)
     return false
